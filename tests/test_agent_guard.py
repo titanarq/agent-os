@@ -2623,7 +2623,7 @@ def test_a_comment_with_no_author_at_all_is_not_a_reply(monkeypatch, tmp_path):
 # them must already have been rendered from the configured templates -- that is the whole claim
 # this section checks, and it checks it structurally, so a new page added later cannot quietly
 # reintroduce a literal.
-NOTIFY_SINKS = {"agent_guard": {"notify", "_page_run_cap_once"}, "issues": {"page_human"}}
+NOTIFY_SINKS = {"guard": {"notify", "_page_run_cap_once"}, "issues": {"page_human"}}
 
 
 def _sink_calls(tree: ast.AST, sinks: set[str]) -> list[ast.Call]:

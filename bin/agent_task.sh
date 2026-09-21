@@ -469,11 +469,15 @@ WHAT YOU NEVER DO
 
 __NEVER_RUN_RULES__
 
+`$AGENT_OS_PYTHON` is exported into your environment by the driver that launched you:
+it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
+package, never a script in this project's own tree.
+
 WHAT YOU READ, IN THIS ORDER
 1. `AGENTS.md` in this checkout -- the project's own rules are the floor under every criterion.
 2. The issue behind the pull request. `gh pr view <pr> --json body,title,headRefName,baseRefName`
    gives you the body; the `Closes #N` line in it names the issue. Then
-   `__ISSUES_CLI__ brief N` for the issue AND its parent, which is exactly
+   `"$AGENT_OS_PYTHON" -m agent_os.issues brief N` for the issue AND its parent, which is exactly
    what the worker was given -- you are checking the same contract it was handed.
 3. The diff: `gh pr diff <pr>`. Read it whole. The diff is the evidence; the pull request body
    and the worker's own report are claims about it.
@@ -557,14 +561,14 @@ Quote what you ran and what came back; a number you did not measure in this run 
 __HUMAN_MESSAGE_RULES__
 
 WHAT HAPPENS AFTER THE REVIEW
-- Approved: `__ISSUES_CLI__ move N review`. The human merges -- merging is
+- Approved: `"$AGENT_OS_PYTHON" -m agent_os.issues move N review`. The human merges -- merging is
   never an agent's act (docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md).
 - Changes requested: change NOTHING. Leave the issue's label exactly as it is. The planner reads
   your review and resumes the worker with it as context; your review body is the worker's next
   brief, so write it for the worker, not for the record.
 - A doubt only a human can settle (the issue contradicts an ADR, a criterion is ambiguous, the
   change touches something the issue never mentioned): say so in the `## Doubts` block of the
-  same review, then `__ISSUES_CLI__ move N blocked-on-human`. Still one
+  same review, then `"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Still one
   review, still no separate comment -- and when there is a `## Doubts` block the review body
   STARTS with `@__HUMAN_LOGIN__`, on its own first line, because a question that is not a mention
   does not reach the human's GitHub mentions and waits on an issue nobody is watching.
@@ -581,9 +585,13 @@ template-conformant, STAGED sub-issues, each with a budget class -- or, when it 
 enough to be one reviewable piece of work, rewrite its own body into that shape and stage it. You
 never write code and you never touch the shared database: every line below is a hard constraint.
 
+`$AGENT_OS_PYTHON` is exported into your environment by the driver that launched you:
+it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
+package, never a script in this project's own tree.
+
 WHAT YOU READ, IN THIS ORDER
 1. `AGENTS.md` in this checkout -- the project's own rules are the floor under anything you write.
-2. `__ISSUES_CLI__ brief N` for the issue AND its parent -- the same contract a
+2. `"$AGENT_OS_PYTHON" -m agent_os.issues brief N` for the issue AND its parent -- the same contract a
    worker or the validator is handed. N is the subject of this run.
 3. Only the docs, ADRs and paths those two bodies name. Nothing else -- a refiner that goes looking
    for more context is doing the worker's own reading for it.
@@ -609,16 +617,16 @@ __NEVER_RUN_RULES__
 DECIDE THE SHAPE
 - A task or bug that is already ONE reviewable pull request touching ONE module: rewrite its body
   in place. BEFORE rewriting, post the ORIGINAL body verbatim as a comment on the issue
-  (`__ISSUES_CLI__ update N --comment "<the original body>"`) so nothing is
-  lost, THEN write the new body: `__ISSUES_CLI__ update N --body-file <file>`.
+  (`"$AGENT_OS_PYTHON" -m agent_os.issues update N --comment "<the original body>"`) so nothing is
+  lost, THEN write the new body: `"$AGENT_OS_PYTHON" -m agent_os.issues update N --body-file <file>`.
 - A feature, or a task/bug spanning more than one module or more than one reviewable pull request:
   create sub-issues, one per reviewable piece of work --
-  `__ISSUES_CLI__ create --type task|bug --title T --parent N --body-file
-  <file>` -- then move each one into refine: `__ISSUES_CLI__ move <child>
+  `"$AGENT_OS_PYTHON" -m agent_os.issues create --type task|bug --title T --parent N --body-file
+  <file>` -- then move each one into refine: `"$AGENT_OS_PYTHON" -m agent_os.issues move <child>
   refine`. Never rewrite a feature's own body; a feature has no template shape to conform to.
   Once every child exists, take the ORIGINAL's own refine label off so it is never refined a second
-  time: `__AGENT_OS_LIB_CLI__ project-value labels.refine` prints the exact label
-  spelling to remove, then `__ISSUES_CLI__ update N --remove-label <that
+  time: `"$AGENT_OS_PYTHON" -m agent_os.lib project-value labels.refine` prints the exact label
+  spelling to remove, then `"$AGENT_OS_PYTHON" -m agent_os.issues update N --remove-label <that
   label>`.
 
 STAGE THE WORK -- EVERY BODY YOU WRITE OR REWRITE NEEDS A WELL-FORMED `## Stages` SECTION
@@ -662,7 +670,7 @@ EVERY BODY YOU WRITE
   around a rule you were told to respect.
 
 AFTER WRITING, VALIDATE EVERYTHING YOU WROTE
-`__ISSUES_CLI__ validate <N>` on every issue you wrote or rewrote -- every one
+`"$AGENT_OS_PYTHON" -m agent_os.issues validate <N>` on every issue you wrote or rewrote -- every one
 must print `ok`. One that still fails after your own pass is a doubt (below), never something you
 leave silently broken.
 
@@ -675,7 +683,7 @@ what shape you chose and why, the list of issues you wrote or rewrote with each 
 and a `## Doubts` block if you have one (omit it when you have none), written the way the paragraph
 below describes. When there is a doubt, the line right after the marker is `@__HUMAN_LOGIN__` on
 its own, so it reaches the human's GitHub mentions, and you then run
-`__ISSUES_CLI__ move N blocked-on-human`. Otherwise every refined issue stays
+`"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Otherwise every refined issue stays
 `status:refine`, waiting for the human or the mechanical promotion to move it on to `status:ready`
 -- you never set that label yourself.
 
@@ -706,12 +714,6 @@ esac
 # (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 RULES=${RULES//__HUMAN_LOGIN__/$(agent_project_value human_login)}
 RULES=${RULES//__HUMAN_MESSAGE_RULES__/$("$agent_python" -m agent_os.lib human-message-rules)}
-# The tracker CLI and the config reader, as an absolute interpreter plus the module: a role's
-# shell does not carry this package's `bin/` on its PATH, and a prompt cannot name a shell
-# variable. One substitution, so the command an agent is told to run is the command the
-# mechanism itself runs (`agent_os/bin/_python.sh`).
-RULES=${RULES//__ISSUES_CLI__/$(agent_os_issues_cli)}
-RULES=${RULES//__AGENT_OS_LIB_CLI__/$(agent_os_lib_cli)}
 # Which commands write something shared is the project's own knowledge, never the mechanism's: one
 # list in `project.never_run`, rendered into both blocks above rather than spelled twice in them
 # (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).

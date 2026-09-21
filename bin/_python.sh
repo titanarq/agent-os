@@ -48,9 +48,9 @@ agent_os_host_root() {
   dirname "$agent_os_dir"
 }
 
-# What the injected RULES blocks must name so an agent can actually run the tracker CLI and the
-# config reader: an absolute interpreter plus the module, because no role's shell has this
-# package's `bin/` on its PATH (the console scripts in `pyproject.toml` exist for a host that
-# would rather put them there).
-agent_os_issues_cli() { printf '%s -m agent_os.issues\n' "$(agent_os_python)"; }
-agent_os_lib_cli() { printf '%s -m agent_os.lib\n' "$(agent_os_python)"; }
+# How the injected RULES blocks name the mechanism's own CLIs: `"$AGENT_OS_PYTHON" -m
+# agent_os.<module>`, written literally in the prompt and never substituted. Every driver EXPORTS
+# that variable, so the agent's own shell resolves it to the same interpreter the driver uses --
+# and the prompt itself stays free of any absolute path, which would carry the HOST's directory
+# name into the one text that must name no project (`agent_os/tests/test_agent_task.py`'s
+# host-literal assertion).

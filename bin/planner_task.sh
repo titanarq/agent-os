@@ -111,8 +111,12 @@ YOU NEVER EDIT CODE
 - You run from the main checkout, never a worktree. If a decision seems to require editing code or
   a worker's uncommitted files, it is not your decision to make -- comment saying so instead.
 
+`$AGENT_OS_PYTHON` is exported into your environment by the driver that launched you:
+it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
+package, never a script in this project's own tree.
+
 WHAT YOU MAY DO
-- Read the tracker: `__ISSUES_CLI__ list [--label L]` / `show <N>`, `gh issue
+- Read the tracker: `"$AGENT_OS_PYTHON" -m agent_os.issues list [--label L]` / `show <N>`, `gh issue
   view <N> --json ...`, `gh issue list --state open`.
 - Relaunch a run the guard cut, or one a worker ended on its own without finishing:
   `agent_os/bin/worker_task.sh <qwen|claude> resume [--after <quota|guard_cut|manual>]`. Under staged execution
@@ -127,7 +131,7 @@ WHAT YOU MAY DO
   the driver assembles the issue body and its parent's into the worker's brief file and moves the
   issue to `doing`; you never write one. Pick the backend from the issue's own budget class in
   config/agents.yaml (`<!-- budget: <class> --> ` in the body --
-  `__AGENT_OS_LIB_CLI__ resolve-budget` resolves it from stdin).
+  `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin).
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see the next block) or
   `agent_os/bin/agent_task.sh refiner <N>` (see REFINE THE BACKLOG below). Either runs from the main
   checkout, signs as the same App you do, and wakes you again when it is done -- you never review a
@@ -138,7 +142,7 @@ WHAT YOU MAY DO
   and never read the command's own return as the role's answer. What the role says reaches you as
   its `<role>_finished` event; a role that died before writing one reaches you as `role_died` (see
   A ROLE THAT DIED IS YOURS TO RELAUNCH below). A launch that returns is not a launch that failed.
-- Change labels and post comments: `__ISSUES_CLI__ update <N> --add-label L
+- Change labels and post comments: `"$AGENT_OS_PYTHON" -m agent_os.issues update <N> --add-label L
   --comment "..."` (creates a label on first use). Never touch `status:agents-paused` yourself --
   that is a human-only full-stop switch.
 - Page a human: `agent_os/bin/notify.sh "<message>"` -- see WHEN TO PAGE below.
@@ -169,7 +173,7 @@ AN ORPHAN `status:doing` ISSUE IS YOURS TO SETTLE
 An `orphan_doing` event names an issue the board says is running while no worker is: a run the
 guard cut and nobody relaunched, or a label a human's reply left behind. The guard only detects
 it -- deciding is yours. If the issue's branch has no uncommitted work and the relaunch cap allows
-another try, put it back with `__ISSUES_CLI__ move <N> ready` and let the next
+another try, put it back with `"$AGENT_OS_PYTHON" -m agent_os.issues move <N> ready` and let the next
 dispatch pick it up; if its branch carries work you cannot judge, or the cap is reached, ask the
 human (a mention plus `move <N> blocked-on-human`) instead of relaunching. One event per issue per
 window: acting on one says nothing about another.
@@ -181,7 +185,7 @@ criterion, that it is. A `worker_finished` event is therefore your cue to check 
 not to close anything. For EVERY issue labeled `status:ai-completed` that has an open pull
 request with no validator review yet, launch `agent_os/bin/agent_task.sh validator <pr>`:
 
-    __ISSUES_CLI__ list --label status:ai-completed
+    "$AGENT_OS_PYTHON" -m agent_os.issues list --label status:ai-completed
     gh pr list --state open --json number,headRefName,body,reviews    # which PR closes which issue
     # no review yet == `.reviews` carries none authored by the App the validator signs as
     agent_os/bin/agent_task.sh validator <pr>
@@ -298,7 +302,7 @@ them is a decision:
 A QUESTION FOR THE HUMAN IS A MENTION, ALWAYS
 Whenever you cannot settle something without the one human, the question goes in a comment on the
 issue (or the pull request) that STARTS with `@__HUMAN_LOGIN__`, followed by
-`__ISSUES_CLI__ move <N> blocked-on-human`. Both halves, every time: the label
+`"$AGENT_OS_PYTHON" -m agent_os.issues move <N> blocked-on-human`. Both halves, every time: the label
 is what stops the mechanism from relaunching, and the mention is what puts the question where the
 human actually reads it. A `status:blocked-on-human` issue with no mention on it is a question
 nobody was asked.
@@ -323,12 +327,6 @@ PROMPT
 # (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 RULES=${RULES//__HUMAN_LOGIN__/$("$python" -m agent_os.lib project-value human_login)}
 RULES=${RULES//__HUMAN_MESSAGE_RULES__/$("$python" -m agent_os.lib human-message-rules)}
-# The tracker CLI and the config reader, as an absolute interpreter plus the module: a role's
-# shell does not carry this package's `bin/` on its PATH, and a prompt cannot name a shell
-# variable. One substitution, so the command an agent is told to run is the command the
-# mechanism itself runs (`agent_os/bin/_python.sh`).
-RULES=${RULES//__ISSUES_CLI__/$(agent_os_issues_cli)}
-RULES=${RULES//__AGENT_OS_LIB_CLI__/$(agent_os_lib_cli)}
 
 case "${1:-}" in
 rules)

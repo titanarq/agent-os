@@ -19,6 +19,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent_os import lib as agent_lib
+from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     REQUIRED_SECTIONS,
     STATES,
@@ -66,6 +67,11 @@ from agent_os.lib import (
     worker_environment_rules,
     worktree_path,
 )
+
+# The HOST project this suite runs inside: the directory the package sits in. The mechanism's
+# own files are under AGENT_OS_DIR; `config/agents.yaml` and the module docs are the host's,
+# under ROOT (#508).
+ROOT = AGENT_OS_DIR.parent
 
 
 def _write(path: pathlib.Path, text: str) -> pathlib.Path:
@@ -1220,9 +1226,20 @@ def test_real_config_forbids_every_file_inside_the_m2_stamp_until_the_cut():
     # definition rather than a copy of it: every tracked file under `METRICS_SOURCES` and every
     # yaml hashed into the metrics `cfg` digest. A source added to the fingerprint without a
     # matching entry here fails. Delete this test together with the entries after 2026-10-01.
-    from roedor import config as roedor_config
+    #
+    # THE ONE TEST IN THIS SUITE THAT NEEDS THE HOST, and it needs the host's own interpreter to
+    # import it: `roedor.config` pulls the host's dependency set, which the mechanism's virtualenv
+    # does not carry, by construction (#508). So it is SKIPPED on the mechanism's interpreter and
+    # runs only where the host package is importable -- which means the m2 freeze is not actually
+    # guarded by either suite until this assertion is moved into the host's own, the sibling task
+    # #508 leaves open. Named out loud rather than left as a green tick over nothing.
+    roedor_config = pytest.importorskip(
+        "roedor.config",
+        reason="the host package is not importable here -- this assertion belongs in the host's "
+        "own suite (a sibling task of #507)",
+    )
 
-    root = pathlib.Path(__file__).resolve().parents[1]
+    root = ROOT
     stamped = [
         str(path.relative_to(root))
         for source in roedor_config.METRICS_SOURCES
@@ -2046,7 +2063,7 @@ def test_the_validators_fallback_records_that_it_counts_as_the_validators_approv
     # The human's decision of 2026-09-18, written where the declaration is: a review produced by
     # the fallback counts as the validator's approval for the merge gate. Asserted on the file's
     # own text because the decision is a sentence, and the sentence is the deliverable.
-    text = (pathlib.Path(agent_lib.__file__).parent.parent / "config" / "agents.yaml").read_text()
+    text = (ROOT / "config" / "agents.yaml").read_text()
     validator_block = text.split("  validator:", 1)[1].split("  refiner:", 1)[0]
     assert "COUNTS AS THE VALIDATOR'S APPROVAL" in validator_block
     assert "2026-09-18" in validator_block
@@ -2234,7 +2251,7 @@ def test_the_ttl_the_decision_uses_is_the_configured_one_not_a_literal(tmp_path)
     # Same verdict, same age, two configs: one whose TTL the verdict is inside and one whose it is
     # past. The answer moves with the file, which is what "a threshold lives in config" means.
     config = tmp_path / "agents.yaml"
-    text = (pathlib.Path(agent_lib.__file__).parent.parent / "config" / "agents.yaml").read_text()
+    text = (ROOT / "config" / "agents.yaml").read_text()
     config.write_text(
         re.sub(
             r"^  quota_verdict_ttl_minutes: .*$",

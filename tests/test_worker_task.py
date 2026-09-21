@@ -1889,14 +1889,15 @@ def _staged_environment(
     for subject in subjects:
         _git("commit", "-q", "--allow-empty", "-m", subject, cwd=worktree)
 
-    # The driver points PYTHONPATH at the worker's own checkout before launching anything, so
-    # `scripts.agent_lib` has to resolve inside this throwaway tree as well -- without this it
-    # would fall back to the editable install and the run would be testing another checkout's
-    # code. Excluded from git so it never shows up as work the worker left behind.
+    # The driver points PYTHONPATH at the worker's own checkout before launching anything, so a
+    # tree that has to look like a checkout of this repository carries the mechanism where this
+    # one does. Since #508 the mechanism resolves through its OWN interpreter and this link is no
+    # longer what makes `agent_os.lib` importable -- it keeps the throwaway tree shaped like the
+    # real one. Excluded from git so it never shows up as work the worker left behind.
     (worktree / "agent_os").symlink_to(AGENT_OS_DIR)
     exclude = worktree / ".git" / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
-    exclude.write_text(f"{exclude.read_text() if exclude.is_file() else ''}\nscripts\n")
+    exclude.write_text(f"{exclude.read_text() if exclude.is_file() else ''}\nagent_os\n")
 
     cache = tmp_path / "cache"
     cache.mkdir()

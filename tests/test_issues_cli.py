@@ -210,7 +210,7 @@ def test_repo_name_prefers_the_env_variable_over_the_config_and_never_shells_out
     monkeypatch.setenv("AGENT_OS_GH_REPO", "other-owner/other-name")
     with (
         patch.object(issues, "load_project", return_value=_project(repo="owner/name")),
-        patch("issues.subprocess.run") as run,
+        patch("agent_os.issues.subprocess.run") as run,
     ):
         assert issues.repo_name() == "other-owner/other-name"
         run.assert_not_called()
@@ -222,7 +222,7 @@ def test_repo_name_reads_project_repo_from_the_config_when_no_variable_is_set(mo
     monkeypatch.delenv("AGENT_OS_GH_REPO", raising=False)
     with (
         patch.object(issues, "load_project", return_value=_project(repo="owner/name")),
-        patch("issues.subprocess.run") as run,
+        patch("agent_os.issues.subprocess.run") as run,
     ):
         assert issues.repo_name() == "owner/name"
         run.assert_not_called()
@@ -232,7 +232,9 @@ def test_repo_name_falls_back_to_gh_repo_view_only_when_neither_is_set(monkeypat
     monkeypatch.delenv("AGENT_OS_GH_REPO", raising=False)
     with (
         patch.object(issues, "load_project", return_value=_project(repo="")),
-        patch("issues.subprocess.run", return_value=_completed(stdout="owner/name\n")) as run,
+        patch(
+            "agent_os.issues.subprocess.run", return_value=_completed(stdout="owner/name\n")
+        ) as run,
     ):
         assert issues.repo_name() == "owner/name"
         assert run.call_args[0][0][:2] == ["gh", "repo"]
@@ -240,7 +242,7 @@ def test_repo_name_falls_back_to_gh_repo_view_only_when_neither_is_set(monkeypat
 
 def test_the_real_config_names_the_repository_this_tracker_runs_against(monkeypatch):
     monkeypatch.delenv("AGENT_OS_GH_REPO", raising=False)
-    with patch("issues.subprocess.run") as run:
+    with patch("agent_os.issues.subprocess.run") as run:
         assert issues.repo_name() == load_project().repo
         run.assert_not_called()
 
@@ -284,12 +286,12 @@ def test_fixed_labels_read_the_real_config_and_cover_every_module_doc():
 
 
 def test_gh_json_parses_success():
-    with patch("issues.subprocess.run", return_value=_completed(stdout='{"a": 1}')):
+    with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout='{"a": 1}')):
         assert issues.gh_json("issue", "view", "1") == {"a": 1}
 
 
 def test_gh_json_returns_none_for_empty_stdout():
-    with patch("issues.subprocess.run", return_value=_completed(stdout="")):
+    with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout="")):
         assert issues.gh_json("label", "create", "x") is None
 
 
@@ -299,8 +301,8 @@ def test_gh_json_retries_on_rate_limit_then_succeeds():
         _completed(returncode=0, stdout='{"ok": true}'),
     ]
     with (
-        patch("issues.subprocess.run", side_effect=responses) as run,
-        patch("issues.time.sleep") as sleep,
+        patch("agent_os.issues.subprocess.run", side_effect=responses) as run,
+        patch("agent_os.issues.time.sleep") as sleep,
     ):
         assert issues.gh_json("issue", "list") == {"ok": True}
         assert run.call_count == 2
@@ -310,7 +312,7 @@ def test_gh_json_retries_on_rate_limit_then_succeeds():
 def test_gh_json_exits_on_non_rate_limit_failure():
     with (
         patch(
-            "issues.subprocess.run",
+            "agent_os.issues.subprocess.run",
             return_value=_completed(returncode=1, stderr="422 Validation failed"),
         ),
         pytest.raises(SystemExit),
@@ -325,7 +327,10 @@ def test_ensure_labels_creates_only_missing(monkeypatch):
         calls.append(args)
         return _completed(returncode=0, stdout="")
 
-    with patch("issues.subprocess.run", side_effect=fake_run), patch("issues.time.sleep"):
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=fake_run),
+        patch("agent_os.issues.time.sleep"),
+    ):
         cache = {"type:epic"}
         issues.ensure_labels("owner/repo", ["type:epic", "type:feature", "p1"], cache)
 
@@ -337,8 +342,8 @@ def test_ensure_labels_creates_only_missing(monkeypatch):
 
 def test_add_sub_issue_uses_plural_endpoint_and_typed_field():
     with (
-        patch("issues.subprocess.run", return_value=_completed(stdout="{}")) as run,
-        patch("issues.time.sleep"),
+        patch("agent_os.issues.subprocess.run", return_value=_completed(stdout="{}")) as run,
+        patch("agent_os.issues.time.sleep"),
     ):
         issues.add_sub_issue("owner/repo", 10, 999)
     args = run.call_args[0][0]
@@ -350,8 +355,8 @@ def test_add_sub_issue_uses_plural_endpoint_and_typed_field():
 
 def test_remove_sub_issue_uses_singular_endpoint_and_delete():
     with (
-        patch("issues.subprocess.run", return_value=_completed(stdout="{}")) as run,
-        patch("issues.time.sleep"),
+        patch("agent_os.issues.subprocess.run", return_value=_completed(stdout="{}")) as run,
+        patch("agent_os.issues.time.sleep"),
     ):
         issues.remove_sub_issue("owner/repo", 10, 999)
     args = run.call_args[0][0]
@@ -363,9 +368,10 @@ def test_remove_sub_issue_uses_singular_endpoint_and_delete():
 def test_create_issue_sends_labels_as_array_fields():
     with (
         patch(
-            "issues.subprocess.run", return_value=_completed(stdout='{"number": 1, "id": 2}')
+            "agent_os.issues.subprocess.run",
+            return_value=_completed(stdout='{"number": 1, "id": 2}'),
         ) as run,
-        patch("issues.time.sleep"),
+        patch("agent_os.issues.time.sleep"),
     ):
         result = issues.create_issue("owner/repo", "Title", "Body", ["type:epic", "fase-3"])
     args = run.call_args[0][0]
@@ -378,18 +384,18 @@ def test_find_by_key_matches_exact_key_only():
         {"number": 1, "body": "text\n\n<!-- key: fase-3-old -->"},
         {"number": 2, "body": "text\n\n<!-- key: fase-3 -->"},
     ]
-    with patch("issues.gh_json", return_value=rows):
+    with patch("agent_os.issues.gh_json", return_value=rows):
         assert issues.find_by_key("owner/repo", "fase-3") == 2
 
 
 def test_find_by_key_returns_none_when_absent():
-    with patch("issues.gh_json", return_value=[]):
+    with patch("agent_os.issues.gh_json", return_value=[]):
         assert issues.find_by_key("owner/repo", "missing-key") is None
 
 
 def test_sync_entry_dry_run_never_calls_gh():
     entry = {"key": "fase-3", "type": "Epic", "title": "Fase 3", "state": "Doing"}
-    with patch("issues.subprocess.run") as run:
+    with patch("agent_os.issues.subprocess.run") as run:
         verb = issues.sync_entry("owner/repo", entry, {}, set(), dry_run=True)
     run.assert_not_called()
     assert verb is None
@@ -432,7 +438,7 @@ def test_the_shipped_templates_carry_the_front_matter_github_needs(name):
 
 
 def test_create_with_a_template_and_no_title_prints_the_scaffold_and_creates_nothing(capsys):
-    with patch("issues.subprocess.run") as run:
+    with patch("agent_os.issues.subprocess.run") as run:
         issues.cmd_create(
             argparse.Namespace(
                 type=None,

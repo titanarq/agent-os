@@ -146,8 +146,8 @@ def test_the_validators_rules_carry_the_review_contract():
     rules = result.stdout.split("--- rules ---", 1)[1]
     assert "gh pr review <pr> --approve" in rules
     assert "--request-changes" in rules
-    assert "issues.py move N review" in rules
-    assert "issues.py move N blocked-on-human" in rules
+    assert '"$AGENT_OS_PYTHON" -m agent_os.issues move N review' in rules
+    assert '"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human' in rules
     # The three things it may never do, each one a line in the injected block.
     assert "You never edit, stage or commit a file anywhere" in rules
     assert "You never merge" in rules
@@ -227,7 +227,7 @@ def test_the_refiners_rules_carry_the_split_vs_rewrite_contract():
     assert "rewrite its body" in rules
     assert "create sub-issues" in rules
     assert "<!-- refiner-summary -->" in rules
-    assert "issues.py move N blocked-on-human" in rules
+    assert '"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human' in rules
     # It never sets status:ready itself -- only the planner or the human does
     # (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     # state.md).
@@ -294,7 +294,7 @@ def test_the_planner_is_told_what_an_orphan_doing_event_means():
     # the guard detects it, the planner decides -- back to ready, or a question for the human.
     rules = (AGENT_OS_DIR / "bin" / "planner_task.sh").read_text()
     assert "orphan_doing" in rules
-    assert "issues.py move <N> ready" in rules
+    assert '"$AGENT_OS_PYTHON" -m agent_os.issues move <N> ready' in rules
     assert "move <N> blocked-on-human" in rules
 
 
