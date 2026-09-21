@@ -28,6 +28,7 @@ cached in `.cache/gh_app_token_<slug>.json` and reused while more than 5 minutes
 `--who` mints a token (needed to reach `GET /app` for the bot's numeric id) so it fails the same
 way `--app <slug>` alone does when the secrets file is missing: one line on stderr, exit 2.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,8 +65,10 @@ def fail(message: str) -> NoReturn:
 def load_secrets(slug: str) -> tuple[dict, Path]:
     path = SECRETS_DIR / f"{slug}.json"
     if not path.is_file():
-        fail(f"no secrets file at {path} -- create .secrets/gh_apps/{slug}.json first "
-             f"(see scratchpad/restructure/github_apps_setup.md)")
+        fail(
+            f"no secrets file at {path} -- create .secrets/gh_apps/{slug}.json first "
+            f"(see scratchpad/restructure/github_apps_setup.md)"
+        )
     try:
         secrets = json.loads(path.read_text())
     except ValueError as exc:
@@ -123,18 +126,24 @@ def api_list(method: str, path: str, token: str) -> list:
     return result
 
 
-def discover_installation_id(app_jwt: str, org: str | None, secrets: dict, secrets_path: Path) -> int:
+def discover_installation_id(
+    app_jwt: str, org: str | None, secrets: dict, secrets_path: Path
+) -> int:
     installations = api_list("GET", "/app/installations", app_jwt)
     if org:
         matches = [i for i in installations if (i.get("account") or {}).get("login") == org]
         if not matches:
-            fail(f"no installation found for org '{org}' (installations seen: "
-                 f"{[((i.get('account') or {}).get('login')) for i in installations]})")
+            fail(
+                f"no installation found for org '{org}' (installations seen: "
+                f"{[((i.get('account') or {}).get('login')) for i in installations]})"
+            )
     else:
         matches = installations
         if len(matches) != 1:
-            fail(f"{len(matches)} installations found; pass --org to pick one "
-                 f"(seen: {[((i.get('account') or {}).get('login')) for i in installations]})")
+            fail(
+                f"{len(matches)} installations found; pass --org to pick one "
+                f"(seen: {[((i.get('account') or {}).get('login')) for i in installations]})"
+            )
     installation_id = matches[0]["id"]
     secrets["installation_id"] = installation_id
     secrets_path.write_text(json.dumps(secrets, indent=2) + "\n")
@@ -165,12 +174,15 @@ def mint_token(slug: str, org: str | None) -> str:
     secrets, secrets_path = load_secrets(slug)
     app_jwt = build_app_jwt(secrets)
     installation_id = secrets.get("installation_id") or discover_installation_id(
-        app_jwt, org, secrets, secrets_path)
+        app_jwt, org, secrets, secrets_path
+    )
     result = api_dict("POST", f"/app/installations/{installation_id}/access_tokens", app_jwt)
     token = result["token"]
     expires_at = datetime.fromisoformat(result["expires_at"]).timestamp()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path(slug).write_text(json.dumps({"token": token, "expires_at": expires_at}, indent=2) + "\n")
+    cache_path(slug).write_text(
+        json.dumps({"token": token, "expires_at": expires_at}, indent=2) + "\n"
+    )
     return token
 
 
@@ -200,7 +212,9 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--bot-email", action="store_true")
     mode.add_argument("--bot-name", action="store_true")
-    mode.add_argument("--who", action="store_true", help="token + bot-name + bot-email, one per line")
+    mode.add_argument(
+        "--who", action="store_true", help="token + bot-name + bot-email, one per line"
+    )
     args = parser.parse_args()
 
     if args.bot_name:

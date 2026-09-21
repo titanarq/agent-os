@@ -670,7 +670,12 @@ def _event_subject(subject: str) -> str:
 
 
 def write_event(
-    kind: str, subject: str, *, detail: str = "", main: Path = HOST_ROOT, now: datetime | None = None
+    kind: str,
+    subject: str,
+    *,
+    detail: str = "",
+    main: Path = HOST_ROOT,
+    now: datetime | None = None,
 ) -> Path:
     """One event file, `<utc-timestamp>-<kind>-<subject>`, whose content is the one line the
     planner will be given as context. Two events of the same kind and subject inside one second
@@ -698,7 +703,9 @@ def pending_events(main: Path = HOST_ROOT) -> list[Path]:
     return sorted((path for path in directory.iterdir() if path.is_file()), key=lambda p: p.name)
 
 
-def latest_event_at(kind: str, *, subject: str | None = None, main: Path = HOST_ROOT) -> datetime | None:
+def latest_event_at(
+    kind: str, *, subject: str | None = None, main: Path = HOST_ROOT
+) -> datetime | None:
     """When an event of this kind was last written, consumed or not. The rate limit on
     `idle_dispatchable` is about how often the planner is *woken* for it, so consuming one must
     not reset the clock. With `subject`, only events about that subject count -- `orphan_doing` is
@@ -964,7 +971,9 @@ class TickResult:
     quota_changed: bool = False
 
 
-def _tick_backend(backend: str, *, main: Path = HOST_ROOT, now: datetime | None = None) -> TickResult:
+def _tick_backend(
+    backend: str, *, main: Path = HOST_ROOT, now: datetime | None = None
+) -> TickResult:
     paths = worker_paths(backend, main)
     now = now or datetime.now()  # noqa: DTZ005 -- naive, matches progress.log's own timestamps
 
@@ -1683,7 +1692,9 @@ def closed_reconcile_since(*, main: Path = HOST_ROOT, now: datetime) -> datetime
     return last - timedelta(days=1)
 
 
-def closed_issues_with_status_label(*, main: Path = HOST_ROOT, now: datetime) -> list[tuple[int, str]]:
+def closed_issues_with_status_label(
+    *, main: Path = HOST_ROOT, now: datetime
+) -> list[tuple[int, str]]:
     """Every issue CLOSED SINCE THE LAST PASS that still carries a `status:*` label, with the
     labels it is stuck on. GitHub's own auto-close on a merged PR's `Closes #N` never goes through
     `issues.py move`, so the label and the board column stay wherever the last move left them --
