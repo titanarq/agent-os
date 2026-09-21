@@ -1,8 +1,8 @@
 # The agent operating system, packaged so it can be lifted out of a host project as one directory
 # (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
 # Its own interpreter, its own dependencies, its own tests: nothing here is resolved through the
-# host project's editable install, which is what made `from scripts.agent_lib import ...` work only
-# inside roedor.
+# host project's editable install, which is what made the mechanism's own cross-module imports work
+# in exactly one host and nowhere else.
 [project]
 name = "agent-os"
 version = "0.1.0"

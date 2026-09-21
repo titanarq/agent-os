@@ -1,0 +1,1842 @@
+"""Shared library for the agent guard and the driver: `config/agents.yaml` task classes, an
+issue body's `<!-- budget: --> ` block, and the jsonl event stream both backends emit.
+
+Not a script an agent runs directly for its own sake -- `worker_task.sh`'s `usage_report()` calls
+into this via `usage-report` below so there is exactly one implementation of "how big is a turn"
+and "did the run fail", shared between the driver's `status`/`collect` output and the guard's
+budget check (`agent_os/guard.py`). Read-only: never writes anything.
+
+    python -m agent_os.lib usage-report <events.jsonl> [<issue-body-file>]
+        # the context ceiling comes from the issue body's own `<!-- budget: --> ` class (#483) --
+        # omitted or unreadable, the report says its budget is unresolved instead of guessing one
+    echo "$issue_body" | python -m agent_os.lib resolve-budget [--field F]
+        # prints the class name on stdout and exits 0, or one line on stderr and exits 1 --
+        # `worker_task.sh start` refuses the dispatch on a non-zero exit. `--field max_cost_usd`
+        # prints that field of the resolved class instead of its name, and so does `--field
+        # max_total_tokens`, the token ceiling a Qwen class is actually cut on (#387).
+    python -m agent_os.lib planner-run-row <log> --ts T --context C --model M
+        # one `.cache/planner/runs.tsv` line, read off the log's last `result` event.
+    python -m agent_os.lib role-class validator [--field model|name|max_context]
+    python -m agent_os.lib role-app validator
+        # the one class carrying `role: validator`, and the App slug that role signs as --
+        # what `agent_task.sh <role>` resolves before it runs anything.
+    python -m agent_os.lib role-backend validator [--cache-dir D]
+        # the launch gate (#425), one TAB-separated line: backend, model, `yes`/`no` for "this is
+        # a substituted run", the ceilings that bind it, and the sentence saying why. The verdict
+        # it decides on is the guard's own persisted one
+        # (`.cache/agent_guard_<backend>.json`, `last_quota_status`), never an agent's claim, and
+        # one older than `mechanism.quota_verdict_ttl_minutes` reads as unknown -- which launches
+        # the class's own backend, because a start the quota refuses costs one page while a
+        # substitution on a stale verdict costs a review the merge gate rests on.
+    python -m agent_os.lib project-value notify_topic_file
+    python -m agent_os.lib project-value --path worktrees.claude
+        # one field of config/agents.yaml's `project:` section, for the shell drivers; `a.b`
+        # reaches into a mapping and `--path` resolves it against the repository root.
+    python -m agent_os.lib planner-value relaunch_cap
+        # one field of config/agents.yaml's `planner:` section, for the shell drivers.
+    python -m agent_os.lib human-message-rules
+        # the WRITING TO THE HUMAN rule, `project.human_language` filled in -- injected via
+        # __HUMAN_MESSAGE_RULES__ into every role's RULES block, so none of them carries its own
+        # copy of the wording.
+    python -m agent_os.lib forbidden-paths-rules
+    python -m agent_os.lib forbidden-paths-regex
+        # the two halves of the ownership rule's FIRST list, both rendered from
+        # `project.forbidden_paths` and nothing else: the "FILES YOU MUST NOT TOUCH" paragraph
+        # worker_task.sh injects via __FORBIDDEN_PATHS_RULES__, and the `grep -E` pattern its
+        # `collect` audits a run's changed paths with. Both print nothing when the list is empty.
+    python -m agent_os.lib mechanism-paths-rules
+    python -m agent_os.lib mechanism-paths-regex
+        # the same two halves over the SECOND list, `mechanism.own_paths` -- the mechanism's own
+        # files, which a worker's diff may touch only when the issue body names the path. The
+        # paragraph is the second of the two the ownership rule is told in and points back at the
+        # first, so worker_task.sh injects the pair together or not at all. Both print nothing
+        # when the list is empty, exactly as the two above do.
+    python -m agent_os.lib never-run-rules
+        # the "COMMANDS YOU MUST NEVER RUN" paragraph, rendered from `project.never_run` with each
+        # command's own reason -- ONE list behind the worker's, the validator's and the refiner's
+        # RULES, injected via __NEVER_RUN_RULES__. Prints nothing when the list is empty.
+    python -m agent_os.lib worker-environment
+        # one `KEY<TAB>VALUE` line per `project.worker_environment` entry -- worker_task.sh
+        # exports these into the backend process before launching it (roedor: a read-only
+        # DATABASE_URL).
+    python -m agent_os.lib worker-environment-rules
+        # the environment paragraph worker_task.sh injects via __WORKER_ENVIRONMENT_RULES__,
+        # rendered from the same `project.worker_environment` the export loop reads -- names, never
+        # values. Prints nothing when the project exports nothing.
+    python -m agent_os.lib worktree-backends
+        # one backend name per line, from `project.worktrees` -- `worker_task.sh start` counts
+        # alive workers across every one of them for `planner.max_parallel_issues` (#374).
+    echo "$commit_subjects" | python -m agent_os.lib stages-completed
+        # one commit subject per line on stdin -- prints the highest completed stage N, 0 if none
+        # of them is a `stage N/M: <title>` commit (#375).
+    python -m agent_os.lib stage-titles <issue-body-file>
+        # one stage title per line, in order, from the issue's `## Stages` checklist -- empty
+        # output if the section is absent or has no checklist line (#375).
+    python -m agent_os.lib cumulative-cost <events.jsonl>...
+        # sum of `total_cost_usd` across an issue's stage jsonl logs (archived plus the live one),
+        # 4 decimals -- what `max_cost_usd` is checked against for the whole issue (#375).
+    python -m agent_os.lib cumulative-tokens <events.jsonl>...
+        # the same sum in tokens, as a plain integer the shell can compare arithmetically: what
+        # `max_total_tokens` is checked against for the whole issue, and the only one of the two
+        # ceilings a Qwen class can cross, because its `result` event reports no cost (#387).
+    python -m agent_os.lib quota-status <events.jsonl>
+        # `allowed` or `exhausted` for that run's own stream -- the gate `worker_task.sh` checks
+        # before chaining the next stage, the same verdict the guard's tick compares (#375).
+
+Verified against real recorded runs (`.cache/worker_claude.jsonl`, `.cache/worker_qwen.jsonl`,
+2026-09-14): Claude's `assistant`/`user` events carry a `timestamp` field and its `rate_limit_event`
+events carry `rate_limit_info.status` (`"allowed"`/`"rejected"`) per `unifiedWindows.<window>`; a
+quota-refused turn surfaces as a `result` event with `is_error: true` and `api_error_status: 429`
+(`subtype` stays misleadingly `"success"`). Qwen's events carry none of that -- no timestamp field,
+no `rate_limit_event`, no `api_error_status` -- so quota detection below is Claude-only by the data
+actually available, not by design choice.
+
+    docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md
+    docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import string
+import sys
+import textwrap
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+
+from agent_os.cli import host_root
+
+# The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
+# checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
+# `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
+# it is derived from this package's own location, which is what made the mechanism able to run
+# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# never-modified.md).
+HOST_ROOT = host_root()
+# `AGENTS_CONFIG_PATH` isolates a test from the repository's real config/agents.yaml, the same
+# way `WORKER_CACHE_DIR` isolates `worker_task.sh` from the real `.cache/` -- unset in every real
+# run, so production reads the one file everyone else in this module already points at. Needed
+# because `tests/test_worker_task.py` exercises `planner.max_parallel_issues` at more than one
+# value (#374), which a single real file can only ever pin to one.
+DEFAULT_AGENTS_CONFIG = pathlib.Path(
+    os.environ.get("AGENTS_CONFIG_PATH") or (HOST_ROOT / "config" / "agents.yaml")
+)
+
+# Same convention as `issues.py`'s `<!-- key: --> ` line (KEY_LINE_RE there).
+BUDGET_LINE_RE = re.compile(r"<!--\s*budget:\s*([a-z0-9][a-z0-9_-]*)\s*-->")
+
+
+# The mechanical state an issue is in, in the order it moves through them. `blocked-on-human`
+# is a detour from any of the others and `done` is terminal.
+STATES = ("refine", "ready", "doing", "blocked-on-human", "ai-completed", "review", "done")
+
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+# The three ceilings a class declares, named so a fallback can say which of them bind the
+# substituted run instead of leaving it to whoever reads the config next.
+CeilingName = Literal["max_context", "max_cost_usd", "max_total_tokens"]
+CEILING_NAMES: tuple[str, ...] = ("max_context", "max_cost_usd", "max_total_tokens")
+
+
+class RoleFallback(Strict):
+    """The backend a role runs on when its own backend's quota reads exhausted (#425).
+
+    Until this existed, the only route off an exhausted Claude quota was the planner redispatching
+    a WORKER whose class set `qwen_fallback_eligible: true` -- and the planner is itself a Claude
+    role, so on 2026-09-18 the mechanism stopped with seven `status:ready` issues and a free Qwen
+    allowance: the run rejected at 08:48:46Z in 497 ms was the thing that would have redispatched.
+    A fallback declared here is read by the LAUNCH of the role itself, before a turn is spent, so
+    an exhausted quota stops nothing that names a way round it.
+
+    `ceilings` says which of the class's own three ceilings bind the substituted run, because they
+    are not all backend-independent: `max_context` and `max_total_tokens` describe what the role
+    reads and how much of it there may be, which does not change with the backend that reads it,
+    while `max_cost_usd` sums a field Qwen's `result` event does not carry at all (#387) -- kept on
+    a Qwen run it is a ceiling nothing can cross, and a report built on it reads `0.00 USD` for a
+    run that cost tokens. Nothing gates a one-shot role's spend today, so this list is a
+    declaration for the day one does (and for the control plane's deviation report), not a limit
+    this file enforces."""
+
+    backend: Literal["qwen", "claude"]
+    model: str
+    ceilings: list[CeilingName] = list(CEILING_NAMES)
+
+    @field_validator("ceilings")
+    @classmethod
+    def non_empty_and_unrepeated(cls, value: list[str]) -> list[str]:
+        # An empty list would mean "no ceiling binds the substituted run", which is not a thing a
+        # project declares by accident; a repeated name is a config written by hand twice over.
+        if not value:
+            raise ValueError("must name at least one ceiling")
+        if len(set(value)) != len(value):
+            raise ValueError(f"names a ceiling twice: {value}")
+        return value
+
+
+class TaskClass(Strict):
+    # Which of the four headless roles this class configures (docs/adr/2026-09-14-a-pr-is-
+    # validated-by-a-validator-agent-against-the-issues-acceptance-criteria.md). A worker's class
+    # is picked by the issue's `<!-- budget: <class> -->` line and there may be many of them; the
+    # other three roles have exactly one class each, named after the role, which is how
+    # `agent_task.sh <role>` resolves its model without a second mapping.
+    role: Literal["worker", "validator", "refiner", "planner"] = "worker"
+    backend: Literal["qwen", "claude"]
+    model: str
+    max_context: int
+    max_cost_usd: float
+    # The issue-wide ceiling that always bites: Qwen's terminal `result` event reports
+    # `usage.total_tokens` and no `total_cost_usd`, so on a Qwen class the dollar ceiling above
+    # cannot be crossed and this one is the only live spend backstop (#387). Same scope as the
+    # dollars -- the whole issue, summed over its stage processes' archived plus live jsonl logs.
+    max_total_tokens: int
+    commit_warn_turns: int
+    commit_cut_turns: int
+    qwen_fallback_eligible: bool = False
+    # The backend this class's role runs on when its own backend's quota reads exhausted, or None
+    # for a class that declares no way round it -- which is every worker class today, and is what
+    # keeps the guard's `quota_exhausted_no_fallback` page meaningful (#425). Absent means the
+    # launch behaves exactly as it did before this field existed.
+    fallback: RoleFallback | None = None
+
+    @model_validator(mode="after")
+    def fallback_names_another_backend(self) -> TaskClass:
+        # A fallback to the backend whose quota is already exhausted is not a fallback: it would
+        # read as one in the config and substitute nothing, so the launch would spend a turn
+        # discovering what the declaration should have said.
+        if self.fallback is not None and self.fallback.backend == self.backend:
+            raise ValueError(
+                f"fallback names '{self.fallback.backend}', the class's own backend; "
+                "a fallback has to be a different one"
+            )
+        return self
+
+    @property
+    def allows_backend_fallback(self) -> bool:
+        """Whether anything authorises running this class on a backend other than its own: the
+        planner's redispatch of a worker (`qwen_fallback_eligible`, the 2026-09-14 ADR) or a role's
+        own declared fallback (#425). ONE predicate behind the guard's page and the launch gate, so
+        "could this have run somewhere else?" is never answered two ways: the
+        `quota_exhausted_no_fallback` page exists for the case where nothing can proceed without a
+        human, and a class with a way round it is not that case."""
+        return self.qwen_fallback_eligible or self.fallback is not None
+
+
+class LabelVocabulary(Strict):
+    """The mechanical state labels. Named here so a project that spells them differently changes
+    one file instead of the guard (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
+    and-configured-not-coded.md).
+
+    The first six are the states an issue moves through and exactly one of them is ever set
+    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    state.md). `agents_paused` is NOT one of them: it is the human-only full stop, lives on the
+    tracking epic, and `move` never adds or removes it."""
+
+    refine: str = "status:refine"
+    ready: str = "status:ready"
+    doing: str = "status:doing"
+    blocked_on_human: str = "status:blocked-on-human"
+    ai_completed: str = "status:ai-completed"
+    review: str = "status:review"
+    agents_paused: str = "status:agents-paused"
+    # NOT a state: a marker a human puts on a FEATURE (never a task/bug) to say its refined
+    # children may be promoted to `status:ready` mechanically, without a human looking at each one.
+    # `issues.py move` never adds or removes it, the same way it never touches `agents_paused`
+    # (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    auto_ready: str = "auto-ready"
+    # NOT a state either: the human (or the control-plane agent, which authenticates `gh` as the
+    # human) puts it on any open issue to wake the planner NOW, and the guard's tick removes it the
+    # same tick it reads it (#413). Only a label set by the human wakes anything -- set by one of
+    # the mechanism's own identities it is removed and ignored, so the planner cannot wake itself.
+    wake_planner: str = "wake:planner"
+
+    def label_for_state(self, state: str) -> str | None:
+        """`done` is the one state with no label of its own: it removes every state label and
+        closes the issue, so the closed state *is* the record."""
+        return None if state == "done" else getattr(self, state.replace("-", "_"))
+
+    @property
+    def state_labels(self) -> list[str]:
+        """The six mutually exclusive state labels, in state order. `move` strips every one of
+        them before adding the one it was asked for."""
+        return [self.label_for_state(state) for state in STATES if state != "done"]
+
+
+class NeverRunCommand(Strict):
+    """One command an agent must never run, and the reason why -- the reason travels with the
+    command because a prohibition nobody can justify is the first one a task talks itself out of
+    (`docs/AGENT_OS.md` §7 row (b): the same verb list was baked into three RULES blocks and could
+    drift between them). Rendered into every role's RULES from `project.never_run`; a project with
+    an empty list gets no such paragraph at all."""
+
+    command: str
+    reason: str
+
+    @field_validator("command", "reason")
+    @classmethod
+    def one_non_blank_line(cls, value: str) -> str:
+        # One line each: the rendering is a bullet per item, so a reason carrying a newline would
+        # break the paragraph it is injected into rather than fail loudly anywhere else.
+        if not value.strip() or "\n" in value:
+            raise ValueError("must be one non-blank line")
+        return value.strip()
+
+
+def _check_placeholders(key: str, template: str) -> None:
+    """Every way a template can be malformed, caught when the config LOADS instead of on the page.
+    A literal `{` in a Spanish sentence, or a `{}` someone copied from another language's
+    formatting, raises out of `str.format` -- and the only place that would have shown up is the
+    moment something needed to page, which is the worst moment to discover a typo (issue #366
+    review). `string.Formatter().parse` is exactly the parser `format` itself uses, so what it
+    accepts here is what will render there."""
+    try:
+        fields = [
+            field for _, field, _, _ in string.Formatter().parse(template) if field is not None
+        ]
+    except ValueError as malformed:
+        raise ValueError(f"message {key!r} is not a valid template: {malformed}") from malformed
+    for field in fields:
+        if not field:
+            raise ValueError(
+                f"message {key!r} uses a positional placeholder; pages are rendered by name, "
+                "so every placeholder must be spelled out (`{issue}`, not `{}`)"
+            )
+        if not field.isidentifier():
+            raise ValueError(
+                f"message {key!r} uses a placeholder {field!r} that is not a plain name"
+            )
+
+
+class HumanMessageError(Exception):
+    """A page the mechanism cannot write: `project.messages` has no such key, the template asks
+    for a field the call site does not have, or the template itself is malformed. One type for all
+    three, because every caller does the same thing with it -- says so and carries on, since by
+    the time anything pages, the state the page announces is already written."""
+
+
+class ProjectConfig(Strict):
+    """Everything that belongs to *this* project rather than to the mechanism: the repository,
+    the board, the tracking epic, where the identities and the notify topic live, and one
+    worktree per backend. No mechanism script may read any of it as a literal."""
+
+    repo: str
+    tracking_epic: int
+    board_number: int
+    secrets_dir: str = ".secrets/gh_apps"
+    planner_app: str = "planner"
+    # The GitHub login of the one human. A question addressed to them starts with `@<login>` so it
+    # reaches their mentions; the drivers substitute it into the RULES they inject, which is why no
+    # script under the mechanism spells a person's name.
+    human_login: str = ""
+    # The language everything addressed to the human is written in (`human_message_rules` below).
+    # Code, issue bodies and repository docs stay whatever AGENTS.md sets, regardless of this --
+    # this field is only about what an agent says TO the human, never about what it writes INTO
+    # the tracker.
+    human_language: str = "English"
+    notify_topic_file: str = ".secrets/ntfy_topic"
+    # One template per ntfy page, written in `human_language` above and rendered by
+    # `render_human_message` below. Empty by default, and a project that leaves it empty simply
+    # cannot page: the renderer refuses an unknown key rather than inventing a wording of its own
+    # (docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md).
+    messages: dict[str, str] = {}
+    # The project's own module names, one per `docs/modules/*.md`. `issues.py` turns them into the
+    # `module:<name>` half of the fixed label set it creates on the tracker; they used to be a list
+    # in that script (`docs/AGENT_OS.md` §7 row (c)). Empty by default: a project with no module
+    # vocabulary creates no `module:` label, it does not fall back to anyone else's.
+    modules: list[str] = []
+    # The project's own test runner, injected into the worker RULES as __TEST_COMMAND__ rather
+    # than a literal `scripts/test.sh` in the mechanism: the one door back to the owner role a
+    # read-only-by-default worker has (docs/adr/2026-09-15-workers-connect-read-only-by-default-
+    # and-reach-the-owner-only-through-the-test-runner.md).
+    test_command: str = "scripts/test.sh"
+    # Environment exported into every worker's own backend process before it starts (never the
+    # mechanism's own process) -- roedor uses this for a read-only DATABASE_URL so a worker
+    # connects to the shared Postgres read-only by default, without a project literal in
+    # worker_task.sh (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
+    # owner-only-through-the-test-runner.md).
+    worker_environment: dict[str, str] = {}
+    # The HOST PROJECT's protected paths: what an agent must never write in this project, as glob
+    # patterns relative to the repository root, and the ONE list behind both halves of this rule:
+    # `worker_task.sh` builds the audit regex that fails a run which touched one AND the "FILES
+    # YOU MUST NOT TOUCH" paragraph injected into the worker's prompt, so the two can no longer
+    # drift apart the way the prose list and the regex did (`docs/AGENT_OS.md` §7 rows (a) and
+    # (s)). A pattern is matched with fnmatch semantics, where `*` crosses `/`: `docs/adr/*`
+    # protects `docs/adr/2026-09-16-a-decision.md` too, as the prefix regex it replaces did, and
+    # matching it any narrower would silently unprotect every nested file under a protected
+    # directory. These hold regardless of what a brief says -- a brief naming one of them is a
+    # defect in the brief -- which is what separates them from the mechanism's own files
+    # (`MechanismConfig.own_paths` below), where the brief is what authorizes the edit. Empty by
+    # default: a project that protects nothing forbids nothing, and no mechanism script carries a
+    # path of its own
+    # (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    forbidden_paths: list[str] = []
+    # The subset of `forbidden_paths` that is a DELIVERY DIRECTORY rather than live configuration
+    # -- a place a PR is expected to add a file to, whose diff changes nothing any stamp or freeze
+    # protects (`config/proposals/*`, `docs/adr/*`) -- and so is exempt from condition 3 of the
+    # merge gate while staying on `forbidden_paths` itself, unconditional for a worker's brief
+    # (`docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4, issue #476).
+    # `forbidden_paths_merge_audit_regex` reads this as an EXCLUSION from `forbidden_paths`, never
+    # as a second list of what to audit, so a new `forbidden_paths` entry is audited at merge time
+    # by default and needs an entry here only for the rare delivery-directory case. Empty by
+    # default: a project with no such split audits its whole `forbidden_paths` at merge time,
+    # exactly as before this key existed.
+    # An entry here naming a path NOT on `forbidden_paths` is a silent no-op, deliberately not a
+    # load-time error (#516 review): `load_project()` backs every role this mechanism runs --
+    # the guard, the planner, every worker -- and a raise here would take all of them down over a
+    # typo or a stale entry in the one merge-time carve-out condition 3 reads. The real config's
+    # own entries are checked against drift by a test instead
+    # (`test_real_config_merge_audit_exempts_exactly_the_two_delivery_directories`), and a project
+    # assembling a synthetic config (a test fixture patching `forbidden_paths` down without also
+    # trimming this list) gets a config that still loads, with the stale entry simply excluded from
+    # nothing -- `forbidden_paths_merge_audit_regex` below only ever SUBTRACTS this set from
+    # `forbidden_paths`, so a member this list shares with nothing has no effect either way.
+    merge_audit_exempt_paths: list[str] = []
+
+    # Commands no role may run, each with the reason it is forbidden, rendered into the worker's,
+    # the validator's and the refiner's RULES from this one list (`docs/AGENT_OS.md` §7 row (b)).
+    # Empty renders no such paragraph, which is what a project whose database no agent can write
+    # wants.
+    never_run: list[NeverRunCommand] = []
+    worktrees: dict[str, str] = {}
+    # The absolute path of a backend CLI, by COMMAND NAME -- `qwen` and `claude` for the worker
+    # backends, and `claude` again for the role drivers, which run the same binary under the same
+    # key. Empty by default, and a name with no entry resolves to itself, which is the bare-name
+    # PATH lookup every driver did before: a project that sets nothing behaves exactly as it did.
+    # Why it exists: a dispatch from an unattended unit and a dispatch from a shell must resolve
+    # the SAME binary. On 2026-09-16 they did not -- `qwen` lives under nvm, the PATH the systemd
+    # user manager hands `roedor-guard.service` does not carry that directory, and the stage
+    # process died in under a second while the mechanical state called it a stage cut for not
+    # committing (#380, #381, #363).
+    executables: dict[str, str] = {}
+    # One GitHub App slug per backend: a worker's commits and comments are the App's, never the
+    # human's. The slug is the project's, not the mechanism's -- the drivers read it from here.
+    worker_apps: dict[str, str] = {}
+    # One GitHub App slug per non-worker role. A role with no entry here signs as `planner_app`:
+    # the validator and the refiner do exactly that until they have Apps of their own, which is a
+    # browser step for the human, so the day one exists is a line in this file and no code change
+    # (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
+    # criteria.md, "Identities").
+    role_apps: dict[str, str] = {}
+    labels: LabelVocabulary = LabelVocabulary()
+    # state -> the board column that mirrors it. A state mapped to null (blocked-on-human) keeps
+    # whatever column the item is in: being blocked says nothing about how far the work got.
+    board_columns: dict[str, str | None] = {}
+
+    @field_validator("messages")
+    @classmethod
+    def one_non_blank_line_per_message(cls, value: dict[str, str]) -> dict[str, str]:
+        # A page is a phone notification, not a letter: `notify.sh` posts one argument and ntfy
+        # renders it on one line, so a template carrying a newline would arrive mangled rather
+        # than fail anywhere a person would see it.
+        for key, template in value.items():
+            if not template.strip() or "\n" in template:
+                raise ValueError(f"message {key!r} must be one non-blank line")
+            _check_placeholders(key, template)
+        return {key: template.strip() for key, template in value.items()}
+
+
+class MechanismConfig(Strict):
+    """The mechanism's own configuration, which is NOT the host project's to write: `project:`
+    above holds what one project supplies, this holds what the mechanism is made of, so a second
+    project adopts the drivers and copies this section with them instead of inventing it
+    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md)."""
+
+    # The mechanism's own files -- the drivers, the shared library, the role prompts -- as globs
+    # relative to the repository root, matched with the same fnmatch semantics as
+    # `forbidden_paths`. The second of the two lists a worker's diff is audited against, and the
+    # conditional one: a worker may write these IN ITS WORKTREE when the issue body names the path
+    # as the target of the work, and never otherwise, because the tracking epic exists to change
+    # them and one unconditional list left the mechanism unable to develop itself (#363 did the
+    # work its brief named and then failed the merge gate on the rule the same driver enforces).
+    # Writing them in the main checkout stays forbidden by the rule that forbids writing there at
+    # all -- and that is also why editing them from a worktree cannot break the run: a stage runs
+    # the main checkout's copy of the driver
+    # (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+    # Empty by default, like every list in this config: a mechanism that names none of its own
+    # files audits none, and the paragraph a driver renders from an empty list is absent rather
+    # than empty.
+    own_paths: list[str] = []
+    # How long the guard's persisted verdict on a backend's quota stays believable, in minutes.
+    # Past it the launch of a role reads the verdict as UNKNOWN and runs the role's own backend:
+    # a start that the quota then refuses costs one refused run and the page that follows it,
+    # while a substitution made on a stale verdict costs a review the independence the merge gate
+    # rests on (#425). The bias is deliberate, and so is the number: the guard re-observes the
+    # verdict on every tick, five minutes apart, while a run of that backend is alive, so an hour
+    # means twelve ticks saw nothing to look at.
+    quota_verdict_ttl_minutes: int = 60
+
+
+class PlannerConfig(Strict):
+    """How often the planner may be woken (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-
+    and-an-idle-wake-is-rate-limited.md)."""
+
+    idle_wake_minutes: int = 120
+    max_runs_per_day: int = 12
+    # Stays false until the human has reviewed the refiner's dry run on three real issues (#349
+    # criterion 3). Flipping it is a human decision, never something a checkpoint does on its own
+    # (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    refiner_unattended: bool = False
+    # `WIP: cut by guard` commits since a branch's fork point at or above which `worker_task.sh
+    # resume` refuses to relaunch, read via `planner-value` below (#362).
+    relaunch_cap: int = 2
+    # How many issues may run at once across every backend, read via `planner-value` below and
+    # enforced by `worker_task.sh start`, not counted by the planner (#374).
+    max_parallel_issues: int = 1
+    # How far back the guard's FIRST reconciliation of closed-but-still-labeled issues looks, in
+    # days (#365). Afterwards it asks only for issues closed since its own last pass, so the tick
+    # never pages through the whole closed backlog: `gh issue list --state closed` is capped at
+    # one page, and past that cap an old issue closed today would silently never be reconciled.
+    # A machine that has been off for longer than this loses nothing a human cannot fix with one
+    # `issues.py move N done`.
+    reconcile_closed_lookback_days: int = 30
+
+
+class AgentsConfig(Strict):
+    project: ProjectConfig
+    # The mechanism's own section, optional exactly as `planner:` is: a config that predates it
+    # still loads, and an absent mechanism list audits nothing rather than failing the dispatch.
+    mechanism: MechanismConfig = MechanismConfig()
+    planner: PlannerConfig = PlannerConfig()
+    classes: dict[str, TaskClass]
+
+
+def load_agents_config(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> AgentsConfig:
+    raw = yaml.safe_load(pathlib.Path(path).read_text()) or {}
+    return AgentsConfig.model_validate(raw)
+
+
+def load_project(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> ProjectConfig:
+    return load_agents_config(path).project
+
+
+def load_mechanism(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> MechanismConfig:
+    return load_agents_config(path).mechanism
+
+
+def load_planner_config(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> PlannerConfig:
+    return load_agents_config(path).planner
+
+
+def worktree_path(
+    backend: str, *, main: pathlib.Path = HOST_ROOT, project: ProjectConfig | None = None
+) -> pathlib.Path:
+    """The backend's worktree, resolved against the repository root -- `config/agents.yaml` keeps
+    it relative (`../roedor-qwen`) so a clone under a different path needs no edit."""
+    project = project or load_project()
+    return (main / project.worktrees[backend]).resolve()
+
+
+def backend_executable(name: str, *, project: ProjectConfig | None = None) -> str:
+    """The command a driver actually runs for `name`: the path `project.executables` configures,
+    or the bare name -- resolved through PATH exactly as before -- when it configures none. ONE
+    resolver for the worker backends and for the role drivers' own `claude`, so an unattended
+    dispatch and a shell dispatch can never run a different binary (#380).
+
+    The bare name is the fallback for a MISSING KEY and for nothing else. A config that does not
+    load raises out of here, and its CLI below turns that into a one-line stop rather than an
+    empty string: a driver that read an empty command would run `"" --model ...`, which the shell
+    answers 127, which then reads as a missing executable and points whoever is debugging at the
+    very key the broken file made unreadable."""
+    project = project or load_project()
+    return project.executables.get(name, name)
+
+
+def load_task_classes(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> dict[str, TaskClass]:
+    """Closed by pydantic's `extra="forbid"` on both levels: an unknown top-level key or an
+    unknown field inside a class fails to load rather than being silently ignored, the same
+    "closed partition" discipline `roedor/config.py` uses for the stamped config (`config/
+    AGENTS.md`) -- `config/agents.yaml` itself sits outside the m2/s2 stamps, like `backtest.yaml`.
+    """
+    return load_agents_config(path).classes
+
+
+def load_role_class(
+    role: str, path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG
+) -> tuple[str, TaskClass]:
+    """The single class that configures a non-worker role, as `(class name, class)`.
+
+    A worker's class is chosen per issue and there are many of them; the validator, the refiner
+    and the planner have exactly one each, so "which model does this role run" is answered by
+    `config/agents.yaml` alone and never by a second mapping inside a driver
+    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    Two classes claiming one role is a configuration error, not something to resolve by picking
+    the first."""
+    matching = sorted(
+        (name, task_class)
+        for name, task_class in load_task_classes(path).items()
+        if task_class.role == role
+    )
+    if not matching:
+        raise KeyError(f"no class in {path} carries `role: {role}`")
+    if len(matching) > 1:
+        raise KeyError(
+            f"{len(matching)} classes carry `role: {role}` ({', '.join(n for n, _ in matching)}); "
+            "a role has exactly one"
+        )
+    return matching[0]
+
+
+def role_app_slug(role: str, project: ProjectConfig | None = None) -> str:
+    """The GitHub App a role signs as. `project.role_apps` names it; a role with no entry falls
+    back to the planner's App, which is what the validator and the refiner do until Apps of their
+    own exist (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-
+    acceptance-criteria.md)."""
+    project = project or load_project()
+    return project.role_apps.get(role) or project.planner_app
+
+
+def human_message_rules(project: ProjectConfig | None = None) -> str:
+    """The one wording of the rule for anything an agent addresses to the human, with
+    `project.human_language` filled in -- injected via the `__HUMAN_MESSAGE_RULES__` placeholder
+    into every role's RULES block (the validator's and the refiner's in `agent_task.sh`, the
+    planner's in `planner_task.sh`, the worker's in `worker_task.sh`) so none of them carries its
+    own copy of the wording
+    (docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
+    terms.md)."""
+    language = (project or load_project()).human_language
+    return f"""WRITING TO THE HUMAN
+Everything addressed to the human -- a `## Doubts` block, a question posted with
+`blocked-on-human`, a worker's BLOCKED question comment, the refiner's summary comment -- is
+written in {language}.
+Explain each doubt in functional language, for a reader who knows the product and how it is
+operated but is not reading the code: what has to be decided and why it matters now; the options,
+and what each one means in practice -- for the product, the operation, cost, dates, risk; and your
+own recommendation. End with the concrete question to answer, preferably one they can answer by
+picking an option.
+Code identifiers, file paths, labels and issue numbers appear only as a reference after the
+explanation, never as the explanation itself.
+What the mechanism or another agent parses stays exactly as specified elsewhere in these rules,
+in its own spelling: the `@<login>` first line, `## Doubts` and the other section headings, the
+`<!-- refiner-summary -->` marker, the `BLOCKED reason=` line in progress.log, issue bodies
+written from the template, and the validator's criterion-by-criterion checklist, which is the
+worker's next brief."""
+
+
+def render_human_message(key: str, project: ProjectConfig | None = None, **fields: object) -> str:
+    """The one ntfy page wording, rendered from `project.messages[key]` in the human's own
+    language. Every caller goes through here and no script holds a message of its own: the
+    quota-exhaustion page was a Spanish literal in `agent_guard.py`, so a project configuring
+    `human_language: English` still got that one page in Spanish (`docs/AGENT_OS.md` §7 row (g)).
+
+    Raises `HumanMessageError` on every way this can fail -- an unknown key, a field the call site
+    did not pass, a template `str.format` cannot parse -- because a page nobody receives is
+    indistinguishable from a situation that never arose, and none of the three is worth guessing
+    past. ONE exception type, so a caller that must not die over a config typo (both of the
+    guard's pages, and `issues.py move N review`) catches one thing and says so. The malformed
+    case should already have been refused when the config loaded (`_check_placeholders`); it is
+    caught here too because a caller can pass a `ProjectConfig` built in code, and `format` raises
+    `IndexError` and `ValueError` there, not `KeyError`."""
+    project = project or load_project()
+    template = project.messages.get(key)
+    if template is None:
+        raise HumanMessageError(
+            f"no project.messages[{key!r}] in config/agents.yaml "
+            f"(configured: {sorted(project.messages) or 'none'})"
+        )
+    try:
+        return template.format(**fields)
+    except KeyError as missing:
+        raise HumanMessageError(
+            f"project.messages[{key!r}] needs a field {missing.args[0]!r} nobody passed"
+        ) from missing
+    except (IndexError, ValueError) as malformed:
+        raise HumanMessageError(
+            f"project.messages[{key!r}] is not a valid template: {malformed}"
+        ) from malformed
+
+
+# Both path lists -- `project.forbidden_paths` and `mechanism.own_paths` -- hold globs and
+# `worker_task.sh collect` audits with `grep -E`, so something has to translate one into the other
+# -- and it has to be the same something that renders the paragraph the worker reads, or the two
+# halves of the ownership rule describe two different sets again (`docs/AGENT_OS.md` §7 rows (a)
+# and (s), issue #363).
+_ERE_METACHARACTERS = frozenset(r".\[]{}()*+?^$|")
+
+
+def _escape_ere(text: str) -> str:
+    # Escapes exactly the POSIX ERE metacharacters and nothing else: Python's own `re.escape`
+    # would also backslash a space, an `&` or a `#`, which `grep -E` leaves undefined.
+    return "".join(
+        f"\\{character}" if character in _ERE_METACHARACTERS else character for character in text
+    )
+
+
+def _glob_to_ere(pattern: str) -> str:
+    r"""One forbidden-path glob as a POSIX ERE fragment, keeping fnmatch's semantics rather than
+    glob's: `*` crosses `/`, so `.claude/*` protects `.claude/agents/worker-runner.md` exactly as
+    the prefix regex this list replaced did. Translated by hand because `fnmatch.translate` emits
+    `(?s:...)\Z`, which is not a pattern `grep -E` accepts."""
+    fragment = []
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "*":
+            fragment.append(".*")
+            index += 1
+        elif character == "?":
+            fragment.append(".")
+            index += 1
+        elif character == "[":
+            # `index + 2`: `[]]` is a class holding `]`, as it is in fnmatch, not an empty class
+            # followed by a stray bracket.
+            closing = pattern.find("]", index + 2)
+            if closing == -1:
+                fragment.append(_escape_ere("["))  # an unclosed `[` is a literal one
+                index += 1
+            else:
+                body = pattern[index + 1 : closing]
+                # glob negates a class with a leading `!`, POSIX ERE with a leading `^`
+                fragment.append(("[^" + body[1:] if body.startswith("!") else "[" + body) + "]")
+                index = closing + 1
+        else:
+            fragment.append(_escape_ere(character))
+            index += 1
+    return "".join(fragment)
+
+
+def _anchored_ere(paths: list[str]) -> str:
+    """One `grep -E` pattern over a list of path globs, prefix-anchored and never end-anchored: an
+    entry naming a directory protects everything under it, and an entry naming a file protects any
+    path starting with that name. Shared by the two lists so they cannot acquire two different
+    readings of the same glob.
+
+    Empty when the list is. That is the caller's signal to skip the audit, never a pattern to audit
+    with -- `grep -E ''` matches every line, so an empty list would report every file a run touched
+    as a violation."""
+    patterns = [_glob_to_ere(path) for path in paths]
+    return f"^({'|'.join(patterns)})" if patterns else ""
+
+
+def forbidden_paths_regex(project: ProjectConfig | None = None) -> str:
+    """The `grep -E` pattern `worker_task.sh collect` runs over the paths a run changed, built from
+    `project.forbidden_paths` and from nothing else -- the host project's list, which a brief can
+    never authorize. `mechanism_paths_regex` below renders the second list the same way."""
+    return _anchored_ere((project or load_project()).forbidden_paths)
+
+
+def forbidden_paths_merge_audit_regex(project: ProjectConfig | None = None) -> str:
+    """The `grep -E` pattern condition 3 of the merge gate audits a pull request's diff with
+    (`docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4) -- the SUBSET of
+    `forbidden_paths` that is not a delivery directory (`project.merge_audit_exempt_paths`, issue
+    #476). Derived from `forbidden_paths_regex`'s own list minus the exemption, never from a second
+    copy of either: a path added to `forbidden_paths` is audited here the moment it exists, with no
+    second edit, unless it is also named in the exemption.
+
+    Empty exactly when `forbidden_paths_regex` would be -- an empty `forbidden_paths`, or one
+    entirely exempted -- and the same reading applies: empty is the caller's signal to skip the
+    audit, never a pattern that matches every path. `merge_audit_exempt_paths` is intersected with
+    `forbidden_paths`, never checked against it: an exempted path this project's `forbidden_paths`
+    does not currently carry (a stale entry, or a synthetic config a test built without it) simply
+    has nothing to subtract and changes this function's output not at all."""
+    project = project or load_project()
+    exempt = set(project.merge_audit_exempt_paths)
+    return _anchored_ere([path for path in project.forbidden_paths if path not in exempt])
+
+
+def forbidden_paths_merge_audit_violations(
+    changed_paths: list[str], project: ProjectConfig | None = None
+) -> list[str]:
+    """Which of `changed_paths` (a pull request's own `gh pr diff N --name-only`) condition 3
+    refuses a merge for -- the paths matching `forbidden_paths_merge_audit_regex`, in the order
+    they were given. Returns `[]` both when nothing matched and when the audit pattern is empty:
+    `re.match("", anything)` matches at position 0, unlike an empty `grep -E` pattern the shell
+    audit relies on being told to skip, so this function makes the same empty-means-skip reading
+    explicit instead of inheriting Python's opposite default."""
+    pattern = forbidden_paths_merge_audit_regex(project)
+    if not pattern:
+        return []
+    return [path for path in changed_paths if re.match(pattern, path)]
+
+
+def mechanism_paths_regex(mechanism: MechanismConfig | None = None) -> str:
+    """The `grep -E` pattern over `mechanism.own_paths`, rendered exactly as
+    `forbidden_paths_regex` renders the host project's list -- same globs, same anchoring, same
+    empty-means-no-audit reading -- because what separates the two lists is the RULE, not the
+    matching: a path in this one is a violation only when the issue body does not name it, which is
+    the caller's decision to make and not this function's
+    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md)."""
+    return _anchored_ere((mechanism or load_mechanism()).own_paths)
+
+
+def forbidden_paths_rules(project: ProjectConfig | None = None) -> str:
+    """The worker's "FILES YOU MUST NOT TOUCH" paragraph, rendered from the same
+    `project.forbidden_paths` `forbidden_paths_regex` is built from and injected via the
+    `__FORBIDDEN_PATHS_RULES__` placeholder -- the list the worker is told about and the list its
+    run is audited against are one list, so neither can drift
+    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+
+    The FIRST of the two paragraphs the ownership rule is told in, and it points at the second
+    (`mechanism_paths_rules` below): "no brief can authorize one of these" is worth saying because
+    a brief CAN authorize one of the mechanism's own files, and one paragraph without the other
+    leaves the worker guessing which side of that line its brief fell on. The driver injects the
+    pair together or not at all
+    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+
+    Empty when the project forbids nothing, which is why the driver deletes the placeholder's own
+    line instead of substituting an empty string into it: a heading with nothing under it would
+    read as a rule the worker cannot see."""
+    paths = (project or load_project()).forbidden_paths
+    if not paths:
+        return ""
+    listing = textwrap.fill(
+        ", ".join(paths) + ".", width=100, break_long_words=False, break_on_hyphens=False
+    )
+    whose = textwrap.fill(
+        "These are the host project's, and no brief can authorize one: a task that needs one is a "
+        "defect in the brief. The mechanism's own files below are the only paths an issue body may "
+        "name as the target of its work.",
+        width=100,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return f"""FILES YOU MUST NOT TOUCH
+{listing}
+{whose}
+If a task genuinely requires one of these, stop and say so rather than working around it."""
+
+
+def mechanism_paths_rules(mechanism: MechanismConfig | None = None) -> str:
+    """The worker's "FILES OF THE MECHANISM'S OWN" paragraph, rendered from the same
+    `mechanism.own_paths` `mechanism_paths_regex` is built from and injected via the
+    `__MECHANISM_PATHS_RULES__` placeholder -- one list behind the paragraph the worker reads and
+    the pattern `collect` judges it by, exactly as the host project's list is behind its own pair
+    of halves.
+
+    The SECOND of the two paragraphs, and the conditional half of the rule: a path in this list is
+    the target of the work whenever the issue body says it is, which is what lets the mechanism be
+    developed by the same machinery that protects everything else. It points back at the first
+    paragraph (`forbidden_paths_rules` above), so the driver injects the pair together or not at all
+    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+
+    Empty when the mechanism names none of its own files, and then the driver takes the host
+    paragraph down with it rather than render half the contrast."""
+    paths = (mechanism or load_mechanism()).own_paths
+    if not paths:
+        return ""
+    listing = textwrap.fill(
+        ", ".join(paths) + ".", width=100, break_long_words=False, break_on_hyphens=False
+    )
+    authorization = textwrap.fill(
+        "These are the machinery you run inside, not the host project's, and the tracking epic "
+        "exists to change them: your diff may touch one only when the issue body names that path "
+        "as the target of the work. When it does, say so in a comment before the first commit that "
+        "touches one -- the path, and the body that authorizes it -- so a reviewer reads the "
+        "authorization off your work instead of reconstructing it. Editing the copy in your own "
+        "worktree cannot break the run you are in, which executes the main checkout's; writing "
+        "there stays forbidden by the rule above that forbids writing there at all.",
+        width=100,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return f"""FILES OF THE MECHANISM'S OWN
+{listing}
+{authorization}
+If the body does not name one, stop and say so rather than working around it."""
+
+
+def never_run_rules(project: ProjectConfig | None = None) -> str:
+    """The "COMMANDS YOU MUST NEVER RUN" paragraph, rendered from `project.never_run` and injected
+    via the `__NEVER_RUN_RULES__` placeholder into the worker's, the validator's and the refiner's
+    RULES. One list for three blocks, because the same verbs spelled once per block had already
+    drifted -- the validator's copy had lost one of the six (`docs/AGENT_OS.md` §7 row (b), issue
+    #363). Each bullet carries its own reason: a prohibition nobody can justify is the first one a
+    task talks itself out of.
+
+    Empty when the project forbids no command, which is why the drivers delete the placeholder's
+    own line instead of substituting an empty string into it: a heading with nothing under it
+    would read as a rule the agent cannot see."""
+    commands = (project or load_project()).never_run
+    if not commands:
+        return ""
+    bullets = "\n".join(
+        textwrap.fill(
+            f"`{item.command}` -- {item.reason}",
+            width=100,
+            initial_indent="- ",
+            subsequent_indent="  ",
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        for item in commands
+    )
+    return f"""COMMANDS YOU MUST NEVER RUN
+{bullets}
+The reason is part of the rule: it is what you judge an edge case against. If a task genuinely
+needs one of these, stop and say so rather than working around it."""
+
+
+def worker_environment_rules(project: ProjectConfig | None = None) -> str:
+    """The worker's environment paragraph, rendered from `project.worker_environment` -- the very
+    variables `worker_task.sh` exports into the worker's own process -- and injected via the
+    `__WORKER_ENVIRONMENT_RULES__` placeholder. The NAMES come from the config and their values
+    never do: a worker that needs one reads its own environment, so the sentence that used to spell
+    the shared server's port is gone rather than moved, and the paragraph is now rendered from the
+    same list the export loop reads instead of describing it from memory
+    (`docs/AGENT_OS.md` §7 row (a), issue #363).
+
+    Empty when the project exports nothing, which is why the driver deletes the placeholder's own
+    line instead of substituting an empty string into it: a worker told its connection is read-only
+    by default would trust a guard that does not exist."""
+    configuration = project or load_project()
+    if not configuration.worker_environment:
+        return ""
+    names = ", ".join(f"`{key}`" for key in configuration.worker_environment)
+    exported = (
+        f"These variables are exported into your own process before you start, holding the values "
+        f"the project chose: {names}. Read a value a command of yours needs -- a host, a port -- "
+        f"out of the variable itself, never out of a number you remember from a prompt: what you "
+        f"remember is a version of the config that may no longer be in force."
+    )
+    shared = (
+        f"What they reach is shared, not a copy made for this run, and your own connection to it "
+        f"is read-only by default for anything outside a `{configuration.test_command}` run "
+        f"(above) -- an accidental write against the live data fails by itself, without you having "
+        f"to remember not to make it. Measure in memory or with dry runs. If a write seems "
+        f"necessary, stop and say so."
+    )
+    accident_guard = (
+        "This is an accident guard, not an intent guard: your worktree's own configuration may "
+        "still hold credentials that write, so what is exported only catches a write you did not "
+        "mean to make -- the rule that actually stops a deliberate one is never override an "
+        "exported variable yourself."
+    )
+    dead_connection = (
+        "If a connection dies underneath you, say so rather than silently retrying into a "
+        "half-measured result: the other agent may have restarted what you were connected to."
+    )
+    bullets = "\n".join(
+        textwrap.fill(
+            bullet,
+            width=100,
+            initial_indent="- ",
+            subsequent_indent="  ",
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        for bullet in (exported, shared, accident_guard, dead_connection)
+    )
+    return f"""THE ENVIRONMENT YOU RUN IN IS CONFIGURED FOR YOU, AND READ-ONLY BY DEFAULT
+{bullets}"""
+
+
+def mechanism_logins(project: ProjectConfig | None = None) -> set[str]:
+    """Every GitHub login the MECHANISM itself speaks as: one App slug per identity -- the
+    planner's, one per worker backend, one per one-shot role -- and a GitHub App comments as
+    `<slug>[bot]`. Lowercased, because GitHub logins are case-insensitive and nothing else in this
+    module may depend on how a config file spelled one."""
+    project = project or load_project()
+    slugs = {project.planner_app, *project.worker_apps.values(), *project.role_apps.values()}
+    logins = set()
+    for slug in slugs:
+        if not slug:
+            continue
+        logins.add(slug.lower())
+        logins.add(f"{slug.lower()}[bot]")
+    return logins
+
+
+def is_human_comment(author: str, project: ProjectConfig | None = None) -> bool:
+    """Was this comment written by the one human, rather than by the mechanism talking to itself?
+
+    A `status:blocked-on-human` issue is unblocked by a reply, and on 2026-09-16 the planner's own
+    "I am waiting for you" comment counted as one: the issue went back into circulation with the
+    question still unanswered. `project.human_login` is therefore the positive test -- only that
+    login is the human -- and where a project has not named one, the fallback is the negative one:
+    anybody who is not one of the mechanism's own identities. A project that configures neither
+    would have no way to tell the two apart at all."""
+    author = (author or "").strip().lower()
+    if not author:
+        return False
+    project = project or load_project()
+    if project.human_login:
+        return author == project.human_login.lower()
+    return author not in mechanism_logins(project)
+
+
+def label_names(issue: dict) -> set[str]:
+    """The label names of one `gh ... --json labels` row, whichever shape it came in: a listing's
+    row (`labels` may be absent or null) or a single `gh issue view`'s object. One reader, because
+    five copies of the same comprehension is five places for `or []` to be forgotten."""
+    return {label["name"] for label in issue.get("labels") or []}
+
+
+def parse_budget_line(body: str) -> str | None:
+    match = BUDGET_LINE_RE.search(body or "")
+    return match.group(1) if match else None
+
+
+# `Blocked by #12` on a line of its own, anywhere in the body. One line per blocker: a list is a
+# list, not a comma-separated sentence the parser has to guess at.
+BLOCKED_BY_RE = re.compile(r"^\s*Blocked by\s+#(\d+)\s*$", re.MULTILINE | re.IGNORECASE)
+
+
+def blocking_issue_numbers(body: str) -> list[int]:
+    return [int(n) for n in BLOCKED_BY_RE.findall(body or "")]
+
+
+# The shape of a task or bug body, in the order the sections must appear
+# (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+# state.md). `.github/ISSUE_TEMPLATE/task.md` and `bug.md` scaffold exactly these, followed by the
+# `<!-- budget: <class> -->` line -- the eighth section, checked separately because it also has
+# to resolve against `config/agents.yaml`.
+REQUIRED_SECTIONS = (
+    "## Objective",
+    "## Acceptance criteria",
+    "## Stages",
+    "## Context",
+    "## Not included",
+    "## Dependencies",
+    "## Definition of done",
+)
+
+
+# A stage checklist line, `- [ ]` or `- [x]` (either case), the same shape GitHub itself renders
+# as a checkbox -- shared by `section_failures`' "is there at least one" check and `parse_stages`'
+# extraction so the two can never disagree about what counts as a stage line.
+STAGE_CHECKLIST_LINE_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _section_body(body: str, heading: str) -> str | None:
+    """The text between one `## heading` line and the next `##` heading (or the end of the body).
+    `None` when the heading itself is not present -- distinct from an empty section, which is `""`.
+    """
+    lines = (body or "").splitlines()
+    start = next((i + 1 for i, line in enumerate(lines) if line.strip() == heading), None)
+    if start is None:
+        return None
+    end = next(
+        (i for i in range(start, len(lines)) if lines[i].strip().startswith("##")), len(lines)
+    )
+    return "\n".join(lines[start:end])
+
+
+def parse_stages(body: str) -> list[str]:
+    """Stage titles in order, from the checklist lines of the issue's `## Stages` section -- the
+    checkbox itself is stripped, only the title text kept. Empty when the section is absent (an
+    issue not yet staged) or present but empty (caught separately by `section_failures` below as
+    `stages: no checklist line`)."""
+    section = _section_body(body, "## Stages")
+    if section is None:
+        return []
+    return [match.group(1) for match in STAGE_CHECKLIST_LINE_RE.finditer(section)]
+
+
+def section_failures(body: str) -> list[str]:
+    """One line per section that is missing, plus one line if the sections present are out of
+    order, plus `stages: no checklist line` if `## Stages` is present but empty of one. Matching is
+    on a heading line of its own, so a section named inside a sentence or in a fenced code block
+    does not count as the section being there."""
+    headings = [line.strip() for line in (body or "").splitlines() if line.strip().startswith("##")]
+    failures = [f"missing section: {s}" for s in REQUIRED_SECTIONS if s not in headings]
+    present = [s for s in REQUIRED_SECTIONS if s in headings]
+    in_body_order = [h for h in headings if h in REQUIRED_SECTIONS]
+    # A section repeated is its own defect; dict.fromkeys keeps the FIRST occurrence, which is the
+    # one an out-of-order report should point at.
+    if list(dict.fromkeys(in_body_order)) != present:
+        failures.append(
+            "sections out of order: expected "
+            + " then ".join(present)
+            + ", found "
+            + " then ".join(dict.fromkeys(in_body_order))
+        )
+    if "## Stages" in headings and not parse_stages(body):
+        failures.append("stages: no checklist line")
+    return failures
+
+
+def stages_completed(commit_subjects: list[str]) -> int:
+    """The highest stage N a `stage N/M: <title>` commit subject claims done, 0 if none of them
+    match. Progress is read off the branch's own commits, never written by an agent
+    (docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md) --
+    `stage_total_from_subjects` is not needed alongside this because the total is `len(
+    parse_stages(body))`, already known from the issue body without touching git."""
+    completed = 0
+    for subject in commit_subjects:
+        match = re.match(r"^stage (\d+)/(\d+):", subject or "")
+        if match:
+            completed = max(completed, int(match.group(1)))
+    return completed
+
+
+def cumulative_cost_usd(jsonl_paths: list[pathlib.Path]) -> float:
+    """Sum of `total_cost_usd` across many stage `.jsonl` logs -- what `max_cost_usd` is checked
+    against for the whole issue, as the sum of its stage processes (#375), archived files under
+    `.cache/spend/<issue>/` plus the live one. A file with no terminal `result` event (killed
+    before finishing) contributes 0, reusing the same `usage_summary` a single log's report uses."""
+    total = 0.0
+    for path in jsonl_paths:
+        result = usage_summary(read_events(path)).result
+        if result:
+            total += float(result.get("total_cost_usd") or 0)
+    return total
+
+
+def cumulative_total_tokens(jsonl_paths: list[pathlib.Path]) -> int:
+    """Sum of the terminal `result` events' tokens across many stage `.jsonl` logs -- what
+    `max_total_tokens` is checked against for the whole issue, the same scope
+    `cumulative_cost_usd` above has, and the one of the two ceilings a Qwen class can cross
+    because its `result` event reports no `total_cost_usd` at all (#387).
+
+    A file with no terminal `result` event contributes 0, exactly as the dollar sum does, so the
+    figure UNDERCOUNTS an issue that had a stage cut before it finished: the tokens that stage
+    spent are in its archived log and nothing here reads them. Stated rather than papered over --
+    the alternative is trusting a per-turn sum, which no terminal event corroborates."""
+    total = 0
+    for path in jsonl_paths:
+        result = usage_summary(read_events(path)).result
+        if result:
+            total += result_total_tokens(result)
+    return total
+
+
+def budget_failures(body: str, task_classes: dict[str, TaskClass]) -> list[str]:
+    task_class = parse_budget_line(body or "")
+    if not task_class:
+        return ["missing the `<!-- budget: <class> -->` line"]
+    if task_class not in task_classes:
+        known = ", ".join(sorted(task_classes)) or "none"
+        return [
+            f"budget class '{task_class}' is not defined in config/agents.yaml (known: {known})"
+        ]
+    return []
+
+
+def validate_issue_body(
+    body: str, *, task_classes: dict[str, TaskClass], open_issue_numbers: set[int]
+) -> list[str]:
+    """Every mechanical reason this body is not a brief an agent could start from, one failure per
+    line, empty when it is one. THE single implementation: `issues.py validate` prints these lines
+    and `is_dispatchable` below asks only whether the list is empty, so "Ready for AI" and "the
+    validator passes" can never drift apart
+    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    state.md).
+
+    "Closed" for a blocker is read as "not in the set of open issue numbers", so one listing
+    answers it for every issue at once instead of one `gh issue view` per blocker; a number that
+    does not exist reads as closed, which is the safe direction (a human still looks at the issue).
+    """
+    failures = section_failures(body) + budget_failures(body, task_classes)
+    failures += [
+        f"blocked by #{number}, which is still open"
+        for number in blocking_issue_numbers(body or "")
+        if number in open_issue_numbers
+    ]
+    return failures
+
+
+def is_dispatchable(
+    issue: dict,
+    *,
+    task_classes: dict[str, TaskClass],
+    open_issue_numbers: set[int],
+    labels: LabelVocabulary | None = None,
+) -> bool:
+    """Pure: does this issue, as `gh issue list --json number,state,labels,body` describes it,
+    meet every mechanical condition for a worker to be started on it right now
+    (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md)?
+
+    Open, labeled `status:ready`, not `status:blocked-on-human`, and `validate_issue_body` above
+    finding nothing wrong with the body -- which is what "Ready for AI" is defined as
+    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    state.md): the same function `issues.py validate N` runs, never a second copy of the rules.
+
+    Note this says nothing about whether a *slot* is free -- one running issue per `module:`
+    label, one issue per backend -- which is the planner's own dispatch rule, not a property of
+    the issue.
+    """
+    labels = labels or LabelVocabulary()
+    if (issue.get("state") or "OPEN").upper() != "OPEN":
+        return False
+    names = label_names(issue)
+    if labels.ready not in names or labels.blocked_on_human in names:
+        return False
+    return not validate_issue_body(
+        issue.get("body") or "",
+        task_classes=task_classes,
+        open_issue_numbers=open_issue_numbers,
+    )
+
+
+def needs_refinement(
+    issue: dict,
+    *,
+    task_classes: dict[str, TaskClass],
+    open_issue_numbers: set[int],
+    labels: LabelVocabulary | None = None,
+) -> bool:
+    """Does this issue need the REFINER before anything else can happen to it: open, carrying
+    `status:refine`, not waiting on a human, and its body has a STRUCTURAL defect the refiner can
+    actually fix -- a missing/misordered section or an unresolvable budget line
+    (`section_failures` + `budget_failures`, never the full `validate_issue_body`)
+    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+
+    `open_issue_numbers` is accepted only for call-site compatibility with `is_dispatchable` and
+    `promotable_to_ready`, which do need it -- an issue an open `Blocked by #N` line makes
+    undispatchable is not a defect the refiner wrote or can rewrite away, so counting it here
+    would relaunch the refiner on an issue #356 already looked correct (its body was template-
+    conformant, just blocked on #323), for no gain. An issue that already validates in full while
+    carrying `status:refine` is not *in need of* refining -- it is a candidate for
+    `promotable_to_ready` below instead, which still requires no open blocker."""
+    del open_issue_numbers  # structural failures only -- see docstring
+    labels = labels or LabelVocabulary()
+    if (issue.get("state") or "OPEN").upper() != "OPEN":
+        return False
+    names = label_names(issue)
+    if labels.refine not in names or labels.blocked_on_human in names:
+        return False
+    body = issue.get("body") or ""
+    return bool(section_failures(body) + budget_failures(body, task_classes))
+
+
+def promotable_to_ready(
+    issue: dict,
+    *,
+    parent_labels: set[str] | None,
+    task_classes: dict[str, TaskClass],
+    open_issue_numbers: set[int],
+    labels: LabelVocabulary | None = None,
+) -> bool:
+    """Can this refined issue be moved to `status:ready` mechanically, with no human looking at it:
+    open, carrying `status:refine`, not waiting on a human, its body passing `validate_issue_body`
+    with NO failures, AND its parent carrying `auto-ready`. An issue with no parent is never
+    promotable this way -- a raw issue the refiner split by hand has no feature above it to have
+    opted in, so the human promotes it
+    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)."""
+    labels = labels or LabelVocabulary()
+    if (issue.get("state") or "OPEN").upper() != "OPEN":
+        return False
+    names = label_names(issue)
+    if labels.refine not in names or labels.blocked_on_human in names:
+        return False
+    if parent_labels is None or labels.auto_ready not in parent_labels:
+        return False
+    return not validate_issue_body(
+        issue.get("body") or "",
+        task_classes=task_classes,
+        open_issue_numbers=open_issue_numbers,
+    )
+
+
+def read_events(path: pathlib.Path | str) -> list[dict]:
+    events = []
+    for line in pathlib.Path(path).read_text(errors="replace").splitlines():
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            continue
+    return events
+
+
+def turn_context_tokens(usage: dict) -> int:
+    """Context size of one turn = everything it read: uncached input plus what came from the
+    prompt cache. A warm turn reports `input_tokens: 2, cache_read_input_tokens: 18919`; reading
+    `input_tokens` alone would call a 19k-token turn a 2-token one. Qwen reports the full figure in
+    `input_tokens` alone, so summing is right for both."""
+    return sum(
+        usage.get(k) or 0
+        for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+    )
+
+
+def result_total_tokens(result: dict) -> int:
+    """Tokens one run's terminal `result` event reports for the run as a whole. Qwen puts the
+    figure in `usage.total_tokens`, and its cache reads are already inside `input_tokens`: the
+    first archived stage log of #363 reports input 30,215,389 + output 196,945 = `total_tokens`
+    30,412,334, with `cache_read_input_tokens` 29,875,819 a part of that input and not an addition
+    to it. A log that reports no `total_tokens` falls back to the four counters summed, which is
+    the figure `usage-report` has always printed. ONE implementation for both, because what a
+    single stage's report shows and what the issue-wide ceiling is measured with are the same
+    number at two scopes (#387)."""
+    usage = result.get("usage") or {}
+    return usage.get("total_tokens") or (
+        turn_context_tokens(usage) + (usage.get("output_tokens") or 0)
+    )
+
+
+@dataclass
+class UsageSummary:
+    session_id: str
+    turns: int
+    context: int
+    output_tokens: int
+    result: dict | None
+
+
+def usage_summary(events: list[dict]) -> UsageSummary:
+    context = out = turns = 0
+    session_id = ""
+    result = None
+    for event in events:
+        session_id = event.get("session_id") or session_id
+        usage = (event.get("message") or {}).get("usage") or event.get("usage") or {}
+        size = turn_context_tokens(usage)
+        if event.get("type") == "assistant" and size:
+            context = max(context, size)
+            turns += 1
+        out += usage.get("output_tokens") or 0
+        if event.get("type") == "result":
+            result = event
+    return UsageSummary(session_id, turns, context, out, result)
+
+
+def usage_failed(summary: UsageSummary) -> bool:
+    """A run the API refused before the first turn reports `subtype: "success"` -- the refusal
+    arrives as the RESULT TEXT, not as an error subtype. A run with no turns produced nothing,
+    whatever the subtype says."""
+    if summary.turns == 0:
+        return True
+    if not summary.result:
+        return False
+    text = summary.result.get("result") or ""
+    return bool(summary.result.get("is_error")) or text.startswith("[API Error")
+
+
+def quota_exhausted(events: list[dict]) -> str | None:
+    """Claude-only (see module docstring). Returns the reason string, or None if the quota looks
+    open. Authority order per the ADR: `rate_limit_event` first (it is the backend saying so on
+    every turn), the terminal `result`'s `api_error_status`/`is_error` as a fallback for a run that
+    ended before a `rate_limit_event` could report the rejection."""
+    for event in events:
+        if event.get("type") == "rate_limit_event":
+            info = event.get("rate_limit_info") or {}
+            if info.get("status") == "rejected":
+                windows = info.get("unifiedWindows") or {}
+                rejected = [w for w, v in windows.items() if v] or ["unknown"]
+                return f"rate_limit_event status=rejected window={rejected[0]}"
+    summary = usage_summary(events)
+    if summary.result and summary.result.get("is_error") and summary.result.get("api_error_status"):
+        return f"result api_error_status={summary.result['api_error_status']}"
+    return None
+
+
+def quota_status(events: list[dict]) -> Literal["allowed", "exhausted"]:
+    """The same verdict as `quota_exhausted` above, as the word the guard's tick compares between
+    ticks and the driver's stage gate reads off a finished stage's log (#375). Claude-only, per
+    docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md --
+    Qwen's stream carries no comparable signal, so its runs always read `allowed`."""
+    return "exhausted" if quota_exhausted(events) else "allowed"
+
+
+# -------------------------------------------------------------------------------------------------
+# Which backend a role's launch gets (#425). The verdict is the guard's own persisted one, read off
+# disk, and never an agent's claim about its own quota
+# (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md): the
+# role has not run yet when this is decided, so there is no stream of its own to read, and the one
+# authority on Claude's window that exists at that moment is what the guard last saw in the stream
+# of the last Claude run it watched.
+# -------------------------------------------------------------------------------------------------
+
+QUOTA_VERDICT_UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class QuotaVerdict:
+    """The guard's persisted verdict on one backend's quota, and how long ago it was observed.
+
+    `age_seconds` is None exactly when there is no verdict to age -- no file, or a file carrying no
+    `last_quota_status` -- which is why `status` then reads `unknown` rather than `allowed`: the
+    absence of a refusal is not a permission."""
+
+    status: Literal["allowed", "exhausted", "unknown"]
+    age_seconds: float | None
+    source: pathlib.Path | None
+    reason: str
+
+
+def quota_verdict_file(
+    backend: str = "claude", *, cache_dir: pathlib.Path | str | None = None
+) -> pathlib.Path:
+    """`.cache/agent_guard_<backend>.json` -- the guard's own per-backend bookkeeping file, written
+    by `agent_guard._save_bookkeeping` and named here rather than in a driver so that the reader and
+    the writer can never drift about where the verdict lives. `cache_dir` (or the `WORKER_CACHE_DIR`
+    environment, the same override `agent_guard.cache_dir` and `worker_task.sh` honour) relocates
+    it, so a test reads a sandbox instead of the live `.cache` (#360)."""
+    if cache_dir is None:
+        cache_dir = os.environ.get("WORKER_CACHE_DIR") or (HOST_ROOT / ".cache")
+    return pathlib.Path(cache_dir) / f"agent_guard_{backend}.json"
+
+
+def _verdict_age_phrase(age_seconds: float | None) -> str:
+    if age_seconds is None:
+        return ""
+    minutes = age_seconds / 60
+    return "<1 min old" if minutes < 1 else f"{minutes:.0f} min old"
+
+
+def read_persisted_quota_verdict(
+    backend: str = "claude",
+    *,
+    cache_dir: pathlib.Path | str | None = None,
+    now: datetime | None = None,
+) -> QuotaVerdict:
+    """What the guard last saw of `backend`'s quota, and how long ago it saw it.
+
+    The age is the FILE'S mtime, and that is not an approximation: every tick that watches a run of
+    this backend re-derives `last_quota_status` from that run's own event stream and rewrites the
+    whole file (`agent_guard._tick_backend` into `_save_bookkeeping`), so the last write is the last
+    observation. Nothing else writes it. A file nobody has rewritten for a while is therefore a
+    verdict nobody has refreshed for exactly that long -- including the case that matters most,
+    where the run ended and the guard stopped having a stream to look at.
+
+    Anything short of a readable verdict reads as `unknown`: a missing file (no run of this backend
+    since the cache was cleared), an unparseable one, or one written before `last_quota_status`
+    existed. `unknown` is never `allowed` and never `exhausted` -- it is the absence of a
+    measurement, and the launch treats it as its own case."""
+    path = quota_verdict_file(backend, cache_dir=cache_dir)
+    if not path.is_file():
+        return QuotaVerdict(
+            QUOTA_VERDICT_UNKNOWN, None, path, f"no {backend} quota verdict on disk at {path}"
+        )
+    try:
+        recorded = json.loads(path.read_text())
+        mtime = path.stat().st_mtime
+    except (OSError, ValueError) as error:
+        return QuotaVerdict(QUOTA_VERDICT_UNKNOWN, None, path, f"{path} is unreadable: {error}")
+    status = recorded.get("last_quota_status") if isinstance(recorded, dict) else None
+    if status not in ("allowed", "exhausted"):
+        return QuotaVerdict(
+            QUOTA_VERDICT_UNKNOWN,
+            None,
+            path,
+            f"{path} carries no last_quota_status the guard ever wrote",
+        )
+    observed_at = datetime.fromtimestamp(mtime, UTC)
+    age = ((now or datetime.now(UTC)) - observed_at).total_seconds()
+    return QuotaVerdict(
+        status,
+        age,
+        path,
+        f"the guard's persisted {backend} quota verdict reads {status} "
+        f"({_verdict_age_phrase(age)})",
+    )
+
+
+@dataclass(frozen=True)
+class RoleLaunch:
+    """The answer one role's launch acts on: which backend runs it, which model that is, whether it
+    is a substitution, which ceilings bind the run, and the sentence a driver prints so a human
+    reading the log can see the decision was made and on what."""
+
+    backend: str
+    model: str
+    substituted: bool
+    ceilings: tuple[str, ...]
+    reason: str
+
+
+def role_launch_plan(
+    task_class: TaskClass,
+    quota_verdict: str,
+    verdict_age_seconds: float | None,
+    *,
+    verdict_ttl_seconds: float,
+) -> RoleLaunch:
+    """(class, quota verdict, verdict age) -> the backend to launch, and why (#425).
+
+    Three answers, and the order they are decided in:
+
+    - `exhausted`, fresh, and the class declares a fallback: run the fallback. This is the whole
+      point of the field -- an exhausted quota stops nothing that names a way round it.
+    - `exhausted` and the verdict is older than its TTL: read as UNKNOWN and run the class's own
+      backend. Claude's window reopens on its own schedule and nothing here observes that, so a
+      verdict nobody has refreshed is a claim about a moment that has passed; believing it would
+      substitute a review the merge gate rests on the independence of, on evidence that may be
+      hours out of date. A false start costs one refused run and the page that follows it.
+    - everything else -- `allowed`, `unknown`, or `exhausted` with no fallback declared: run the
+      class's own backend, exactly as before this existed. The `exhausted`-with-no-fallback case is
+      the guard's `quota_exhausted_no_fallback` page, which is a human's to receive, not a launch's
+      to route round.
+    """
+    fallback = task_class.fallback
+    stale = verdict_age_seconds is None or verdict_age_seconds > verdict_ttl_seconds
+    age = _verdict_age_phrase(verdict_age_seconds)
+    ttl = f"{verdict_ttl_seconds / 60:.0f} min"
+    if quota_verdict == "exhausted" and fallback is not None and not stale:
+        return RoleLaunch(
+            backend=fallback.backend,
+            model=fallback.model,
+            substituted=True,
+            ceilings=tuple(fallback.ceilings),
+            reason=(
+                f"the guard's verdict reads exhausted ({age}), inside its {ttl} TTL, and the class "
+                f"declares {fallback.backend} as its fallback -- substituting {fallback.model} "
+                f"for {task_class.model}"
+            ),
+        )
+    if quota_verdict == QUOTA_VERDICT_UNKNOWN:
+        reason = f"no verdict to read -- launching {task_class.backend}"
+    elif quota_verdict != "exhausted":
+        reason = f"the guard's verdict reads {quota_verdict} ({age})"
+        reason += f" -- launching {task_class.backend}"
+    elif fallback is None:
+        reason = (
+            f"the guard's verdict reads exhausted ({age}) and the class declares no fallback -- "
+            f"launching {task_class.backend}; the page that follows is the human's to receive"
+        )
+    else:
+        reason = (
+            f"the guard's verdict reads exhausted but its {age} is past the {ttl} TTL -- reading "
+            f"it as unknown and launching {task_class.backend}"
+        )
+    return RoleLaunch(
+        backend=task_class.backend,
+        model=task_class.model,
+        substituted=False,
+        ceilings=tuple(CEILING_NAMES),
+        reason=reason,
+    )
+
+
+def role_launch(
+    role: str,
+    *,
+    path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG,
+    cache_dir: pathlib.Path | str | None = None,
+    now: datetime | None = None,
+) -> tuple[str, RoleLaunch, QuotaVerdict]:
+    """One role's launch decision, resolved end to end: `(class name, plan, verdict)`. The thin
+    composition the two drivers call through `role-backend` below, so the class lookup, the verdict
+    read and the TTL all have one implementation and a shell never assembles them itself."""
+    class_name, task_class = load_role_class(role, path)
+    verdict = read_persisted_quota_verdict(task_class.backend, cache_dir=cache_dir, now=now)
+    ttl_seconds = load_mechanism(path).quota_verdict_ttl_minutes * 60
+    plan = role_launch_plan(
+        task_class, verdict.status, verdict.age_seconds, verdict_ttl_seconds=ttl_seconds
+    )
+    if verdict.status == QUOTA_VERDICT_UNKNOWN:
+        # There was nothing to decide from, so the explanation a human reads is the verdict's own:
+        # which file was looked for and why it answered nothing.
+        plan = RoleLaunch(plan.backend, plan.model, plan.substituted, plan.ceilings, verdict.reason)
+    return class_name, plan, verdict
+
+
+RUNS_TSV_HEADER = "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
+
+
+def last_result_event(log_text: str) -> dict | None:
+    """The last `{"type":"result",...}` line of a `claude -p --output-format stream-json` log.
+    The log also carries the driver's own plain-text lines (identity, model, context), so it is
+    scanned line by line and anything that is not JSON is skipped rather than failing the parse."""
+    result = None
+    for line in log_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            result = event
+    return result
+
+
+def planner_run_row(log_text: str, *, ts: str, context: str, model: str) -> str:
+    """One `.cache/planner/runs.tsv` line per planner run: what it was woken for and what it cost
+    (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
+    A run whose log has no terminal `result` (killed, crashed, a stub backend) still gets its
+    line, with empty cost fields -- a missing row would read as "the run never happened"."""
+    result = last_result_event(log_text) or {}
+    turns = result.get("num_turns")
+    cost = result.get("total_cost_usd")
+    flat = " ".join((context or "").split())[:120]
+    return "\t".join(
+        [
+            ts,
+            flat,
+            model,
+            "" if turns is None else str(turns),
+            "" if cost is None else f"{float(cost):.4f}",
+        ]
+    )
+
+
+def _resolve_max_context(body: str | None) -> tuple[int | None, str | None]:
+    """The `max_context` ceiling of the class the issue's own `<!-- budget: --> ` line resolves
+    to, for the report below -- the same resolution `_resolve_budget` uses, so the two can never
+    name different classes for the same issue (#483). `None` plus a reason (no issue body on disk,
+    a class the config does not define) means there is no ceiling to report, never a silent
+    fall back to another class's number or a backend default."""
+    if not body:
+        return None, "no issue body recorded for this run"
+    failures = budget_failures(body, load_task_classes())
+    if failures:
+        return None, "; ".join(failures)
+    return load_task_classes()[parse_budget_line(body)].max_context, None
+
+
+def _print_usage_report(events_path: str, body: str | None) -> None:
+    events = read_events(events_path)
+    if not events:
+        print("  (no events yet)")
+        return
+    summary = usage_summary(events)
+    budget, unresolved_reason = _resolve_max_context(body)
+    print(f"  session   {summary.session_id}")
+    print(f"  turns     {summary.turns}")
+    if budget is None:
+        print(f"  context   {summary.context:,} tokens  (budget unresolved -- {unresolved_reason})")
+    else:
+        over = summary.context > budget
+        print(
+            f"  context   {summary.context:,} tokens  (budget {budget:,}) "
+            f"{'** OVER BUDGET -- finish the piece and restart on the rest **' if over else 'ok'}"
+        )
+    print(f"  output    {summary.output_tokens:,} tokens")
+    if summary.result:
+        stats = summary.result.get("usage") or {}
+        text = summary.result.get("result") or ""
+        failed = usage_failed(summary)
+        total = result_total_tokens(summary.result)
+        cost = summary.result.get("total_cost_usd")
+        print(
+            f"  RESULT    {summary.result.get('subtype')}  "
+            f"{summary.result.get('duration_ms', 0) / 1000:.0f}s  "
+            f"total {total:,} tokens, cached {stats.get('cache_read_input_tokens', 0):,}"
+            + (f", ${cost:.2f}" if cost is not None else "")
+            + ("  ** THE RUN PRODUCED NOTHING **" if failed else "")
+        )
+        if failed and text:
+            print(f"  WHY       {text[:300]}")
+
+
+def _resolve_budget(body: str, field: str = "name") -> int:
+    """Used by `worker_task.sh start` to refuse a dispatch whose issue has no resolvable budget
+    (docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md). Same
+    `budget_failures` the validator runs, so the driver and `issues.py validate` cannot disagree
+    about what a resolvable budget is. `--field` prints one field of the resolved class instead of
+    its name -- the driver's stage gate asks for `max_cost_usd` and for `max_total_tokens`, the
+    issue's two whole-issue ceilings, and cuts on whichever the log can actually report (#375,
+    #387)."""
+    failures = budget_failures(body, load_task_classes())
+    if failures:
+        for failure in failures:
+            print(failure, file=sys.stderr)
+        return 1
+    name = parse_budget_line(body)
+    print(name if field == "name" else getattr(load_task_classes()[name], field))
+    return 0
+
+
+def _print_role_backend(role: str, *, cache_dir: str | None) -> int:
+    """One TAB-separated line for the launch gate of a one-shot role and of the planner: the
+    backend that runs it, the model that is, whether the run is a substitution, the ceilings that
+    bind it, and the sentence saying why -- `agent_task.sh` and `planner_task.sh` read the four
+    first fields with `IFS=$'\\t' read` and print the last one as an identity line (#425).
+
+    Exits 1 with the reason on stderr, exactly as `backend-executable` does: a config that does not
+    load, or a role no class claims, stops the driver where it can still be read as a refusal
+    instead of becoming an empty command line the shell answers 127 with."""
+    try:
+        _class_name, plan, _verdict = role_launch(role, cache_dir=cache_dir)
+    except (KeyError, ValidationError, yaml.YAMLError, OSError) as error:
+        print(
+            f"cannot resolve the backend for role '{role}': "
+            f"{DEFAULT_AGENTS_CONFIG} does not answer\n{error}",
+            file=sys.stderr,
+        )
+        return 1
+    # The reason is prose a human reads, and a TAB inside it would shift every field after it.
+    print(
+        "\t".join(
+            (
+                plan.backend,
+                plan.model,
+                "yes" if plan.substituted else "no",
+                ",".join(plan.ceilings),
+                " ".join(plan.reason.split()),
+            )
+        )
+    )
+    return 0
+
+
+def _print_worker_environment() -> None:
+    """One `KEY<TAB>VALUE` line per `project.worker_environment` entry, for `worker_task.sh` to
+    `export` before it launches the backend CLI -- never a literal environment variable name or
+    value in the mechanism itself (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
+    and-configured-not-coded.md). `worker_environment_rules` renders the paragraph the worker reads
+    about this same list, names and no values, so the export and the prose cannot drift."""
+    for key, value in load_project().worker_environment.items():
+        print(f"{key}\t{value}")
+
+
+def _print_worktree_backends() -> None:
+    """One backend name per line, from `project.worktrees` -- so `worker_task.sh start` can
+    count alive workers across every configured backend without a hardcoded `qwen`/`claude` pair
+    (docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md)."""
+    for name in load_project().worktrees:
+        print(name)
+
+
+def _project_value(key: str, *, as_path: bool) -> str:
+    """One field of the `project:` section for the shell drivers, `a.b` reaching into a mapping
+    (`worktrees.claude`, `worker_apps.qwen`). `--path` resolves the value against the repository
+    root, which is what `worktrees:` entries are relative to."""
+    value = load_project()
+    for part in key.split("."):
+        value = value[part] if isinstance(value, dict) else getattr(value, part)
+    return str((HOST_ROOT / str(value)).resolve()) if as_path else str(value)
+
+
+def _planner_value(key: str) -> str:
+    """One field of the `planner:` section for the shell drivers, the same shape as
+    `_project_value` above. `relaunch_cap` is the first field of this section a bash driver reads
+    directly -- every other one (`idle_wake_minutes`, `max_runs_per_day`, `refiner_unattended`) is
+    only ever read from Python, inside `agent_guard.py` (#362)."""
+    return str(getattr(load_planner_config(), key))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    report = sub.add_parser("usage-report")
+    report.add_argument("events")
+    report.add_argument(
+        "body_file",
+        nargs="?",
+        default=None,
+        help="the issue's body, to resolve its own budget class's max_context (#483)",
+    )
+    resolve = sub.add_parser("resolve-budget")
+    resolve.add_argument(
+        "--field", default="name", help="a field of the resolved class (default: its name)"
+    )
+    row = sub.add_parser("planner-run-row")
+    row.add_argument("log")
+    row.add_argument("--ts", required=True)
+    row.add_argument("--context", default="")
+    row.add_argument("--model", default="")
+    role = sub.add_parser("role-class")
+    role.add_argument("role", help="validator, refiner or planner")
+    role.add_argument(
+        "--field", default="model", help="which field of the class to print (default: model)"
+    )
+    role_app = sub.add_parser("role-app")
+    role_app.add_argument("role")
+    role_backend = sub.add_parser("role-backend")
+    role_backend.add_argument("role", help="validator, refiner or planner")
+    role_backend.add_argument(
+        "--cache-dir",
+        default=None,
+        help="where the guard's bookkeeping lives (default: $WORKER_CACHE_DIR, else .cache)",
+    )
+    project = sub.add_parser("project-value")
+    project.add_argument(
+        "key", help="a field of the project: section, dotted into a mapping: worktrees.claude"
+    )
+    project.add_argument(
+        "--path", action="store_true", help="resolve the value against the repository root"
+    )
+    planner = sub.add_parser("planner-value")
+    planner.add_argument("key", help="a field of the planner: section, e.g. relaunch_cap")
+    executable = sub.add_parser("backend-executable")
+    executable.add_argument(
+        "name", help="a backend or CLI command name: qwen, claude -- the key of project.executables"
+    )
+    sub.add_parser("human-message-rules")
+    sub.add_parser("forbidden-paths-rules")
+    sub.add_parser("forbidden-paths-regex")
+    sub.add_parser("forbidden-paths-merge-audit-regex")
+    sub.add_parser("forbidden-paths-merge-audit-violations")
+    sub.add_parser("mechanism-paths-rules")
+    sub.add_parser("mechanism-paths-regex")
+    sub.add_parser("never-run-rules")
+    sub.add_parser("worker-environment")
+    sub.add_parser("worker-environment-rules")
+    sub.add_parser("worktree-backends")
+    sub.add_parser("stages-completed")
+    stage_titles = sub.add_parser("stage-titles")
+    stage_titles.add_argument("body_file")
+    cumulative_cost = sub.add_parser("cumulative-cost")
+    cumulative_cost.add_argument("paths", nargs="+")
+    cumulative_tokens = sub.add_parser("cumulative-tokens")
+    cumulative_tokens.add_argument("paths", nargs="+")
+    quota = sub.add_parser("quota-status")
+    quota.add_argument("events")
+    args = parser.parse_args()
+    if args.command == "usage-report":
+        body_path = pathlib.Path(args.body_file) if args.body_file else None
+        body = body_path.read_text() if body_path and body_path.is_file() else None
+        _print_usage_report(args.events, body)
+    elif args.command == "resolve-budget":
+        sys.exit(_resolve_budget(sys.stdin.read(), args.field))
+    elif args.command == "planner-run-row":
+        log_text = pathlib.Path(args.log).read_text(errors="replace")
+        print(planner_run_row(log_text, ts=args.ts, context=args.context, model=args.model))
+    elif args.command == "role-class":
+        try:
+            name, task_class = load_role_class(args.role)
+        except KeyError as error:
+            sys.exit(str(error))
+        print(name if args.field == "name" else getattr(task_class, args.field))
+    elif args.command == "role-app":
+        print(role_app_slug(args.role))
+    elif args.command == "role-backend":
+        sys.exit(_print_role_backend(args.role, cache_dir=args.cache_dir))
+    elif args.command == "project-value":
+        print(_project_value(args.key, as_path=args.path))
+    elif args.command == "planner-value":
+        print(_planner_value(args.key))
+    elif args.command == "backend-executable":
+        # A broken config is a loud stop, never a silent fallback to whatever PATH holds: the
+        # drivers check this exit status and refuse to launch anything (#380).
+        try:
+            print(backend_executable(args.name))
+        except (ValidationError, yaml.YAMLError, OSError, KeyError) as error:
+            sys.exit(
+                f"cannot resolve the executable for '{args.name}': "
+                f"{DEFAULT_AGENTS_CONFIG} does not load\n{error}"
+            )
+    elif args.command == "human-message-rules":
+        print(human_message_rules())
+    elif args.command == "forbidden-paths-rules":
+        print(forbidden_paths_rules())
+    elif args.command == "forbidden-paths-regex":
+        print(forbidden_paths_regex())
+    elif args.command == "forbidden-paths-merge-audit-regex":
+        print(forbidden_paths_merge_audit_regex())
+    elif args.command == "forbidden-paths-merge-audit-violations":
+        # One changed path per line on stdin, exactly what `gh pr diff N --name-only` prints --
+        # condition 3's own reading of the merge-audit subset (`docs/AGENT_OS.md` §2.4).
+        for path in forbidden_paths_merge_audit_violations(sys.stdin.read().splitlines()):
+            print(path)
+    elif args.command == "mechanism-paths-rules":
+        print(mechanism_paths_rules())
+    elif args.command == "mechanism-paths-regex":
+        print(mechanism_paths_regex())
+    elif args.command == "never-run-rules":
+        print(never_run_rules())
+    elif args.command == "worker-environment":
+        _print_worker_environment()
+    elif args.command == "worker-environment-rules":
+        print(worker_environment_rules())
+    elif args.command == "worktree-backends":
+        _print_worktree_backends()
+    elif args.command == "stages-completed":
+        print(stages_completed(sys.stdin.read().splitlines()))
+    elif args.command == "stage-titles":
+        for title in parse_stages(pathlib.Path(args.body_file).read_text()):
+            print(title)
+    elif args.command == "cumulative-cost":
+        print(f"{cumulative_cost_usd([pathlib.Path(p) for p in args.paths]):.4f}")
+    elif args.command == "cumulative-tokens":
+        # No thousands separator and no padding: the driver compares this against
+        # `max_total_tokens` with bash arithmetic, which reads neither.
+        print(cumulative_total_tokens([pathlib.Path(p) for p in args.paths]))
+    elif args.command == "quota-status":
+        print(quota_status(read_events(args.events)))
+
+
+if __name__ == "__main__":
+    main()
