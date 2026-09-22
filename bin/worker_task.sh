@@ -578,7 +578,7 @@ launch_stage() {
     echo "linked $worktree/.env -> $main/.env (it was missing)"
   fi
 
-  # GitHub identity: each backend is its own GitHub App (roedor-claude, roedor-qwen), so its
+  # GitHub identity: each backend is its own GitHub App, so its
   # comments, PRs and commits are attributable to it and never to the human account. Secrets are
   # per-app JSON+PEM under .secrets/ (gitignored); missing them degrades to the old anonymous
   # behavior with one warning rather than failing the run -- see docs/modules/workers.md#identities.
@@ -631,8 +631,8 @@ launch_stage() {
   echo "model:     $model"
   [ "$stages_total" -gt 0 ] && echo "stage:     $((stages_done + 1))/$stages_total of issue #$issue"
 
-  # Project-specific environment for the worker's own backend process -- roedor's is a read-only
-  # DATABASE_URL, but the mechanism itself names nothing (docs/adr/2026-09-14-the-agent-mechanism-
+  # Project-specific environment for the worker's own backend process -- a common example is a
+  # read-only database URL, but the mechanism itself names nothing (docs/adr/2026-09-14-the-agent-mechanism-
   # is-project-agnostic-and-configured-not-coded.md, docs/adr/2026-09-15-workers-connect-read-
   # only-by-default-and-reach-the-owner-only-through-the-test-runner.md). Exported here, into this
   # shell, so the backend CLI launched below inherits it.

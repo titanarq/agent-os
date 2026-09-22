@@ -63,8 +63,8 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # filesystem lacks, and a placeholder nothing supplied a value for.
     python -m agent_os.lib worker-environment
         # one `KEY<TAB>VALUE` line per `project.worker_environment` entry -- worker_task.sh
-        # exports these into the backend process before launching it (roedor: a read-only
-        # DATABASE_URL).
+        # exports these into the backend process before launching it (a common use is a
+        # read-only database URL).
     python -m agent_os.lib worker-environment-rules
         # the environment paragraph worker_task.sh injects via __WORKER_ENVIRONMENT_RULES__,
         # rendered from the same `project.worker_environment` the export loop reads -- names, never
@@ -385,6 +385,17 @@ class ProjectConfig(Strict):
     # the tracker.
     human_language: str = "English"
     notify_topic_file: str = ".secrets/ntfy_topic"
+    # The base name of the systemd `--user` `.timer`/`.service` pair the guard runs under (§4.4):
+    # `<guard_unit>.timer` fires the tick, `<guard_unit>.service` is what it fires and what
+    # `journalctl -u` reads. Substituted into the agent templates (`agent_os/agents/*.md`) as
+    # `__GUARD_UNIT__`. Empty by default: a project that runs the guard some other way names
+    # nothing here and the templates keep the placeholder unresolved, which is the render's job to
+    # refuse, not this field's.
+    guard_unit: str = ""
+    # Where a module doc lives, relative to the host root -- one file per `project.modules` entry
+    # (`docs/AGENT_OS.md` `ADOPTION.md` prerequisite). Substituted into the agent templates as
+    # `__MODULE_DOCS__`.
+    module_docs_dir: str = "docs/modules"
     # One template per ntfy page, written in `human_language` above and rendered by
     # `render_human_message` below. Empty by default, and a project that leaves it empty simply
     # cannot page: the renderer refuses an unknown key rather than inventing a wording of its own
@@ -409,8 +420,8 @@ class ProjectConfig(Strict):
     # silently dropping the paragraph.
     prompt_extras: dict[str, str] = {}
     # Environment exported into every worker's own backend process before it starts (never the
-    # mechanism's own process) -- roedor uses this for a read-only DATABASE_URL so a worker
-    # connects to the shared Postgres read-only by default, without a project literal in
+    # mechanism's own process) -- the first host uses this for a read-only database URL so a
+    # worker connects to its shared database read-only by default, without a project literal in
     # worker_task.sh (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
     # owner-only-through-the-test-runner.md).
     worker_environment: dict[str, str] = {}
@@ -463,7 +474,7 @@ class ProjectConfig(Strict):
     # PATH lookup every driver did before: a project that sets nothing behaves exactly as it did.
     # Why it exists: a dispatch from an unattended unit and a dispatch from a shell must resolve
     # the SAME binary. On 2026-09-16 they did not -- `qwen` lives under nvm, the PATH the systemd
-    # user manager hands `roedor-guard.service` does not carry that directory, and the stage
+    # user manager hands the guard's own unit does not carry that directory, and the stage
     # process died in under a second while the mechanical state called it a stage cut for not
     # committing (#380, #381, #363).
     executables: dict[str, str] = {}
@@ -606,7 +617,7 @@ def worktree_path(
     backend: str, *, main: pathlib.Path = HOST_ROOT, project: ProjectConfig | None = None
 ) -> pathlib.Path:
     """The backend's worktree, resolved against the repository root -- `config/agents.yaml` keeps
-    it relative (`../roedor-qwen`) so a clone under a different path needs no edit."""
+    it relative (`../your-repo-qwen`) so a clone under a different path needs no edit."""
     project = project or load_project()
     return (main / project.worktrees[backend]).resolve()
 
@@ -629,7 +640,7 @@ def backend_executable(name: str, *, project: ProjectConfig | None = None) -> st
 def load_task_classes(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> dict[str, TaskClass]:
     """Closed by pydantic's `extra="forbid"` on both levels: an unknown top-level key or an
     unknown field inside a class fails to load rather than being silently ignored, the same
-    "closed partition" discipline `roedor/config.py` uses for the stamped config (`config/
+    "closed partition" discipline the host project's own stamped config uses (`config/
     AGENTS.md`) -- `config/agents.yaml` itself sits outside the m2/s2 stamps, like `backtest.yaml`.
     """
     return load_agents_config(path).classes
@@ -1108,8 +1119,8 @@ def render_prompt(
             )
         extras = path.read_text()
     # The extras go in FIRST, so a host's own paragraph may carry the mechanism's placeholders --
-    # `__TEST_COMMAND__` is the one roedor's worker file uses -- and is filled from the same config
-    # as the template around it.
+    # `__TEST_COMMAND__` is the one the first host's worker file uses -- and is filled from the
+    # same config as the template around it.
     text = _substitute_block(template.read_text(), PROJECT_EXTRAS_PLACEHOLDER, extras)
     for name, value in (substitutions or {}).items():
         text = _substitute_block(text, f"__{name}__", value)

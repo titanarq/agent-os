@@ -12,7 +12,6 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "PyJWT>=2.8",
-    "requests>=2.31",
 ]
 
 # For a host that prefers a name on PATH over `python -m agent_os.<module>`; the drivers use the
