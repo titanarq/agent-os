@@ -177,7 +177,10 @@ class RoleFallback(Strict):
     declaration for the day one does (and for the control plane's deviation report), not a limit
     this file enforces."""
 
-    backend: Literal["qwen", "claude"]
+    # A key of `project.worktrees`, checked at config load by `AgentsConfig`'s own validator below
+    # rather than pinned to `Literal["qwen", "claude"]` (#510) -- a third backend needs no code
+    # change, only a worktree and a class that names it.
+    backend: str
     model: str
     ceilings: list[CeilingName] = list(CEILING_NAMES)
 
@@ -200,7 +203,9 @@ class TaskClass(Strict):
     # other three roles have exactly one class each, named after the role, which is how
     # `agent_task.sh <role>` resolves its model without a second mapping.
     role: Literal["worker", "validator", "refiner", "planner"] = "worker"
-    backend: Literal["qwen", "claude"]
+    # See `RoleFallback.backend` above: a key of `project.worktrees`, validated once the whole
+    # config is loaded, when `project` is there to validate it against.
+    backend: str
     model: str
     max_context: int
     max_cost_usd: float
@@ -268,6 +273,23 @@ class LabelVocabulary(Strict):
     # same tick it reads it (#413). Only a label set by the human wakes anything -- set by one of
     # the mechanism's own identities it is removed and ignored, so the planner cannot wake itself.
     wake_planner: str = "wake:planner"
+    # The rest of the vocabulary `issues.py` used to spell as literals (`docs/AGENT_OS.md` §7 row
+    # (c)'s sibling: the module names moved to `project.modules` there, `type:*`/`p<n>`/`module:`
+    # stayed hardcoded). Defaults match what was hardcoded, so no existing config changes
+    # behaviour -- a project only writes these to add a type, change its priority scale, or spell
+    # the module prefix differently.
+    #
+    # The four backlog-YAML concepts (`type_label` in `issues.py` decides which of them an entry
+    # is: `Epic`/`Task`/tagged-`bug`/else-`feature`), each combined with the mechanism's own
+    # `type:` prefix -- adding a fifth entry here creates its label but not a way to reach it from
+    # the YAML loader, which stays fixed to those four concepts.
+    types: list[str] = ["epic", "feature", "task", "bug"]
+    # One label per priority, in order -- `desired_labels` indexes into this by the YAML's own
+    # `priority: n` (1-based), and `fixed_labels` creates every one of them up front.
+    priorities: list[str] = ["p1", "p2", "p3", "p4"]
+    # The prefix `fixed_labels` joins with each of `project.modules` to create that half of the
+    # fixed label set.
+    module_prefix: str = "module:"
 
     def label_for_state(self, state: str) -> str | None:
         """`done` is the one state with no label of its own: it removes every state label and
@@ -535,6 +557,32 @@ class AgentsConfig(Strict):
     mechanism: MechanismConfig = MechanismConfig()
     planner: PlannerConfig = PlannerConfig()
     classes: dict[str, TaskClass]
+
+    @model_validator(mode="after")
+    def backends_are_configured_worktrees(self) -> AgentsConfig:
+        """`TaskClass.backend` and `RoleFallback.backend` used to be pinned to
+        `Literal["qwen", "claude"]`; freed into a plain `str` (#510) they would silently accept a
+        typo with no worktree behind it, so this checks each one against `project.worktrees`'s own
+        keys instead, once, here, rather than at whichever dispatch first tries the unknown name.
+
+        A project that configures no worktree at all (`project.worktrees` empty) declares nothing
+        to check a backend name against, so it is left alone -- the same "empty means unchecked"
+        reading `forbidden_paths`/`never_run` already use elsewhere in this file."""
+        known = set(self.project.worktrees)
+        if not known:
+            return self
+        for name, task_class in self.classes.items():
+            if task_class.backend not in known:
+                raise ValueError(
+                    f"class '{name}' names backend '{task_class.backend}', which is not a key of "
+                    f"project.worktrees ({sorted(known)})"
+                )
+            if task_class.fallback is not None and task_class.fallback.backend not in known:
+                raise ValueError(
+                    f"class '{name}' fallback names backend '{task_class.fallback.backend}', "
+                    f"which is not a key of project.worktrees ({sorted(known)})"
+                )
+        return self
 
 
 def load_agents_config(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> AgentsConfig:

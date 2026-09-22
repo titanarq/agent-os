@@ -112,25 +112,30 @@ KEY_LINE_RE = re.compile(r"<!--\s*key:\s*([a-z0-9][a-z0-9.-]*)\s*-->")
 TYPES = ("Epic", "Issue", "Task")  # the backlog YAML vocabulary, unchanged
 STATES = ("To Do", "Doing", "Done")
 
-TYPE_LABEL = {
-    "epic": "type:epic",
-    "feature": "type:feature",
-    "task": "type:task",
-    "bug": "type:bug",
-}
+
+def type_labels(project: ProjectConfig | None = None) -> dict[str, str]:
+    """`epic`/`feature`/`task`/`bug` -> their `type:<name>` label, from `project.labels.types`
+    (`config/agents.yaml`) rather than a literal dict (`docs/AGENT_OS.md` §7 row (c)'s sibling,
+    #510). The four CONCEPTS are the backlog YAML's own fixed vocabulary -- `type_label` below
+    decides which one an entry is -- and do not change with the project; what a project configures
+    is which of them get a label and under what name, plus the `type:` prefix stays fixed."""
+    project = project or load_project()
+    return {name: f"type:{name}" for name in project.labels.types}
 
 
 def fixed_labels(project: ProjectConfig | None = None) -> list[str]:
     """The labels this tracker creates whether or not anything uses them yet. The `module:<name>`
-    half is `project.modules` in `config/agents.yaml` and the in-progress state is
-    `project.labels.doing`, never a list or a literal in this file: a second project writes its
-    own names there and changes no code (`docs/AGENT_OS.md` §7 row (c)). The `type:*` and `p<n>`
-    halves are the mechanism's own vocabulary and stay the same whatever the project."""
+    half is `project.modules` in `config/agents.yaml`, the in-progress state is
+    `project.labels.doing`, and the `type:*`/`p<n>`/`module:` vocabulary itself is
+    `project.labels.{types,priorities,module_prefix}` -- never a list or a literal in this file: a
+    second project writes its own names there and changes no code (`docs/AGENT_OS.md` §7 row (c)).
+    """
     project = project or load_project()
     return (
-        ["type:epic", "type:feature", "type:task", "type:bug", project.labels.doing]
-        + [f"p{n}" for n in (1, 2, 3, 4)]
-        + [f"module:{name}" for name in project.modules]
+        list(type_labels(project).values())
+        + [project.labels.doing]
+        + list(project.labels.priorities)
+        + [f"{project.labels.module_prefix}{name}" for name in project.modules]
     )
 
 
@@ -300,24 +305,27 @@ def compose_body(entry: dict, key: str) -> str:
 # --------------------------------------------------------------------------------------------
 
 
-def type_label(entry: dict) -> str:
+def type_label(entry: dict, project: ProjectConfig | None = None) -> str:
+    labels = type_labels(project)
     kind = entry["type"]
     if kind == "Epic":
-        return "type:epic"
+        return labels["epic"]
     if kind == "Task":
-        return "type:task"
+        return labels["task"]
     tags = [str(tag).lower() for tag in entry.get("tags", [])]
-    return "type:bug" if "bug" in tags else "type:feature"
+    return labels["bug"] if "bug" in tags else labels["feature"]
 
 
 def desired_labels(entry: dict, project: ProjectConfig | None = None) -> list[str]:
-    labels = [type_label(entry)]
+    project = project or load_project()
+    labels = [type_label(entry, project)]
     state = entry.get("state", "To Do")
     if state == "Doing":
         # The same configured vocabulary `move` writes, never a second spelling of it.
-        labels.append((project or load_project()).labels.doing)
+        labels.append(project.labels.doing)
     if entry.get("priority"):
-        labels.append(f"p{int(entry['priority'])}")
+        # 1-based, matching the YAML's own `priority: n`.
+        labels.append(project.labels.priorities[int(entry["priority"]) - 1])
     for tag in entry.get("tags", []):
         tag = str(tag)
         if not tag.startswith("key-"):
@@ -605,10 +613,9 @@ def validate_issue(repo: str, number: int) -> list[str]:
     dispatchable predicate asks — "Ready for AI" and "the validator passes" are one implementation
     and cannot drift apart."""
     data = gh_json_dict("issue", "view", str(number), "--repo", repo, "--json", "body,labels")
+    labels = type_labels()
     grouping_types = [
-        label
-        for label in sorted(label_names(data))
-        if label in (TYPE_LABEL["epic"], TYPE_LABEL["feature"])
+        label for label in sorted(label_names(data)) if label in (labels["epic"], labels["feature"])
     ]
     if grouping_types:
         # An epic or a feature groups briefs and has no template of its own: reporting the task
@@ -832,7 +839,7 @@ def cmd_create(args: argparse.Namespace) -> None:
     repo = repo_name()
     print(f"repo: {repo}")
     label_cache = ensure_fixed_labels(repo)
-    labels = [TYPE_LABEL[issue_type]] + list(args.label or [])
+    labels = [type_labels()[issue_type]] + list(args.label or [])
     ensure_labels(repo, labels, label_cache)
     if args.template:
         body = template_body(args.template)
@@ -960,6 +967,10 @@ def cmd_load(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # The `--type` vocabulary is `project.labels.types`, read once here rather than per parser --
+    # both `list` and `create` offer the same choices, and a broken config should fail before
+    # either subcommand runs, not silently fall back to an empty list of choices.
+    type_choices = list(load_project().labels.types)
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -967,7 +978,7 @@ def main() -> None:
 
     p = sub.add_parser("list")
     p.add_argument("--all", action="store_true")
-    p.add_argument("--type", choices=list(TYPE_LABEL))
+    p.add_argument("--type", choices=type_choices)
     p.add_argument("--label")
     p.add_argument("--state", choices=("open", "closed"))
     p.set_defaults(func=cmd_list)
@@ -977,7 +988,7 @@ def main() -> None:
     p.set_defaults(func=cmd_show)
 
     p = sub.add_parser("create")
-    p.add_argument("--type", choices=list(TYPE_LABEL))
+    p.add_argument("--type", choices=type_choices)
     p.add_argument("--title")
     p.add_argument("--parent", type=int)
     p.add_argument("--body-file")
