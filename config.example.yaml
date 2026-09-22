@@ -28,6 +28,9 @@ project:
   # checks: `<this>.service`, `<this>.timer`, `<this>.service.d/override.conf`. Empty refuses
   # both commands rather than inventing a name from the repository's own.
   guard_unit: your-repo-guard
+  # Where this project's module docs live, one per `project.modules` entry -- the `__MODULE_DOCS__`
+  # token in the rendered `.claude/agents/*.md` prompts points here.
+  module_docs_dir: docs/modules
   # The one human. Substituted into every `@<login>` a role writes.
   human_login: your-github-login
   # Language for anything addressed to the human. Code, identifiers, commits and repository

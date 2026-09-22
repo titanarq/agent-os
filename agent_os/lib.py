@@ -346,6 +346,10 @@ class ProjectConfig(Strict):
     # check; empty means neither has been told a name yet, so both refuse loudly rather than
     # guessing one from the repository's name (docs/AGENT_OS.md §7 row (h)).
     guard_unit: str = ""
+    # Where this project's module docs live, one per `project.modules` entry -- read by the
+    # `__MODULE_DOCS__` token the `.claude/agents/*.md` templates carry (#510), so the rendered
+    # prompt points at the real directory instead of a literal `docs/modules/workers.md`.
+    module_docs_dir: str = "docs/modules"
     # The GitHub login of the one human. A question addressed to them starts with `@<login>` so it
     # reaches their mentions; the drivers substitute it into the RULES they inject, which is why no
     # script under the mechanism spells a person's name.

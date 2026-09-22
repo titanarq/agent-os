@@ -1,6 +1,7 @@
 """`agent_os.install` -- `agent-os install [--dry-run] [--force]` writes the systemd units
-(docs/AGENT_OS.md §7 row (h), issue #511 stage 1). Copying the host's templates is stage 3,
-covered by `test_install_templates.py` once that stage lands.
+(docs/AGENT_OS.md §7 row (h), issue #511). Copying the host's templates
+(`.claude/agents/*.md`, the issue templates, the CI snippet) is covered separately by
+`test_install_templates.py`.
 
 Pure filesystem and subprocess (`git`, never `gh`, never a real backend). This file must not
 request the `engine` or `db_sandbox` fixture.

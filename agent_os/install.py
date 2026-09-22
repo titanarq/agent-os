@@ -1,9 +1,9 @@
-"""Adopting the mechanism's systemd units on a machine, from `config/agents.yaml` alone.
+"""Adopting the mechanism on a machine, from `config/agents.yaml` alone.
 
-`agent-os install [--dry-run] [--force]` writes the systemd `--user` units the tick runs on:
-`<guard_unit>.service`, `<guard_unit>.timer` and the `<guard_unit>.service.d/override.conf`
-drop-in -- the file `docs/AGENT_OS.md` §5 step 7 used to say was "machine steps, not code, but
-manual regardless" (`docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
+`agent-os install [--dry-run] [--force]` writes the systemd `--user` units the tick runs on, and
+copies the host's `.claude/agents/*.md`, `.github/ISSUE_TEMPLATE/*.md` and a CI snippet if they are
+absent -- the three files `docs/AGENT_OS.md` §5 step 7 used to say were "machine steps, not code,
+but manual regardless" (`docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
 (`docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
 `docs/runbooks/agent_monitor.md`).
@@ -16,9 +16,6 @@ Every path is either created or left alone: an existing file that already matche
 content is reported and skipped, one that differs is reported with its diff and left alone unless
 `--force` says to overwrite it. Nothing here is destructive on its own -- the worst `--force` does
 is overwrite a file this same command would write again identically after `--force`.
-
-Copying the host's `.claude/agents/*.md`, `.github/ISSUE_TEMPLATE/*.md` and the CI snippet is
-issue #511's stage 3, landing in a later commit once #510's own templates exist to render.
 """
 
 from __future__ import annotations
@@ -31,8 +28,12 @@ import sys
 
 from agent_os.cli import AGENT_OS_DIR, agent_os_python, host_root
 from agent_os.lib import ProjectConfig, load_project
+from agent_os.render import render_agent_template
 
 SYSTEMD_TEMPLATES_DIR = AGENT_OS_DIR / "templates" / "systemd"
+ISSUE_TEMPLATES_DIR = AGENT_OS_DIR / "templates" / "issue_template"
+CI_SNIPPET_SOURCE = AGENT_OS_DIR / "templates" / "ci-agent-os.yml"
+AGENT_TEMPLATES_DIR = AGENT_OS_DIR / "agents"
 
 # The standard systemd/POSIX default -- present on every Linux box regardless of what this one
 # happens to have installed under `~`, and the same tail the units armed by hand on this machine
@@ -182,6 +183,45 @@ def plan_systemd_units(project: ProjectConfig, root: pathlib.Path, systemd_user_
     return [service, timer, override]
 
 
+def plan_issue_templates(root: pathlib.Path) -> list[Action]:
+    if not ISSUE_TEMPLATES_DIR.is_dir():
+        return []
+    actions = []
+    for name in ("task.md", "bug.md"):
+        source = ISSUE_TEMPLATES_DIR / name
+        if not source.is_file():
+            continue
+        actions.append(Action(root / ".github" / "ISSUE_TEMPLATE" / name, source.read_text()))
+    return actions
+
+
+def plan_ci_snippet(root: pathlib.Path) -> list[Action]:
+    if not CI_SNIPPET_SOURCE.is_file():
+        return []
+    return [
+        Action(root / ".github" / "workflows" / "ci-agent-os.yml", CI_SNIPPET_SOURCE.read_text())
+    ]
+
+
+def plan_agent_templates(
+    project: ProjectConfig, root: pathlib.Path
+) -> tuple[list[Action], str | None]:
+    """The `.claude/agents/{control-plane,worker-runner}.md` prompts, rendered from
+    `agent_os/agents/*.md` by the generic `__TOKEN__` renderer (`agent_os.render`). `agent_os/agents/`
+    is #510's own deliverable, landing in parallel -- absent here, this reports "no templates dir,
+    skipped" instead of failing, exactly as the issue asks."""
+    if not AGENT_TEMPLATES_DIR.is_dir():
+        return [], "no templates dir (agent_os/agents/), skipped"
+    actions = []
+    for name in ("control-plane.md", "worker-runner.md"):
+        source = AGENT_TEMPLATES_DIR / name
+        if not source.is_file():
+            continue
+        rendered = render_agent_template(source.read_text(), project)
+        actions.append(Action(root / ".claude" / "agents" / name, rendered))
+    return actions, None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -201,6 +241,11 @@ def main() -> None:
     except InstallError as error:
         sys.exit(str(error))
 
+    agent_actions, agent_note = plan_agent_templates(project, root)
+    actions += agent_actions
+    actions += plan_issue_templates(root)
+    actions += plan_ci_snippet(root)
+
     failed = False
     for action in actions:
         print(f"{action.dest}: {action.status(force=args.force)}")
@@ -210,6 +255,9 @@ def main() -> None:
             action.write()
         if action.existed and not action.unchanged and not args.force:
             failed = True
+
+    if agent_note:
+        print(agent_note)
 
     if failed:
         sys.exit(
