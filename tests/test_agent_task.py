@@ -28,10 +28,12 @@ import shutil
 import signal
 import subprocess
 import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import EXAMPLE_CONFIG, config_with_never_run, config_with_no_host_text
 
+from agent_os import guard as agent_guard
 from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.lib import (
     PROMPTS_DIR,
@@ -39,7 +41,9 @@ from agent_os.lib import (
     load_project,
     load_role_class,
     never_run_rules,
+    read_persisted_quota_verdict,
     role_app_slug,
+    role_launch,
 )
 
 # The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
@@ -542,6 +546,9 @@ if [ -n "${STUB_SESSION_FILE-}" ]; then
     "$(ps -o ppid= -p $$ | tr -d ' ')" > "$STUB_SESSION_FILE"
 fi
 if [ -n "${STUB_SLEEP-}" ]; then sleep "$STUB_SLEEP"; fi
+# The backend's own stream-json, when a test hands it one: what the run log then carries is the
+# record the guard reads a role's quota off (#429). Opt-in like the two above.
+if [ -n "${STUB_STREAM-}" ]; then cat "$STUB_STREAM"; fi
 {
   printf 'PYTHONPATH=%s\\n' "${PYTHONPATH-}"
   printf 'PWD=%s\\n' "$PWD"
@@ -1404,3 +1411,149 @@ def test_an_exhausted_verdict_launches_the_fallback_backend_and_not_claude(
     assert events[0].read_text().strip() == (
         f"the validator finished on #{PULL_REQUEST} (ran on qwen, the declared fallback for claude)"
     )
+
+
+# -------------------------------------------------------------------------------------------------
+# END TO END (#429): a role refused by its own backend's quota teaches the launch gate, through the
+# guard, with no worker anywhere. Before #429 only a live worker's stream could write the verdict,
+# so the 2026-09-18 planner run refused by Claude's five-hour window left it `unknown` and the next
+# role launched straight into the same window. The guard is the verdict's one writer; the drivers
+# only read it.
+# -------------------------------------------------------------------------------------------------
+
+# The backend's side of a refused run, in the shape `.cache/planner/20260918T084846Z.log` carries:
+# one rejected rate-limit event, an empty turn, and an error result with the HTTP status. Its
+# assistant says nothing about a quota -- the verdict must come from this record alone.
+REJECTED_BY_THE_QUOTA_STREAM = [
+    {
+        "type": "rate_limit_event",
+        "session_id": "s1",
+        "rate_limit_info": {
+            "status": "rejected",
+            "unifiedWindows": {"five_hour": {"utilization": 1, "resetsAt": 1789727400}},
+        },
+    },
+    {
+        "type": "assistant",
+        "session_id": "s1",
+        "message": {"content": [], "usage": {"input_tokens": 0, "output_tokens": 0}},
+    },
+    {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+        "num_turns": 1,
+        "api_error_status": 429,
+        "terminal_reason": "api_error",
+        "result": "You've hit your session limit · resets 12:30pm",
+    },
+]
+SERVED_STREAM = [
+    {
+        "type": "assistant",
+        "session_id": "s2",
+        "message": {
+            "content": [{"type": "text", "text": "review posted"}],
+            "usage": {"input_tokens": 10, "output_tokens": 10},
+        },
+    },
+    {"type": "result", "subtype": "success", "is_error": False, "num_turns": 1, "result": "ok"},
+]
+
+
+def _stream_file(path: pathlib.Path, events: list[dict]) -> pathlib.Path:
+    path.write_text("".join(json.dumps(event) + "\n" for event in events))
+    return path
+
+
+def _age_by(path: pathlib.Path, seconds: float) -> None:
+    """Moves a file's mtime back: for the detached driver, which reads the real clock, this is the
+    clock moving forward -- both the verdict's age and a role log's age are read off mtimes."""
+    stat = path.stat()
+    os.utime(path, (stat.st_atime - seconds, stat.st_mtime - seconds))
+
+
+def test_a_role_refused_on_quota_sends_the_next_launch_to_the_fallback_until_the_ttl(
+    launch_environment, tmp_path, monkeypatch
+):
+    """Rejected run -> guard tick -> the next launch takes the declared fallback; the verdict
+    ages past `mechanism.quota_verdict_ttl_minutes` -> the class's own backend runs again. Every
+    run goes through the real detached driver; the tick is `guard.tick` itself, with only the
+    tracker stubbed out (`_agents_paused`, so it stops before any event, label or planner)."""
+    cache = pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
+    # One sandbox for the role logs, the verdict and the guard's bookkeeping, as in the test above;
+    # the in-process guard is pointed at the same place the driver writes to.
+    launch_environment["WORKER_CACHE_DIR"] = str(cache)
+    for name, value in (("AGENT_CACHE_DIR", cache), ("WORKER_CACHE_DIR", cache)):
+        monkeypatch.setenv(name, str(value))
+    monkeypatch.delenv("PLANNER_CACHE_DIR", raising=False)
+    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: True)
+
+    stub = pathlib.Path(launch_environment["AGENT_CLAUDE_BIN"])
+    qwen_mark = tmp_path / "qwen-was-launched.txt"
+    claude_mark = tmp_path / "claude-was-launched.txt"
+    launch_environment["AGENT_QWEN_BIN"] = str(
+        _marking_stub(tmp_path / "bin" / "qwen", qwen_mark, stub)
+    )
+    launch_environment["AGENT_CLAUDE_BIN"] = str(
+        _marking_stub(tmp_path / "bin" / "claude", claude_mark, stub)
+    )
+    rejected = _stream_file(tmp_path / "rejected.jsonl", REJECTED_BY_THE_QUOTA_STREAM)
+    served = _stream_file(tmp_path / "served.jsonl", SERVED_STREAM)
+    _, task_class = load_role_class("validator")
+    fallback = task_class.fallback
+    assert fallback is not None, "config.example.yaml declares no validator fallback"
+    ttl_seconds = load_mechanism().quota_verdict_ttl_minutes * 60
+
+    def launch(stream: pathlib.Path, exit_code: str) -> subprocess.CompletedProcess:
+        for mark in (qwen_mark, claude_mark):
+            mark.unlink(missing_ok=True)
+        result = _launch(
+            {**launch_environment, "STUB_STREAM": str(stream), "STUB_EXIT_CODE": exit_code},
+            "validator",
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result
+
+    # 1. The class's own backend runs -- nothing is on disk yet -- and its quota refuses it.
+    first = launch(rejected, "1")
+    assert claude_mark.is_file() and not qwen_mark.exists()
+    rejected_log = _printed_path(first.stdout, "log")
+    assert f"backend:   {task_class.backend}" in rejected_log.read_text()
+    assert read_persisted_quota_verdict(task_class.backend).status == "unknown", (
+        "the driver wrote the verdict itself -- the guard is meant to be its one writer"
+    )
+
+    # 2. One guard tick folds the refusal into the verdict, timed by the refused run's own log.
+    agent_guard.tick(main=tmp_path)
+    verdict_file = cache / f"agent_guard_{task_class.backend}.json"
+    assert read_persisted_quota_verdict(task_class.backend).status == "exhausted"
+    assert verdict_file.stat().st_mtime_ns == rejected_log.stat().st_mtime_ns
+
+    # 3. The next launch reads it and runs on the declared fallback.
+    second = launch(served, "0")
+    assert qwen_mark.is_file(), "the fallback backend was never launched"
+    assert not claude_mark.exists(), "Claude was launched on a verdict that read exhausted"
+    assert f"backend:   {fallback.backend} (FALLBACK for {task_class.backend}" in _run_log(
+        second.stdout
+    )
+
+    # 4. The clock moves past the TTL. In process, through the guard's and the gate's own `now`:
+    # a tick then leaves the verdict alone -- the refusal is not re-read into a fresh one -- and
+    # the plan reads it as unknown and names the class's own backend.
+    later = datetime.now(UTC) + timedelta(seconds=ttl_seconds + 300)
+    before = verdict_file.stat().st_mtime_ns
+    agent_guard.tick(main=tmp_path, now=later)
+    assert verdict_file.stat().st_mtime_ns == before
+    _, plan, _ = role_launch("validator", now=later)
+    assert (plan.backend, plan.substituted) == (task_class.backend, False), plan
+
+    # ...and for the detached driver, which reads the real clock, by moving the refusal's two
+    # records back by the same amount. A real tick in between re-reads nothing into the verdict.
+    _age_by(rejected_log, ttl_seconds + 300)
+    _age_by(verdict_file, ttl_seconds + 300)
+    agent_guard.tick(main=tmp_path)
+    third = launch(served, "0")
+    assert claude_mark.is_file(), "the class's own backend did not run once the verdict aged out"
+    assert not qwen_mark.exists()
+    assert f"past the {ttl_seconds // 60} min TTL" in third.stdout, third.stdout
