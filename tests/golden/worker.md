@@ -6,7 +6,7 @@ because it already went wrong once.
 
 WHERE YOU WORK
 - Your checkout is the current directory. Never edit, stage, or commit anything under
-  <HOST-MAIN-CHECKOUT> -- that is the other agent's checkout. You may READ it (its
+  . -- that is the other agent's checkout. You may READ it (its
   .cache/ holds inputs you may copy) but you may never write there.
 - Work on the branch you are already on. Never switch branches, never rebase, and never run a
   destructive git command anywhere: no `reset --hard`, no `checkout .`, no `clean -fd`, no
@@ -37,21 +37,14 @@ ONE STAGE PER PROCESS
   next process to build on.
 
 FILES YOU MUST NOT TOUCH
-config/cik_chains.yaml, config/concepts.yaml, config/proposals/*, baselines/*, AGENTS.md, CLAUDE.md,
-docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/DOMAIN.md, docs/adr/*, docker-compose.yml,
-scripts/cp34_*.sh, scripts/census_baseline.py, scripts/chains_candidates.py, roedor/metrics/*,
-roedor/normalize/*, roedor/config.py, roedor/universe.py, roedor/chains.py,
-roedor/ingest/symbol_ownership.py, config/v0.yaml, config/overrides.yaml, config/symbol_reuse.yaml,
-config/action_adjudications.yaml.
+docs/adr/*, docker-compose.yml.
 These are the host project's, and no brief can authorize one: a task that needs one is a defect in
 the brief. The mechanism's own files below are the only paths an issue body may name as the target
 of its work.
 If a task genuinely requires one of these, stop and say so rather than working around it.
 
 FILES OF THE MECHANISM'S OWN
-agent_os/*, scripts/worker_task.sh, scripts/agent_task.sh, scripts/planner_task.sh,
-scripts/worker_progress.sh, scripts/notify.sh, scripts/qwen_task.sh, scripts/agent_guard.py,
-scripts/agent_lib.py, scripts/issues.py, scripts/gh_app_token.py, .claude/*.
+agent_os/*, .claude/*.
 These are the machinery you run inside, not the host project's, and the tracking epic exists to
 change them: your diff may touch one only when the issue body names that path as the target of the
 work. When it does, say so in a comment before the first commit that touches one -- the path, and
@@ -62,18 +55,8 @@ there at all.
 If the body does not name one, stop and say so rather than working around it.
 
 COMMANDS YOU MUST NEVER RUN
-- `--write` -- persists the one-date universe census into facts.universe_census; the same command
-  without it is a dry run
-- `census-build` -- rebuilds the census over a whole date grid and has no dry run, and membership is
-  what seals the m2 and s2 stamps
-- `scripts/cp34_*.sh` -- the rebuild drivers, which run census, metrics and scores in one pass and
-  move every stamp
-- `quality scan` -- writes the detectors' findings into quality.findings unless it is given
-  --dry-run
-- `--adopt` -- rewrites the versioned config/concepts.yaml, and a taxonomy adoption moves the m2
-  stamp
-- `census_baseline.py record` -- overwrites baselines/census.json, the snapshot the next rebuild is
-  judged against
+- `--force-push` -- rewrites shared history other clones have already built work on top of
+- `drop-database` -- destroys the shared database with no dry-run flag and no way back
 The reason is part of the rule: it is what you judge an edge case against. If a task genuinely
 needs one of these, stop and say so rather than working around it.
 
@@ -156,7 +139,7 @@ LIVENESS: SAY WHAT YOU ARE DOING BEFORE YOU DO IT
   line.
 - If you need a human decision and cannot proceed without one: append
   `YYYY-MM-DD HH:MM  BLOCKED reason=<short text>` to `scratchpad/progress.log`, post a comment on your issue
-  that STARTS with `@MatillaM`, written the way the paragraph below describes, and end your
+  that STARTS with `@example-login`, written the way the paragraph below describes, and end your
   turn. The mention is not politeness: it is what puts the question in the human's GitHub mentions
   instead of on an issue nobody is watching. Do not wait idle for an answer -- your budget is not
   spent waiting on a human, and the reply wakes the planner, not you.
@@ -171,7 +154,7 @@ LIVENESS: SAY WHAT YOU ARE DOING BEFORE YOU DO IT
 WRITING TO THE HUMAN
 Everything addressed to the human -- a `## Doubts` block, a question posted with
 `blocked-on-human`, a worker's BLOCKED question comment, the refiner's summary comment -- is
-written in Spanish.
+written in English.
 Explain each doubt in functional language, for a reader who knows the product and how it is
 operated but is not reading the code: what has to be decided and why it matters now; the options,
 and what each one means in practice -- for the product, the operation, cost, dates, risk; and your

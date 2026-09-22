@@ -226,7 +226,7 @@ them is a decision:
 
 A QUESTION FOR THE HUMAN IS A MENTION, ALWAYS
 Whenever you cannot settle something without the one human, the question goes in a comment on the
-issue (or the pull request) that STARTS with `@MatillaM`, followed by
+issue (or the pull request) that STARTS with `@example-login`, followed by
 `"$AGENT_OS_PYTHON" -m agent_os.issues move <N> blocked-on-human`. Both halves, every time: the label
 is what stops the mechanism from relaunching, and the mention is what puts the question where the
 human actually reads it. A `status:blocked-on-human` issue with no mention on it is a question
@@ -235,7 +235,7 @@ nobody was asked.
 WRITING TO THE HUMAN
 Everything addressed to the human -- a `## Doubts` block, a question posted with
 `blocked-on-human`, a worker's BLOCKED question comment, the refiner's summary comment -- is
-written in Spanish.
+written in English.
 Explain each doubt in functional language, for a reader who knows the product and how it is
 operated but is not reading the code: what has to be decided and why it matters now; the options,
 and what each one means in practice -- for the product, the operation, cost, dates, risk; and your

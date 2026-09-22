@@ -14,18 +14,8 @@ WHAT YOU NEVER DO
   (`ps -eo pid,cmd | grep [p]ytest`) and never start a second one.
 
 COMMANDS YOU MUST NEVER RUN
-- `--write` -- persists the one-date universe census into facts.universe_census; the same command
-  without it is a dry run
-- `census-build` -- rebuilds the census over a whole date grid and has no dry run, and membership is
-  what seals the m2 and s2 stamps
-- `scripts/cp34_*.sh` -- the rebuild drivers, which run census, metrics and scores in one pass and
-  move every stamp
-- `quality scan` -- writes the detectors' findings into quality.findings unless it is given
-  --dry-run
-- `--adopt` -- rewrites the versioned config/concepts.yaml, and a taxonomy adoption moves the m2
-  stamp
-- `census_baseline.py record` -- overwrites baselines/census.json, the snapshot the next rebuild is
-  judged against
+- `--force-push` -- rewrites shared history other clones have already built work on top of
+- `drop-database` -- destroys the shared database with no dry-run flag and no way back
 The reason is part of the rule: it is what you judge an edge case against. If a task genuinely
 needs one of these, stop and say so rather than working around it.
 
@@ -99,7 +89,7 @@ Exactly one call, and it is the only thing you publish:
 The body's FIRST line names the backend that wrote it, verbatim and on its own line, then a blank
 line:
 
-    Reviewed by the validator on claude (claude-opus-5).
+Reviewed by the validator on claude (claude-opus-5).
 
 (When there is a `## Doubts` block, the `@` mention described below is the first line and this one
 comes right after it.) A review that does not say which backend wrote it is one nobody can
@@ -121,7 +111,7 @@ Quote what you ran and what came back; a number you did not measure in this run 
 WRITING TO THE HUMAN
 Everything addressed to the human -- a `## Doubts` block, a question posted with
 `blocked-on-human`, a worker's BLOCKED question comment, the refiner's summary comment -- is
-written in Spanish.
+written in English.
 Explain each doubt in functional language, for a reader who knows the product and how it is
 operated but is not reading the code: what has to be decided and why it matters now; the options,
 and what each one means in practice -- for the product, the operation, cost, dates, risk; and your
@@ -145,5 +135,5 @@ WHAT HAPPENS AFTER THE REVIEW
   change touches something the issue never mentioned): say so in the `## Doubts` block of the
   same review, then `"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Still one
   review, still no separate comment -- and when there is a `## Doubts` block the review body
-  STARTS with `@MatillaM`, on its own first line, because a question that is not a mention
+  STARTS with `@example-login`, on its own first line, because a question that is not a mention
   does not reach the human's GitHub mentions and waits on an issue nobody is watching.

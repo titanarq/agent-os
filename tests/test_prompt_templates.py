@@ -1,12 +1,14 @@
 """`agent_os/prompts/` and `agent_os.lib.render_prompt` -- where every role's prompt lives now, and
 the proof that moving it out of the drivers' heredocs changed nothing an agent reads.
 
-The golden test below renders all four prompts through the HOST project's real
-`config/agents.yaml` and compares them with `agent_os/tests/golden/`, captured from the same
-drivers before the move (#509). It is the one test in this file that reads the host's config, and
-it reads it through `capture_golden.sh`, which resolves the host root from the package's own
-location rather than from a cwd. #512 moves host-config-reading assertions into the host's own
-conformance tests; if that happens, this one goes with them and the rest of the file stays.
+The golden test below renders all four prompts through `config.example.yaml`, plus the two
+paragraphs roedor's own `config/agent_prompts/` supplies -- COPIED in below rather than read live
+from this checkout, the same way `agent_os/tests/golden/*.md` itself is allowed to carry a host's
+literal text (#509, #510, #512): both are snapshots of one host's rendering, not text a second host
+reads through this suite. `AGENT_OS_HOST_ROOT` points every launched driver at a throwaway
+directory carrying only those two files, so the capture is exactly as reproducible outside this
+checkout as everywhere else in this suite (#512 -- this was the one test left reading a host's real
+`config/agents.yaml`, through `capture_golden.sh`'s bare invocation).
 
 Pure filesystem and subprocess: nothing here launches a backend, mints an identity or touches a
 database.
@@ -14,22 +16,45 @@ database.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 
 import pytest
+from conftest import EXAMPLE_CONFIG
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     PROJECT_EXTRAS_PLACEHOLDER,
     PROMPT_ROLES,
     PROMPTS_DIR,
-    prompt_extras_path,
     render_prompt,
 )
 
 CAPTURE = AGENT_OS_DIR / "tests" / "capture_golden.sh"
 GOLDEN_DIR = AGENT_OS_DIR / "tests" / "golden"
+
+# roedor's own two extension-point paragraphs, copied as they read today (`config/agent_prompts/
+# worker.md` and `refiner.md`) -- a snapshot, not a live read, so a second checkout with no such
+# files still captures the same golden text. Re-copy by hand if roedor ever edits either one and
+# re-runs `capture_golden.sh` for real.
+ROEDOR_WORKER_EXTRAS = """RUNNING PYTHON AND TESTS
+- PYTHONPATH is already exported to your worktree and every test run needs it. `cd` alone is NOT
+  enough: pytest resolves `roedor` through the editable install in the main checkout, so without
+  the variable you are testing the other agent's code, not yours. That has already voided a full
+  suite run. If you launch a shell that drops the variable, put it back.
+- Use `bash __TEST_COMMAND__ <paths> -q` for anything that touches the database. A bare `pytest`
+  against it stops at once with a message pointing back here rather than failing mid-migration --
+  `__TEST_COMMAND__` is what reaches the owner role for the run. Before any test run, check no
+  other pytest is running: `ps -eo pid,cmd | grep [p]ytest`. Never two at once -- the database is
+  shared and db_sandbox writes to it for real.
+"""
+
+ROEDOR_REFINER_EXTRAS = """   EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
+   small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
+   whose `backend:` is `claude`
+   (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
+"""
 
 
 def _words(text: str) -> list[str]:
@@ -41,10 +66,33 @@ def _words(text: str) -> list[str]:
 
 @pytest.fixture(scope="module")
 def captured(tmp_path_factory) -> pathlib.Path:
-    """Every role's prompt as its own driver resolves it today, into a directory of its own."""
+    """Every role's prompt as its own driver resolves it today, rendered against a throwaway host
+    of this test's own -- `config.example.yaml` plus roedor's two extension-point files -- so the
+    capture depends on nothing outside `agent_os/` (#512)."""
+    host = tmp_path_factory.mktemp("golden-host")
+    extras_dir = host / "config" / "agent_prompts"
+    extras_dir.mkdir(parents=True)
+    (extras_dir / "worker.md").write_text(ROEDOR_WORKER_EXTRAS)
+    (extras_dir / "refiner.md").write_text(ROEDOR_REFINER_EXTRAS)
+    config = host / "config" / "agents.yaml"
+    config.write_text(
+        EXAMPLE_CONFIG.read_text().replace(
+            "  prompt_extras: {}\n",
+            "  prompt_extras:\n"
+            "    worker: config/agent_prompts/worker.md\n"
+            "    refiner: config/agent_prompts/refiner.md\n",
+            1,
+        )
+    )
+
     out = tmp_path_factory.mktemp("captured-prompts")
     result = subprocess.run(
         ["bash", str(CAPTURE), str(out)],
+        env={
+            **os.environ,
+            "AGENT_OS_HOST_ROOT": str(host),
+            "AGENTS_CONFIG_PATH": str(config),
+        },
         capture_output=True,
         text=True,
         check=False,
@@ -138,13 +186,3 @@ def test_the_renderer_refuses_a_placeholder_nothing_answered():
 def test_an_unknown_role_has_no_template_and_says_so():
     with pytest.raises(KeyError):
         render_prompt("archivist", {})
-
-
-def test_the_host_of_this_checkout_names_the_two_files_its_prompts_need():
-    """roedor's own half of #509: the two paragraphs that used to be literals inside the mechanism
-    are files this project owns, and `project.prompt_extras` names both. This is the one assertion
-    here about the HOST rather than the mechanism -- #512's place, if it moves."""
-    for role in ("worker", "refiner"):
-        path = prompt_extras_path(role)
-        assert path is not None, f"config/agents.yaml names no prompt_extras for the {role}"
-        assert path.is_file(), path

@@ -16,7 +16,8 @@ WHAT YOU READ, IN THIS ORDER
 4. Before you choose a budget class for anything you write, read the `classes:` section of
    `config/agents.yaml`. A class carrying `role: <name>` (validator, refiner, planner) is that
    role's own ceiling, never a work budget for a task or bug -- pick among the classes that carry
-   no `role:` field. EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
+   no `role:` field.
+   EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
    small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
    whose `backend:` is `claude`
    (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
@@ -31,18 +32,8 @@ WHAT YOU NEVER DO
 - You never add or remove `status:agents-paused` -- the human-only full stop.
 
 COMMANDS YOU MUST NEVER RUN
-- `--write` -- persists the one-date universe census into facts.universe_census; the same command
-  without it is a dry run
-- `census-build` -- rebuilds the census over a whole date grid and has no dry run, and membership is
-  what seals the m2 and s2 stamps
-- `scripts/cp34_*.sh` -- the rebuild drivers, which run census, metrics and scores in one pass and
-  move every stamp
-- `quality scan` -- writes the detectors' findings into quality.findings unless it is given
-  --dry-run
-- `--adopt` -- rewrites the versioned config/concepts.yaml, and a taxonomy adoption moves the m2
-  stamp
-- `census_baseline.py record` -- overwrites baselines/census.json, the snapshot the next rebuild is
-  judged against
+- `--force-push` -- rewrites shared history other clones have already built work on top of
+- `drop-database` -- destroys the shared database with no dry-run flag and no way back
 The reason is part of the rule: it is what you judge an edge case against. If a task genuinely
 needs one of these, stop and say so rather than working around it.
 
@@ -113,7 +104,7 @@ its own spelling, so nothing launches the refiner on this issue again once it ca
 (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md). Then:
 what shape you chose and why, the list of issues you wrote or rewrote with each one's budget class,
 and a `## Doubts` block if you have one (omit it when you have none), written the way the paragraph
-below describes. When there is a doubt, the line right after the marker is `@MatillaM` on
+below describes. When there is a doubt, the line right after the marker is `@example-login` on
 its own, so it reaches the human's GitHub mentions, and you then run
 `"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Otherwise every refined issue stays
 `status:refine`, waiting for the human or the mechanical promotion to move it on to `status:ready`
@@ -122,7 +113,7 @@ its own, so it reaches the human's GitHub mentions, and you then run
 WRITING TO THE HUMAN
 Everything addressed to the human -- a `## Doubts` block, a question posted with
 `blocked-on-human`, a worker's BLOCKED question comment, the refiner's summary comment -- is
-written in Spanish.
+written in English.
 Explain each doubt in functional language, for a reader who knows the product and how it is
 operated but is not reading the code: what has to be decided and why it matters now; the options,
 and what each one means in practice -- for the product, the operation, cost, dates, risk; and your
