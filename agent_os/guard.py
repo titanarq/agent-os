@@ -80,8 +80,10 @@ from agent_os.lib import (
     ROLE_RUN_EXIT_MARKER_SUFFIX,
     HumanMessageError,
     LabelVocabulary,
+    StreamParser,
     TaskClass,
     UsageSummary,
+    backend_quota_cuts,
     backend_stream_parser,
     cumulative_cost_usd,
     cumulative_total_tokens,
@@ -100,7 +102,6 @@ from agent_os.lib import (
     read_events,
     read_role_run_exit_marker,
     render_human_message,
-    result_total_tokens,
     role_app_slug,
     usage_failed,
     usage_summary,
@@ -125,9 +126,12 @@ DEFAULT_LIVENESS_CUTOFF = timedelta(minutes=30)
 # read once at import: a malformed section should fail the guard loudly, not on the tick that
 # happens to need the value.
 PROJECT = load_project()
-BACKENDS: tuple[str, ...] = tuple(PROJECT.worktrees)
+# The backends a worker runs on: every `project.backends` entry with a worktree (#514).
+BACKENDS: tuple[str, ...] = tuple(
+    name for name, backend in PROJECT.backends.items() if backend.worktree
+)
 BACKEND_WORKTREES = {
-    backend: str((HOST_ROOT / path).resolve()) for backend, path in PROJECT.worktrees.items()
+    name: str((HOST_ROOT / PROJECT.backends[name].worktree).resolve()) for name in BACKENDS
 }
 
 # The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each and that announce their own
@@ -318,6 +322,7 @@ def budget_exceeded(
     *,
     issue_cost_usd: float | None = None,
     issue_total_tokens: int | None = None,
+    parser: StreamParser | None = None,
 ) -> bool:
     """True when ANY of the three ceilings a task class names is passed (agent_os/docs/adr/2026-09-14-agent-
     spend-is-tokens-not-time-and-needs-a-written-budget.md), which since #375 are measured over
@@ -332,17 +337,25 @@ def budget_exceeded(
     The token ceiling is the one that always bites: Qwen's `result` event carries
     `usage.total_tokens` and no `total_cost_usd`, so a Qwen class can never cross the dollar one
     and would run with no live spend backstop at all (#387). Dollars stay a second ceiling because
-    the Claude roles do report them."""
+    the Claude roles do report them.
+
+    The live process's own figures are read off its terminal `result` by `parser`, the backend's
+    own stream parser (#514) -- the default shape when the caller does not know the backend."""
     if summary.context > task_class.max_context:
         return True
+    own_result = (
+        (parser or backend_stream_parser()).result_usage([summary.result])
+        if summary.result
+        else None
+    )
     cost = issue_cost_usd
-    if cost is None:
-        cost = (summary.result or {}).get("total_cost_usd") if summary.result else None
+    if cost is None and own_result is not None:
+        cost = own_result.cost_usd
     if cost is not None and cost > task_class.max_cost_usd:
         return True
     tokens = issue_total_tokens
-    if tokens is None:
-        tokens = result_total_tokens(summary.result) if summary.result else None
+    if tokens is None and own_result is not None:
+        tokens = own_result.total_tokens
     return tokens is not None and tokens > task_class.max_total_tokens
 
 
@@ -1087,10 +1100,12 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         task_class,
         issue_cost_usd=cost_spent_on_issue(issue, paths.events, main, backend=backend),
         issue_total_tokens=tokens_spent_on_issue(issue, paths.events, main, backend=backend),
+        parser=stream_parser,
     ):
         reason = "budget"
-    # Stage 2/3 of #514 replaces this name comparison with the backend's own `quota:` capability.
-    elif backend == "claude" and current_quota == "exhausted":
+    # The backend's own `quota:` capability, never its name (#514): a backend whose stream carries
+    # no quota signal to act on (`quota: none`) is recorded above and never cut here.
+    elif backend_quota_cuts(backend) and current_quota == "exhausted":
         reason = "quota"
     elif (
         liveness_expired(progress_text, run_started_at, now, observed_at=progress_observed_at)

@@ -133,21 +133,39 @@ agent_backend_identity_line() {
   fi
 }
 
-# The flags that differ between the two backends, into the one array every launch expands: qwen
-# takes `-o stream-json` and `--approval-mode yolo`, claude takes `-p`, `--output-format
-# stream-json --verbose` and `--dangerously-skip-permissions`. The SAME two shapes
-# `worker_task.sh`'s launch case uses -- an array so that the model, the rules and the instruction
-# a role is handed keep one implementation instead of one per backend.
+# The flags that differ between the two command-line dialects, into the one array every launch
+# expands: a `qwen_jsonl` CLI takes `-o stream-json` and `--approval-mode yolo`, a `claude_jsonl`
+# one takes `-p`, `--output-format stream-json --verbose` and `--dangerously-skip-permissions`. The
+# SAME two shapes `worker_task.sh`'s launch case uses -- an array so that the model, the rules and
+# the instruction a role is handed keep one implementation instead of one per backend. `$1` is the
+# BACKEND; the dialect is its `stream:` capability, never its name (#514). RETURNS NON-ZERO for a
+# backend that is not configured or whose stream no dialect here writes, and every caller stops.
 agent_backend_flags=()
 agent_set_backend_flags() {
-  case "$1" in
-    qwen) agent_backend_flags=(--approval-mode yolo -o stream-json) ;;
-    *)
+  local stream
+  stream=$("$agent_python" -m agent_os.lib backend-value "$1" stream) || return 1
+  case "$stream" in
+    qwen_jsonl) agent_backend_flags=(--approval-mode yolo -o stream-json) ;;
+    claude_jsonl)
       agent_backend_flags=(
         -p --output-format stream-json --verbose --dangerously-skip-permissions
       )
       ;;
+    *)
+      echo "backend '$1' reads as stream '$stream', and no launch dialect here writes it" >&2
+      return 1
+      ;;
   esac
+}
+
+# The value of `<PREFIX>_<BACKEND>_BIN` -- a test's per-backend stub override, one environment
+# variable per backend so a test can stub a fallback without stubbing the class's own backend and
+# still tell which of the two ran (#425). Derived from the name rather than spelled per backend
+# (#514): `AGENT_CLAUDE_BIN`, `PLANNER_QWEN_BIN`, `AGENT_FOO_BIN`.
+agent_backend_bin_variable() {
+  local upper
+  upper=$(printf '%s' "$2" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')
+  printf '%s_%s_BIN\n' "$1" "$upper"
 }
 
 # Mints the role's GitHub App token and exports it plus the bot's git author/committer, so every
@@ -340,7 +358,9 @@ agent_detached_run() {
   # `AGENT_RUN_LAUNCH_BACKEND` is the launch gate's answer and not the class's own backend (#425),
   # and `AGENT_RUN_MODEL` the model that goes with it -- which is also the model the runs.tsv row
   # below records, so a substituted run books its spend to the backend that actually spent it.
-  agent_set_backend_flags "$AGENT_RUN_LAUNCH_BACKEND"
+  # Read again because this process inherits no array: the driver checked the same answer seconds
+  # ago, so a failure here is a config broken mid-launch, and a run with no dialect is not run.
+  agent_set_backend_flags "$AGENT_RUN_LAUNCH_BACKEND" 2>>"$AGENT_RUN_LOGFILE" || exit 1
   "$AGENT_RUN_BACKEND" "${agent_backend_flags[@]}" --model "$AGENT_RUN_MODEL" \
     --append-system-prompt "$AGENT_RUN_RULES" \
     "$AGENT_RUN_INSTRUCTION" \
@@ -434,8 +454,10 @@ esac
 # configuration error and stops here rather than being guessed at.
 class_name=$(agent_role_field "$role" name) || exit 1
 backend=$(agent_role_field "$role" backend) || exit 1
-[ "$backend" = claude ] || {
-  echo "role '$role' is configured for backend '$backend'; this driver only runs the claude CLI"
+# A class whose own backend this driver has no command line for stops here, before anything is
+# resolved or written -- a capability read of the backend's `stream:`, never its name (#514).
+agent_set_backend_flags "$backend" || {
+  echo "role '$role' is configured for backend '$backend', which this driver cannot launch"
   exit 1
 }
 # ... and which backend THIS run gets, which is the class's own unless the guard's persisted quota
@@ -532,14 +554,12 @@ pidfile=$run_dir/$run_stamp.pid
 # be read as a refusal rather than as a backend that would not start (#380). WHICH binary is the
 # launch gate's answer: one environment override per backend, so a test can stub the fallback
 # without stubbing the class's own backend and lose track of which of the two ran (#425).
-case "$launch_backend" in
-  claude) backend_bin=$(agent_executable claude "${AGENT_CLAUDE_BIN:-}") || exit 1 ;;
-  qwen) backend_bin=$(agent_executable qwen "${AGENT_QWEN_BIN:-}") || exit 1 ;;
-  *)
-    echo "the launch gate named a backend this driver cannot run: '$launch_backend'"
-    exit 1
-    ;;
-esac
+agent_set_backend_flags "$launch_backend" || {
+  echo "the launch gate named a backend this driver cannot run: '$launch_backend'"
+  exit 1
+}
+backend_bin_override=$(agent_backend_bin_variable AGENT "$launch_backend")
+backend_bin=$(agent_executable "$launch_backend" "${!backend_bin_override:-}") || exit 1
 
 mkdir -p "$run_dir"
 {

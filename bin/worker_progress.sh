@@ -20,8 +20,8 @@ max_lines=40
 issue=""
 backends=""
 
-# `project.worktrees`' own keys -- never a hardcoded `qwen`/`claude` pair, so a third backend
-# needs no edit here (#510).
+# Every `project.backends` entry with a worktree -- never a hardcoded pair of names, so a third
+# backend needs no edit here (#510, #514).
 mapfile -t all_backends < <("$python" -m agent_os.lib worktree-backends)
 
 while [ $# -gt 0 ]; do
@@ -46,7 +46,7 @@ done
 
 # One `backend<TAB>worktree path` line per configured backend, resolved once here rather than by
 # the interpreter below -- `agent_os.lib worktree-path` is the one place that reads
-# `project.worktrees` (#510).
+# `project.backends` (#510, #514).
 worktree_lines=""
 for backend in "${all_backends[@]}"; do
   worktree_lines+="$backend"$'\t'"$("$python" -m agent_os.lib worktree-path "$backend")"$'\n'

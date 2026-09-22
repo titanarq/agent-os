@@ -130,7 +130,11 @@ def check_board(project: ProjectConfig, repo: str) -> Check:
 
 
 def check_app_secrets(project: ProjectConfig, root: pathlib.Path) -> Check:
-    slugs = {project.planner_app, *project.worker_apps.values(), *project.role_apps.values()}
+    slugs = {
+        project.planner_app,
+        *(backend.app for backend in project.backends.values()),
+        *project.role_apps.values(),
+    }
     slugs.discard("")
     secrets_dir = root / project.secrets_dir
     missing = [
@@ -169,11 +173,12 @@ def check_executables(project: ProjectConfig) -> Check:
 
 
 def check_worktrees(project: ProjectConfig, root: pathlib.Path) -> Check:
-    if not project.worktrees:
+    worktrees = {name: b.worktree for name, b in project.backends.items() if b.worktree}
+    if not worktrees:
         return Check("worktrees exist", True, "none configured")
     missing = [
         backend
-        for backend, relative in project.worktrees.items()
+        for backend, relative in worktrees.items()
         if not (root / relative / ".git").exists()
     ]
     if missing:
@@ -182,7 +187,7 @@ def check_worktrees(project: ProjectConfig, root: pathlib.Path) -> Check:
             False,
             f"no worktree for {missing} -- `worker_task.sh <backend> init`",
         )
-    return Check("worktrees exist", True, f"{sorted(project.worktrees)} all exist")
+    return Check("worktrees exist", True, f"{sorted(worktrees)} all exist")
 
 
 def check_notify_topic(project: ProjectConfig, root: pathlib.Path) -> Check:

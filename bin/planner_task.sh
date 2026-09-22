@@ -45,8 +45,16 @@ mkdir -p "$planner_dir"
 # Worktrees, identities and every other project-specific value come from config/agents.yaml's
 # `project:` section -- agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-
 # configured-not-coded.md.
-qwen_worktree=${WORKER_WORKTREE_QWEN:-$(cd "$main" && "$python" -c 'from agent_os.lib import worktree_path; print(worktree_path("qwen"))')}
-claude_worktree=${WORKER_WORKTREE_CLAUDE:-$(cd "$main" && "$python" -c 'from agent_os.lib import worktree_path; print(worktree_path("claude"))')}
+# One `--add-dir` per configured backend worktree, so the planner can read every worker's tree --
+# the backends' own list, never a hardcoded pair of names (#514). `WORKER_WORKTREE_<BACKEND>`
+# overrides one of them, as `WORKER_WORKTREE_QWEN` / `WORKER_WORKTREE_CLAUDE` always did.
+planner_worktree_dirs=()
+while IFS= read -r worktree_backend; do
+  [ -n "$worktree_backend" ] || continue
+  worktree_override=WORKER_WORKTREE_$(printf '%s' "$worktree_backend" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')
+  worktree_dir=${!worktree_override:-$(cd "$main" && "$python" -m agent_os.lib worktree-path "$worktree_backend")}
+  planner_worktree_dirs+=(--add-dir "$worktree_dir")
+done < <(cd "$main" && "$python" -m agent_os.lib worktree-backends)
 
 # The backend CLI, from `project.executables` when the project configures one and from PATH
 # otherwise (#380) -- wrapped so a stub `claude` first on PATH (echoing its argv and emitting one
@@ -60,14 +68,12 @@ claude_worktree=${WORKER_WORKTREE_CLAUDE:-$(cd "$main" && "$python" -c 'from age
 # role whose job was redispatching everything else. One environment override per backend, so a test
 # stubs the fallback without stubbing Claude's and can still tell which of the two ran.
 agent_read_launch_gate planner || exit 1
-case "$launch_backend" in
-  claude) planner_backend_bin=$(agent_executable claude "${PLANNER_CLAUDE_BIN:-}") || exit 1 ;;
-  qwen) planner_backend_bin=$(agent_executable qwen "${PLANNER_QWEN_BIN:-}") || exit 1 ;;
-  *)
-    echo "the launch gate named a backend this driver cannot run: '$launch_backend'"
-    exit 1
-    ;;
-esac
+agent_set_backend_flags "$launch_backend" || {
+  echo "the launch gate named a backend this driver cannot run: '$launch_backend'"
+  exit 1
+}
+planner_bin_override=$(agent_backend_bin_variable PLANNER "$launch_backend")
+planner_backend_bin=$(agent_executable "$launch_backend" "${!planner_bin_override:-}") || exit 1
 planner_cli() { "$planner_backend_bin" "$@"; }
 
 # Injected into every run. The planner is a different kind of actor from a worker: it decides what
@@ -118,9 +124,8 @@ run)
   } >>"$logfile"
   # `--add-dir`, `--model` and `--append-system-prompt` are the same words on both backends; the
   # flags that are not come from the one array `agent_set_backend_flags` fills (#425).
-  agent_set_backend_flags "$launch_backend"
   planner_cli "${agent_backend_flags[@]}" --model "$model" \
-    --add-dir "$qwen_worktree" --add-dir "$claude_worktree" \
+    "${planner_worktree_dirs[@]}" \
     --append-system-prompt "$RULES" \
     "You have been woken by agent_os.guard. The events since the last planner run: $context. Act on them and exit." \
     >>"$logfile" 2>&1

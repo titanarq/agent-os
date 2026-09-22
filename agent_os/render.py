@@ -27,8 +27,12 @@ class RenderError(Exception):
 
 def render_worktrees(project: ProjectConfig) -> str:
     """`qwen: ../example-qwen, claude: ../example-claude` -- one `backend: path` pair per
-    `project.worktrees` entry, in the order `config/agents.yaml` declares them."""
-    return ", ".join(f"{backend}: {path}" for backend, path in project.worktrees.items())
+    `project.backends` entry that has a worktree, in the order `config/agents.yaml` declares them."""
+    return ", ".join(
+        f"{name}: {backend.worktree}"
+        for name, backend in project.backends.items()
+        if backend.worktree
+    )
 
 
 def token_values(project: ProjectConfig) -> dict[str, str]:

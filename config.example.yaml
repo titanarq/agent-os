@@ -88,19 +88,40 @@ project:
       reason: rewrites shared history other clones have already built work on top of
     - command: drop-database
       reason: destroys the shared database with no dry-run flag and no way back
-  # The absolute path of a backend CLI, by command name, for when the launcher's PATH is not the
-  # shell's (a systemd user unit does not carry nvm). A name with no entry resolves to itself,
-  # which is the bare-name PATH lookup the drivers did before.
+  # The absolute path of every external executable the mechanism's units call by bare name, by
+  # command name: the backend CLIs (`qwen`, `claude`) and the tracker CLI (`gh`) alike, for when
+  # the launcher's PATH is not the shell's (a systemd user unit does not carry nvm). A name with no
+  # entry resolves to itself, which is the bare-name PATH lookup the drivers did before.
+  # `agent-os-install` turns every value into a directory on the generated unit's
+  # `Environment=PATH=` (`executables_path_prefix()`), which is why a command that is not a
+  # backend, like `gh`, belongs here too -- e.g. `gh: /home/linuxbrew/.linuxbrew/bin/gh`.
   executables: {}
-  # One worktree per backend, relative to the host's root. Nothing in the mechanism creates these.
-  worktrees:
-    qwen: ../example-qwen
-    claude: ../example-claude
-  # One GitHub App identity per backend, so a worker's commits and comments are attributable to it
-  # and never to the human's account.
-  worker_apps:
-    qwen: example-qwen
-    claude: example-claude
+  # Every backend a worker or a role can run on, by name. Nothing in the mechanism compares a
+  # backend's name against a literal: what it can do is read off its entry, so a third CLI is one
+  # entry here (plus one parser under agent_os/streams/ only if its events are a new shape).
+  #   command:  what the drivers run -- an absolute path or a bare name. Omitted, the
+  #             `executables` entry of the same name, else the backend's own name. An absolute
+  #             command is added to `executables`, the PATH set the generated units carry.
+  #   worktree: its worktree, relative to the host's root. Nothing in the mechanism creates these.
+  #   app:      the GitHub App a worker on it signs as, so its commits and comments are
+  #             attributable to it and never to the human's account.
+  #   stream:   the registered parser its jsonl events are read with (claude_jsonl, qwen_jsonl);
+  #             it also picks the command line the drivers launch it with. Unknown fails at load.
+  #   quota:    the detector whose `exhausted` verdict cuts a live run (claude_rate_limit), or
+  #             `none` -- the verdict is recorded and nothing is cut on it.
+  # DEPRECATED, for one release: `worktrees:` + `worker_apps:` (+ `executables:` for the command)
+  # in place of this section still load, with one warning, and are ignored when this is present.
+  backends:
+    qwen:
+      worktree: ../example-qwen
+      app: example-qwen
+      stream: qwen_jsonl
+      quota: none
+    claude:
+      worktree: ../example-claude
+      app: example-claude
+      stream: claude_jsonl
+      quota: claude_rate_limit
   # One App per non-worker role. A role missing here signs as `planner_app`.
   role_apps: {}
   # The host's own module names, one per module doc. They become the `module:<name>` half of the

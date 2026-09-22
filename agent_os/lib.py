@@ -33,9 +33,16 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # the class's own backend, because a start the quota refuses costs one page while a
         # substitution on a stale verdict costs a review the merge gate rests on.
     python -m agent_os.lib project-value notify_topic_file
-    python -m agent_os.lib project-value --path worktrees.claude
+    python -m agent_os.lib project-value --path secrets_dir
         # one field of config/agents.yaml's `project:` section, for the shell drivers; `a.b`
         # reaches into a mapping and `--path` resolves it against the repository root.
+    python -m agent_os.lib backend-value <backend> command|worktree|app|stream|quota [--path]
+        # one capability of one `project.backends` entry (#514) -- what a driver reads instead of
+        # branching on a backend's name. Exits 2 for a name that is not a configured backend, 1
+        # for a config that does not load.
+    python -m agent_os.lib backend-model <backend>
+        # the model a worker on that backend runs when the dispatch names none: the first worker
+        # class on it, else the first class of any role on it.
     python -m agent_os.lib planner-value relaunch_cap
         # one field of config/agents.yaml's `planner:` section, for the shell drivers.
     python -m agent_os.lib human-message-rules
@@ -74,7 +81,7 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # rendered from the same `project.worker_environment` the export loop reads -- names, never
         # values. Prints nothing when the project exports nothing.
     python -m agent_os.lib worktree-backends
-        # one backend name per line, from `project.worktrees` -- `worker_task.sh start` counts
+        # one backend name per line, every `project.backends` entry with a worktree -- `worker_task.sh start` counts
         # alive workers across every one of them for `planner.max_parallel_issues` (#374).
     python -m agent_os.lib worktree-path <backend>
         # that backend's worktree, resolved against the repository root -- `worktree_path` below,
@@ -118,6 +125,7 @@ import re
 import string
 import sys
 import textwrap
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
@@ -128,9 +136,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
+    QUOTA_DETECTOR_NONE,
     STREAM_PARSERS,
     StreamParser,
     UsageSummary,
+    check_quota_detector,
     get_stream_parser,
 )
 from agent_os.streams.claude_jsonl import (  # noqa: F401 -- re-exported: guard and tests import them here
@@ -192,9 +202,9 @@ class RoleFallback(Strict):
     declaration for the day one does (and for the control plane's deviation report), not a limit
     this file enforces."""
 
-    # A key of `project.worktrees`, checked at config load by `AgentsConfig`'s own validator below
-    # rather than pinned to `Literal["qwen", "claude"]` (#510) -- a third backend needs no code
-    # change, only a worktree and a class that names it.
+    # A key of `project.backends`, checked at config load by `AgentsConfig`'s own validator below
+    # rather than pinned to a two-name `Literal` (#510) -- a third backend needs no code change,
+    # only a `backends:` entry and a class that names it (#514).
     backend: str
     model: str
     ceilings: list[CeilingName] = list(CEILING_NAMES)
@@ -218,7 +228,7 @@ class TaskClass(Strict):
     # other three roles have exactly one class each, named after the role, which is how
     # `agent_task.sh <role>` resolves its model without a second mapping.
     role: Literal["worker", "validator", "refiner", "planner"] = "worker"
-    # See `RoleFallback.backend` above: a key of `project.worktrees`, validated once the whole
+    # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
     backend: str
     model: str
@@ -370,6 +380,133 @@ class HumanMessageError(Exception):
     the time anything pages, the state the page announces is already written."""
 
 
+class BackendConfig(Strict):
+    """One backend CLI a worker or a role can run on, and everything the mechanism needs to know
+    about it -- `project.backends.<name>` (#514). The NAME is the key and nothing in the mechanism
+    compares it against a literal: what a backend can do is read off these fields, so adding a CLI
+    is a config entry, plus one parser module under `agent_os/streams/` only when its event stream
+    is a shape no registered parser reads.
+
+    - `command`: what the drivers run -- an absolute path, or a bare name resolved through PATH.
+      Empty means "the `project.executables` entry of the same name, else the backend's own name",
+      which is exactly how a backend resolved before this section existed (#380). An absolute
+      command is also added to `project.executables`, the PATH set the generated units carry.
+    - `worktree`: the backend's worktree, relative to the host's root. Empty for a backend that
+      only ever runs one-shot roles, which work in a throwaway worktree of their own.
+    - `app`: the GitHub App slug a worker on this backend signs as. Empty signs as nobody's and
+      degrades to the ambient identity, exactly as a missing `worker_apps` entry did.
+    - `stream`: the registered parser its jsonl events are read with (`agent_os.streams`); it also
+      picks the command-line dialect the drivers launch it with, because the flags that produce a
+      stream-json log belong to the CLI that writes that shape. An unregistered name fails here.
+    - `quota`: the detector whose `exhausted` verdict cuts a live run of this backend
+      (`agent_os.streams.QUOTA_DETECTORS`); `none` records the verdict and never cuts on it."""
+
+    command: str = ""
+    worktree: str = ""
+    app: str = ""
+    stream: str
+    quota: str = QUOTA_DETECTOR_NONE
+
+    @field_validator("stream")
+    @classmethod
+    def a_registered_stream_parser(cls, value: str) -> str:
+        get_stream_parser(value)
+        return value
+
+    @field_validator("quota")
+    @classmethod
+    def a_registered_quota_detector(cls, value: str) -> str:
+        return check_quota_detector(value)
+
+
+class DeprecatedBackendMapsWarning(UserWarning):
+    """`project.worktrees` / `project.worker_apps` / `project.executables` used as the description
+    of a backend, which `project.backends` replaced (#514). One release of grace, then an error."""
+
+
+# The three parallel maps `project.backends` replaced. `executables` stays a live key with its own
+# meaning -- every executable the units need on PATH -- and only stops being where a backend's
+# command is read from when that backend declares a `command:` of its own.
+DEPRECATED_BACKEND_MAPS = ("worktrees", "worker_apps", "executables")
+
+# The deprecated alias's reading of `quota:`: a backend built from the old maps is cut on its
+# quota exactly when the guard cut it before `backends:` existed -- a backend whose own name picks
+# the `claude_jsonl` parser. Nothing outside `_backends_from_deprecated_maps` reads this.
+DEPRECATED_ALIAS_QUOTA_BY_STREAM = {"claude_jsonl": "claude_rate_limit"}
+
+
+# The deprecation messages this process has already emitted. `doctor`, the guard's tick and every
+# `python -m agent_os.lib` call of a driver each load the config several times, and one line per
+# process is what says so; the warnings module's own "once" bookkeeping is reset by anything that
+# touches the filters, so it is not relied on.
+_EMITTED_DEPRECATION_WARNINGS: set[str] = set()
+
+
+def _warn_deprecated_backend_maps(message: str) -> None:
+    if message in _EMITTED_DEPRECATION_WARNINGS:
+        return
+    _EMITTED_DEPRECATION_WARNINGS.add(message)
+    warnings.warn(message, DeprecatedBackendMapsWarning, stacklevel=2)
+
+
+def _backends_from_deprecated_maps(data: dict) -> dict:
+    """`data` (a raw `project:` mapping) with `backends` filled in from the three old maps when it
+    declares none -- the deprecated alias, for one release -- or unchanged, with a warning naming
+    what is ignored, when it declares both."""
+    worktrees = data.get("worktrees") or {}
+    apps = data.get("worker_apps") or {}
+    executables = data.get("executables") or {}
+    if not all(isinstance(value, dict) for value in (worktrees, apps, executables)):
+        return data  # the field validators say what is wrong with the shape
+    declared = data.get("backends")
+    if declared is not None:
+        ignored = [
+            f"project.{key}"
+            for key, value in (("worktrees", worktrees), ("worker_apps", apps))
+            if value
+        ]
+        if isinstance(declared, dict):
+            ignored += [
+                f"project.executables.{name}"
+                for name in executables
+                if isinstance(declared.get(name), dict) and declared[name].get("command")
+            ]
+        if ignored:
+            _warn_deprecated_backend_maps(
+                f"config: project.backends is declared, so {', '.join(ignored)} "
+                "is ignored as the description of a backend -- delete it "
+                "(agent_os/docs/AGENT_OS.md §4.2)"
+            )
+        return data
+    names = list(dict.fromkeys([*worktrees, *apps]))
+    if not names:
+        return data
+    _warn_deprecated_backend_maps(
+        "config: project.worktrees, project.worker_apps and project.executables are deprecated as "
+        "the description of a backend; project.backends was built from them for this release -- "
+        "declare project.backends.<name>: {command, worktree, app, stream, quota} instead "
+        "(project.executables keeps its own meaning; agent_os/docs/AGENT_OS.md §4.2)"
+    )
+    backends = {}
+    for name in names:
+        # The derivation the parsers were picked by before they were configured (#514 stage 1):
+        # the parser named after the backend when one is registered, the default shape otherwise.
+        named_after_backend = f"{name}_jsonl"
+        stream = (
+            named_after_backend if named_after_backend in STREAM_PARSERS else DEFAULT_STREAM_PARSER
+        )
+        quota = QUOTA_DETECTOR_NONE
+        if stream == named_after_backend:
+            quota = DEPRECATED_ALIAS_QUOTA_BY_STREAM.get(stream, QUOTA_DETECTOR_NONE)
+        backends[name] = {
+            "worktree": worktrees.get(name, ""),
+            "app": apps.get(name, ""),
+            "stream": stream,
+            "quota": quota,
+        }
+    return {**data, "backends": backends}
+
+
 class ProjectConfig(Strict):
     """Everything that belongs to *this* project rather than to the mechanism: the repository,
     the board, the tracking epic, where the identities and the notify topic live, and one
@@ -471,19 +608,32 @@ class ProjectConfig(Strict):
     # Empty renders no such paragraph, which is what a project whose database no agent can write
     # wants.
     never_run: list[NeverRunCommand] = []
+    # Every backend a worker or a role can run on, by name (`BackendConfig` above, #514). Absent,
+    # it is built from the three deprecated maps below with one warning; declared, it wins and the
+    # old maps are ignored as a description of a backend, with a warning naming them.
+    backends: dict[str, BackendConfig] = {}
+    # DEPRECATED (#514): one worktree per backend, relative to the repository root -- now
+    # `backends.<name>.worktree`. After load it always MIRRORS `backends`, so a reader that has not
+    # moved yet sees the configured worktrees whichever form the file uses.
     worktrees: dict[str, str] = {}
-    # The absolute path of a backend CLI, by COMMAND NAME -- `qwen` and `claude` for the worker
-    # backends, and `claude` again for the role drivers, which run the same binary under the same
-    # key. Empty by default, and a name with no entry resolves to itself, which is the bare-name
-    # PATH lookup every driver did before: a project that sets nothing behaves exactly as it did.
+    # The absolute path of every external executable the mechanism's units call by bare name, by
+    # COMMAND NAME: the backend CLIs (`qwen`, `claude` -- and `claude` again for the role drivers,
+    # which run the same binary under the same key) AND the tracker CLI (`gh`) alike. Empty by
+    # default, and a name with no entry resolves to itself, which is the bare-name PATH lookup
+    # every driver did before: a project that sets nothing behaves exactly as it did.
     # Why it exists: a dispatch from an unattended unit and a dispatch from a shell must resolve
     # the SAME binary. On 2026-09-16 they did not -- `qwen` lives under nvm, the PATH the systemd
     # user manager hands the guard's own unit does not carry that directory, and the stage
     # process died in under a second while the mechanical state called it a stage cut for not
-    # committing (#380, #381, #363).
+    # committing (#380, #381, #363). `agent-os-install` turns every value here into a directory on
+    # the generated unit's `Environment=PATH=` (`executables_path_prefix()` in
+    # `agent_os/agent_os/install.py`), which is why a command that is not a backend -- `gh`, called
+    # by bare name dozens of times per tick -- belongs here too. An absolute
+    # `backends.<name>.command` is added to this mapping at load, so the PATH set always carries
+    # the backends' own directories (#514).
     executables: dict[str, str] = {}
-    # One GitHub App slug per backend: a worker's commits and comments are the App's, never the
-    # human's. The slug is the project's, not the mechanism's -- the drivers read it from here.
+    # DEPRECATED (#514): one GitHub App slug per backend -- now `backends.<name>.app`. Mirrors
+    # `backends` after load, exactly as `worktrees` above does.
     worker_apps: dict[str, str] = {}
     # One GitHub App slug per non-worker role. A role with no entry here signs as `planner_app`:
     # the validator and the refiner do exactly that until they have Apps of their own, which is a
@@ -495,6 +645,22 @@ class ProjectConfig(Strict):
     # state -> the board column that mirrors it. A state mapped to null (blocked-on-human) keeps
     # whatever column the item is in: being blocked says nothing about how far the work got.
     board_columns: dict[str, str | None] = {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def backends_or_their_deprecated_alias(cls, data: object) -> object:
+        return _backends_from_deprecated_maps(data) if isinstance(data, dict) else data
+
+    @model_validator(mode="after")
+    def deprecated_maps_mirror_the_backends(self) -> ProjectConfig:
+        self.worktrees = {name: b.worktree for name, b in self.backends.items() if b.worktree}
+        self.worker_apps = {name: b.app for name, b in self.backends.items() if b.app}
+        # A bare-name command is already a PATH lookup and names no directory to add.
+        absolute_commands = {
+            name: b.command for name, b in self.backends.items() if os.path.isabs(b.command)
+        }
+        self.executables = {**self.executables, **absolute_commands}
+        return self
 
     @field_validator("messages")
     @classmethod
@@ -574,28 +740,29 @@ class AgentsConfig(Strict):
     classes: dict[str, TaskClass]
 
     @model_validator(mode="after")
-    def backends_are_configured_worktrees(self) -> AgentsConfig:
-        """`TaskClass.backend` and `RoleFallback.backend` used to be pinned to
-        `Literal["qwen", "claude"]`; freed into a plain `str` (#510) they would silently accept a
-        typo with no worktree behind it, so this checks each one against `project.worktrees`'s own
-        keys instead, once, here, rather than at whichever dispatch first tries the unknown name.
+    def backends_are_configured_backends(self) -> AgentsConfig:
+        """`TaskClass.backend` and `RoleFallback.backend` used to be pinned to a two-name
+        `Literal`; freed into a plain `str` (#510) they would silently accept a typo with no
+        backend behind it, so this checks each one against `project.backends`'s own keys instead,
+        once, here, rather than at whichever dispatch first tries the unknown name.
 
-        A project that configures no worktree at all (`project.worktrees` empty) declares nothing
-        to check a backend name against, so it is left alone -- the same "empty means unchecked"
-        reading `forbidden_paths`/`never_run` already use elsewhere in this file."""
-        known = set(self.project.worktrees)
+        A project that configures no backend at all (`project.backends` empty, and none of the
+        deprecated maps it is built from either) declares nothing to check a backend name against,
+        so it is left alone -- the same "empty means unchecked" reading `forbidden_paths`/
+        `never_run` already use elsewhere in this file."""
+        known = set(self.project.backends)
         if not known:
             return self
         for name, task_class in self.classes.items():
             if task_class.backend not in known:
                 raise ValueError(
                     f"class '{name}' names backend '{task_class.backend}', which is not a key of "
-                    f"project.worktrees ({sorted(known)})"
+                    f"project.backends ({sorted(known)})"
                 )
             if task_class.fallback is not None and task_class.fallback.backend not in known:
                 raise ValueError(
                     f"class '{name}' fallback names backend '{task_class.fallback.backend}', "
-                    f"which is not a key of project.worktrees ({sorted(known)})"
+                    f"which is not a key of project.backends ({sorted(known)})"
                 )
         return self
 
@@ -621,16 +788,21 @@ def worktree_path(
     backend: str, *, main: pathlib.Path = HOST_ROOT, project: ProjectConfig | None = None
 ) -> pathlib.Path:
     """The backend's worktree, resolved against the repository root -- `config/agents.yaml` keeps
-    it relative (`../your-repo-qwen`) so a clone under a different path needs no edit."""
+    it relative (`../your-repo-qwen`) so a clone under a different path needs no edit. A KeyError
+    for a name that is not a configured backend, or one configured with no worktree."""
     project = project or load_project()
-    return (main / project.worktrees[backend]).resolve()
+    relative = project.backends[backend].worktree
+    if not relative:
+        raise KeyError(backend)
+    return (main / relative).resolve()
 
 
 def backend_executable(name: str, *, project: ProjectConfig | None = None) -> str:
-    """The command a driver actually runs for `name`: the path `project.executables` configures,
-    or the bare name -- resolved through PATH exactly as before -- when it configures none. ONE
-    resolver for the worker backends and for the role drivers' own `claude`, so an unattended
-    dispatch and a shell dispatch can never run a different binary (#380).
+    """The command a driver actually runs for `name`: the backend's own `command:`, else the path
+    `project.executables` configures under that name, else the bare name -- resolved through PATH
+    exactly as before -- when neither says. ONE resolver for the worker backends and for the role
+    drivers' own backend, so an unattended dispatch and a shell dispatch can never run a different
+    binary (#380).
 
     The bare name is the fallback for a MISSING KEY and for nothing else. A config that does not
     load raises out of here, and its CLI below turns that into a one-line stop rather than an
@@ -638,7 +810,44 @@ def backend_executable(name: str, *, project: ProjectConfig | None = None) -> st
     answers 127, which then reads as a missing executable and points whoever is debugging at the
     very key the broken file made unreadable."""
     project = project or load_project()
+    backend = project.backends.get(name)
+    if backend is not None and backend.command:
+        return backend.command
     return project.executables.get(name, name)
+
+
+def backend_config(name: str, *, project: ProjectConfig | None = None) -> BackendConfig:
+    """`project.backends[name]`, or a KeyError naming the configured ones."""
+    project = project or load_project()
+    try:
+        return project.backends[name]
+    except KeyError:
+        raise KeyError(
+            f"'{name}' is not a configured backend -- project.backends has {sorted(project.backends)}"
+        ) from None
+
+
+def backend_quota_cuts(name: str, *, project: ProjectConfig | None = None) -> bool:
+    """Whether an `exhausted` quota verdict read off this backend's stream cuts its live run: its
+    `quota:` names a detector rather than `none` (#514). A name that is not a configured backend
+    cuts on nothing, which is what the guard did for any backend it had no rule for."""
+    project = project or load_project()
+    backend = project.backends.get(name)
+    return backend is not None and backend.quota != QUOTA_DETECTOR_NONE
+
+
+def backend_default_model(name: str, path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> str:
+    """The model a worker on `name` runs when the dispatch names none (`WORKER_MODEL`): the model
+    of the first `role: worker` class on that backend, else of the first class of any role on it --
+    read off the classes rather than a per-backend literal in the driver, which is what it was
+    before #514. A backend no class runs on has no model to default to, and says so."""
+    classes = load_task_classes(path)
+    on_backend = [task_class for task_class in classes.values() if task_class.backend == name]
+    workers = [task_class for task_class in on_backend if task_class.role == "worker"]
+    chosen = (workers or on_backend or [None])[0]
+    if chosen is None:
+        raise KeyError(f"no class in {path} runs on backend '{name}', so it has no default model")
+    return chosen.model
 
 
 def load_task_classes(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> dict[str, TaskClass]:
@@ -1143,7 +1352,11 @@ def mechanism_logins(project: ProjectConfig | None = None) -> set[str]:
     `<slug>[bot]`. Lowercased, because GitHub logins are case-insensitive and nothing else in this
     module may depend on how a config file spelled one."""
     project = project or load_project()
-    slugs = {project.planner_app, *project.worker_apps.values(), *project.role_apps.values()}
+    slugs = {
+        project.planner_app,
+        *(backend.app for backend in project.backends.values()),
+        *project.role_apps.values(),
+    }
     logins = set()
     for slug in slugs:
         if not slug:
@@ -1451,21 +1664,16 @@ def read_events(path: pathlib.Path | str) -> list[dict]:
     return events
 
 
-def stream_parser_name_for_backend(backend: str) -> str:
-    """The stream parser a backend's logs are read with. Stage 2/3 of #514 replaces this derivation
-    with a read of the backend's own `stream:` entry in `config/agents.yaml`; until then the name
-    is `<backend>_jsonl` when that parser is registered, and the default shape otherwise -- which
-    is how every backend's log was read before the parsers had names, so a third backend reads
-    exactly as it did."""
-    candidate = f"{backend}_jsonl"
-    return candidate if candidate in STREAM_PARSERS else DEFAULT_STREAM_PARSER
-
-
-def backend_stream_parser(backend: str | None = None) -> StreamParser:
-    """`backend`'s parser, or the default one for a log whose backend the caller does not know."""
+def backend_stream_parser(
+    backend: str | None = None, *, project: ProjectConfig | None = None
+) -> StreamParser:
+    """`backend`'s parser -- its `backends.<name>.stream` entry, validated at config load (#514) --
+    or the default one for a log whose backend the caller does not know, or whose backend is no
+    longer configured: how every log was read before the parsers had names."""
     if backend is None:
         return get_stream_parser(DEFAULT_STREAM_PARSER)
-    return get_stream_parser(stream_parser_name_for_backend(backend))
+    configured = (project or load_project()).backends.get(backend)
+    return get_stream_parser(configured.stream if configured else DEFAULT_STREAM_PARSER)
 
 
 def usage_summary(events: list[dict], *, parser: StreamParser | None = None) -> UsageSummary:
@@ -1529,7 +1737,7 @@ class QuotaVerdict:
 
 
 def quota_verdict_file(
-    backend: str = "claude", *, cache_dir: pathlib.Path | str | None = None
+    backend: str, *, cache_dir: pathlib.Path | str | None = None
 ) -> pathlib.Path:
     """`.cache/agent_guard_<backend>.json` -- the guard's own per-backend bookkeeping file, written
     by `agent_guard._save_bookkeeping` and named here rather than in a driver so that the reader and
@@ -1549,7 +1757,7 @@ def _verdict_age_phrase(age_seconds: float | None) -> str:
 
 
 def read_persisted_quota_verdict(
-    backend: str = "claude",
+    backend: str,
     *,
     cache_dir: pathlib.Path | str | None = None,
     now: datetime | None = None,
@@ -1884,11 +2092,43 @@ def _print_worker_environment() -> None:
 
 
 def _print_worktree_backends() -> None:
-    """One backend name per line, from `project.worktrees` -- so `worker_task.sh start` can
-    count alive workers across every configured backend without a hardcoded `qwen`/`claude` pair
+    """One backend name per line, every configured backend that has a worktree -- so `worker_task.sh
+    start` can count alive workers across all of them without a hardcoded pair of names
     (agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md)."""
-    for name in load_project().worktrees:
-        print(name)
+    for name, backend in load_project().backends.items():
+        if backend.worktree:
+            print(name)
+
+
+BACKEND_FIELDS = ("command", "worktree", "app", "stream", "quota")
+
+
+def _print_backend_value(name: str, field: str, *, as_path: bool) -> int:
+    """One capability of one backend for the shell drivers (#514), so no bash branches on a
+    backend's name: exit 0 with the value, 2 when `name` is not a configured backend (the driver's
+    usage error), 1 when the config does not load (a loud stop, as `backend-executable`).
+    `command` prints what `backend_executable` resolves, never the raw, possibly empty, field;
+    `worktree --path` resolves it against the repository root."""
+    try:
+        project = load_project()
+    except (ValidationError, yaml.YAMLError, OSError) as error:
+        print(
+            f"cannot read backend '{name}': {DEFAULT_AGENTS_CONFIG} does not load\n{error}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        backend = backend_config(name, project=project)
+    except KeyError as error:
+        print(error.args[0], file=sys.stderr)
+        return 2
+    if field == "command":
+        print(backend_executable(name, project=project))
+    elif field == "worktree" and as_path:
+        print(worktree_path(name, project=project) if backend.worktree else "")
+    else:
+        print(getattr(backend, field))
+    return 0
 
 
 def _project_value(key: str, *, as_path: bool) -> str:
@@ -1956,7 +2196,8 @@ def main() -> None:
     planner.add_argument("key", help="a field of the planner: section, e.g. relaunch_cap")
     executable = sub.add_parser("backend-executable")
     executable.add_argument(
-        "name", help="a backend or CLI command name: qwen, claude -- the key of project.executables"
+        "name",
+        help="a backend or CLI command name -- a key of project.backends or project.executables",
     )
     sub.add_parser("human-message-rules")
     sub.add_parser("forbidden-paths-rules")
@@ -1980,7 +2221,15 @@ def main() -> None:
     )
     sub.add_parser("worktree-backends")
     worktree = sub.add_parser("worktree-path")
-    worktree.add_argument("backend", help="a key of project.worktrees, e.g. qwen")
+    worktree.add_argument("backend", help="a key of project.backends that has a worktree")
+    backend_value = sub.add_parser("backend-value")
+    backend_value.add_argument("backend", help="a key of project.backends")
+    backend_value.add_argument("field", choices=BACKEND_FIELDS)
+    backend_value.add_argument(
+        "--path", action="store_true", help="resolve `worktree` against the repository root"
+    )
+    backend_model = sub.add_parser("backend-model")
+    backend_model.add_argument("backend", help="a key of project.backends")
     sub.add_parser("stages-completed")
     stage_titles = sub.add_parser("stage-titles")
     stage_titles.add_argument("body_file")
@@ -2069,7 +2318,14 @@ def main() -> None:
         try:
             print(worktree_path(args.backend))
         except KeyError:
-            sys.exit(f"'{args.backend}' is not a key of project.worktrees")
+            sys.exit(f"'{args.backend}' is not a configured backend with a worktree")
+    elif args.command == "backend-value":
+        sys.exit(_print_backend_value(args.backend, args.field, as_path=args.path))
+    elif args.command == "backend-model":
+        try:
+            print(backend_default_model(args.backend))
+        except (KeyError, ValidationError, yaml.YAMLError, OSError) as error:
+            sys.exit(f"cannot resolve a default model for backend '{args.backend}': {error}")
     elif args.command == "stages-completed":
         print(stages_completed(sys.stdin.read().splitlines()))
     elif args.command == "stage-titles":

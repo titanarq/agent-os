@@ -22,6 +22,7 @@ import subprocess
 import time
 
 import pytest
+import yaml
 from conftest import EXAMPLE_CONFIG, config_with_never_run
 
 from agent_os import guard as agent_guard
@@ -105,9 +106,9 @@ def driver_environment(tmp_path):
     return environment
 
 
-def _start(environment, *arguments):
+def _start(environment, *arguments, backend="claude"):
     return subprocess.run(
-        ["bash", str(DRIVER), "claude", "start", *arguments],
+        ["bash", str(DRIVER), backend, "start", *arguments],
         cwd=ROOT,
         env=environment,
         capture_output=True,
@@ -183,9 +184,9 @@ sys.exit(3)
 CLAUDE_STUB_NEVER_EXITS = "#!/usr/bin/env bash\nexec sleep 600\n"
 
 
-def _stop(environment):
+def _stop(environment, backend="claude"):
     return subprocess.run(
-        ["bash", str(DRIVER), "claude", "stop"],
+        ["bash", str(DRIVER), backend, "stop"],
         cwd=ROOT,
         env=environment,
         capture_output=True,
@@ -1255,9 +1256,9 @@ def _worktree_with_cut_commits(tmp_path, cut_commit_count, *, issue="348"):
     )
 
 
-def _resume(environment):
+def _resume(environment, backend="claude"):
     return subprocess.run(
-        ["bash", str(DRIVER), "claude", "resume"],
+        ["bash", str(DRIVER), backend, "resume"],
         cwd=ROOT,
         env=environment,
         capture_output=True,
@@ -1867,6 +1868,8 @@ def _staged_environment(
         ("gh", GH_STUB_STAGED),
         ("claude", FAKE_BACKEND),
         ("qwen", FAKE_BACKEND),
+        # The fictitious third backend of #514: Claude-shaped events, a name nothing compares.
+        ("foo", FAKE_BACKEND),
     ):
         stub = binaries / name
         stub.write_text(contents)
@@ -2187,15 +2190,38 @@ def _run_is_over(cache, backend="claude"):
     return False
 
 
-def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(tmp_path):
+def _config_with_backend_foo(tmp_path):
+    """A copy of config.example.yaml declaring a fictitious backend `foo` that reads as
+    `claude_jsonl` and is cut on the Claude quota detector, plus one worker class on it -- the
+    config a third CLI costs, and nothing else (#514). No code anywhere knows the name."""
+    config = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+    config["project"]["backends"]["foo"] = {
+        "worktree": "../example-foo",
+        "app": "example-foo",
+        "stream": "claude_jsonl",
+        "quota": "claude_rate_limit",
+    }
+    worker_class = dict(config["classes"]["mechanical-qwen"], backend="foo", model="foo-model-1")
+    config["classes"]["mechanical-foo"] = worker_class
+    path = tmp_path / "agents-foo.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    return path
+
+
+@pytest.mark.parametrize("backend", ["claude", "foo"])
+def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(tmp_path, backend):
     """#417: #416's stage 2 wrote two new files, some 1,200 lines, and was cut on budget before it
     added them; the freeze took the four tracked ones, `resume` then refused the worktree as dirty,
     and the task waited for a human to commit by hand what the mechanism had just produced. A cut
-    now leaves a tree `resume` accepts, and its own commit names what it swept in."""
+    now leaves a tree `resume` accepts, and its own commit names what it swept in.
+
+    Run for `foo` too (#514): a backend that exists only as a config entry naming `stream:
+    claude_jsonl` is dispatched, cut and resumed exactly like `claude`, by a stub on PATH."""
     environment, cache, worktree, _tmp = _staged_environment(
         tmp_path,
         stage_titles=("Write the failing test", "Make it pass"),
         mode="clean_exit_no_commit",
+        config_path=_config_with_backend_foo(tmp_path) if backend == "foo" else None,
     )
     environment["FAKE_BACKEND_UNTRACKED"] = "price_candidates.py,tests/test_candidates_pricing.py"
     # The real repository holds the diary in `.git/info/exclude` (PR #406), so a cut leaves it as
@@ -2205,9 +2231,10 @@ def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(
     exclude.write_text(exclude.read_text() + "scratchpad/progress.log\n")
     try:
         with _planner_lock_held(cache):
-            assert _start(environment, "347").returncode == 0
+            started = _start(environment, "347", backend=backend)
+            assert started.returncode == 0, started.stdout + started.stderr
             assert _wait_until(lambda: _events_of_kind(cache, "worker_cut")), (
-                cache / "worker_claude.log"
+                cache / f"worker_{backend}.log"
             ).read_text()
             assert _subjects(worktree)[0] == "WIP: cut by guard (no_stage_commit)"
 
@@ -2228,17 +2255,23 @@ def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(
             assert _work_left_behind(worktree) == []
             assert "never added" in (worktree / "price_candidates.py").read_text()
 
-            assert _wait_until(lambda: _run_is_over(cache)), "the launcher subshell never exited"
-            resumed = _resume(environment)
+            assert _wait_until(lambda: _run_is_over(cache, backend)), (
+                "the launcher subshell never exited"
+            )
+            resumed = _resume(environment, backend)
             assert resumed.returncode == 0, resumed.stdout + resumed.stderr
             assert "worktree is dirty" not in resumed.stdout, resumed.stdout
             assert "resume refused" not in resumed.stdout, resumed.stdout
             # Reached the backend -- proof `resume` accepted the tree the cut left, with no
             # manual `git add` and no `--force` anywhere in this test.
             assert "started pid" in resumed.stdout, resumed.stdout
-            _stop(environment)
+            if backend == "foo":
+                # The class on `foo` named the model, and the run's own events are `foo`'s.
+                assert "model:     foo-model-1" in started.stdout, started.stdout
+                assert (cache / "worker_foo.jsonl").is_file()
+            _stop(environment, backend)
     finally:
-        _stop(environment)
+        _stop(environment, backend)
 
 
 def test_the_freeze_leaves_a_file_that_is_untracked_for_a_reason_alone(tmp_path):
@@ -2855,7 +2888,7 @@ def test_every_driver_resolves_its_backend_through_the_one_configured_lookup():
     assert "-m agent_os.lib backend-executable" in shared
     for script in ("agent_task.sh", "planner_task.sh"):
         text = (AGENT_OS_DIR / "bin" / script).read_text()
-        assert "agent_executable claude" in text, script
+        assert 'agent_executable "$launch_backend"' in text, script
         assert '"${AGENT_CLAUDE_BIN:-claude}"' not in text
         assert '"${PLANNER_CLAUDE_BIN:-claude}"' not in text
 
@@ -3656,7 +3689,7 @@ def test_a_config_that_does_not_load_stops_the_driver_instead_of_launching_an_em
     broken = tmp_path / "broken.yaml"
     broken.write_text(
         EXAMPLE_CONFIG.read_text().replace(
-            "\n  worktrees:\n", "\n  a_key_no_schema_has: 1\n  worktrees:\n", 1
+            "\n  backends:\n", "\n  a_key_no_schema_has: 1\n  backends:\n", 1
         )
     )
     environment, cache, _worktree = _base_check_environment(tmp_path, branch="task/347-the-work")
@@ -3677,7 +3710,7 @@ def test_the_role_drivers_resolve_their_binary_before_they_write_anything(tmp_pa
     a turn, and `--dry-run` returns before the launch."""
     for script in ("agent_task.sh", "planner_task.sh"):
         text = (AGENT_OS_DIR / "bin" / script).read_text()
-        assert 'agent_executable claude "${' in text, script
+        assert 'agent_executable "$launch_backend" "${' in text, script
         assert ") || exit 1" in text, script
         assert "-$(agent_executable claude)}" not in text, script
 

@@ -27,8 +27,32 @@ STREAM_PARSERS: dict[str, StreamParser] = {
 DEFAULT_STREAM_PARSER = ClaudeJsonlStreamParser.name
 
 
+# The detectors a backend's `quota:` entry may name (`project.backends`, #514): whether an
+# `exhausted` verdict read off that backend's stream CUTS its run. The verdict itself is always the
+# stream parser's own `quota_verdict`, recorded for every backend alike, because the launch gate of
+# a role reads it back whatever the backend is (#425); what differs per backend is only whether the
+# guard acts on it. `claude_rate_limit` is the one detector that exists today -- a stream that
+# carries `rate_limit_event`s and a refused `result` with `api_error_status` (the 2026-09-14 quota
+# ADR) -- and `none` is a backend whose stream carries no quota signal the guard should cut on.
+QUOTA_DETECTOR_NONE = "none"
+QUOTA_DETECTORS: tuple[str, ...] = ("claude_rate_limit", QUOTA_DETECTOR_NONE)
+
+
 class UnknownStreamParserError(ValueError):
     pass
+
+
+class UnknownQuotaDetectorError(ValueError):
+    pass
+
+
+def check_quota_detector(name: str) -> str:
+    if name not in QUOTA_DETECTORS:
+        known = ", ".join(QUOTA_DETECTORS)
+        raise UnknownQuotaDetectorError(
+            f"unknown quota detector {name!r} -- registered detectors: {known}"
+        )
+    return name
 
 
 def get_stream_parser(name: str) -> StreamParser:
@@ -43,12 +67,16 @@ def get_stream_parser(name: str) -> StreamParser:
 
 __all__ = [
     "DEFAULT_STREAM_PARSER",
+    "QUOTA_DETECTORS",
+    "QUOTA_DETECTOR_NONE",
     "STREAM_PARSERS",
     "QuotaStatus",
     "ResultUsage",
     "StreamParser",
     "StreamQuotaVerdict",
+    "UnknownQuotaDetectorError",
     "UnknownStreamParserError",
     "UsageSummary",
+    "check_quota_detector",
     "get_stream_parser",
 ]

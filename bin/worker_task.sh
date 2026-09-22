@@ -72,6 +72,10 @@ main=$agent_main
 # One field of config/agents.yaml's `project:` section; `--path` resolves it against this
 # checkout, which is what the `worktrees:` entries are relative to.
 project_value() { "$agent_python" -m agent_os.lib project-value "$@"; }
+# One capability of this driver's backend -- its `project.backends` entry (#514) -- so nothing
+# below branches on the backend's NAME: exits 2 for a name that is not a configured backend, 1 for
+# a config that does not load.
+backend_value() { "$agent_python" -m agent_os.lib backend-value "$@"; }
 
 # The main checkout, derived from git rather than $main: this script's own file can be reached
 # from inside a worktree too (every worktree has its own copy of agent_os/bin/worker_task.sh), and in
@@ -94,15 +98,8 @@ main_checkout() {
 
 backend=${1:-}
 case "$backend" in
-  qwen)
-    model=${WORKER_MODEL:-qwen3.8-max}
-    ;;
-  claude)
-    model=${WORKER_MODEL:-claude-opus-5}
-    ;;
-  *) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
+  '' | -*) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
 esac
-worktree=${WORKER_WORKTREE:-$(project_value --path "worktrees.$backend")}
 # The backend CLI this driver launches, resolved from `project.executables` rather than from
 # whatever PATH the process that launched the driver happened to carry: a dispatch from the
 # systemd user unit and a dispatch from a shell must run the SAME binary (#380). A backend the
@@ -111,6 +108,27 @@ worktree=${WORKER_WORKTREE:-$(project_value --path "worktrees.$backend")}
 # A config that does not load exits non-zero here and stops the driver: see `agent_executable`
 # (agent_os/bin/agent_task.sh) for why an unchecked status is how an EMPTY command gets launched.
 backend_bin=$(agent_executable "$backend") || exit 1
+# Which parser reads this backend's events, and with it which command-line dialect launches it
+# (`launch_stage` below). A name that is not a configured backend is a usage error, exactly as an
+# unknown name in the hardcoded pair this replaced was (#514).
+backend_stream=$(backend_value "$backend" stream)
+case $? in
+  0) ;;
+  2) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
+  *) exit 1 ;;
+esac
+case "$backend_stream" in
+  qwen_jsonl | claude_jsonl) ;;
+  *)
+    echo "backend '$backend' reads as stream '$backend_stream', and this driver knows no command line that writes it" >&2
+    exit 1
+    ;;
+esac
+# The model when the dispatch names none: the first worker class on this backend, else the first
+# class of any role on it -- read off the classes, never a per-backend literal here (#514). Left
+# empty when no class runs on the backend; `launch_stage` refuses to start on an empty one.
+model=${WORKER_MODEL:-$("$agent_python" -m agent_os.lib backend-model "$backend" 2>/dev/null)}
+worktree=${WORKER_WORKTREE:-$(backend_value "$backend" worktree --path)}
 shift
 
 # `WORKER_CACHE_DIR` moves every one of these at once, and `agent_guard.py`'s `cache_dir()` reads
@@ -584,6 +602,11 @@ launch_stage() {
   local mode=$1 issue=$2 brief=$3 after=$4 extra_context=$5
   local next_stage stage_goal stages_summary recent_commits launched_state_line
 
+  if [ -z "$model" ]; then
+    echo "no model to launch backend '$backend' with: set WORKER_MODEL, or give a class in config/agents.yaml backend: $backend"
+    return 1
+  fi
+
   # A worktree without `.env` is a worker whose SEC and Tiingo tools refuse before they reach the
   # network, and the error they raise -- "Falta la variable de entorno SEC_USER_AGENT" -- surfaces
   # to an agent as a bare `Error executing tool`. In CP 6.1's first batch five subagents read that
@@ -602,7 +625,7 @@ launch_stage() {
   # comments, PRs and commits are attributable to it and never to the human account. Secrets are
   # per-app JSON+PEM under .secrets/ (gitignored); missing them degrades to the old anonymous
   # behavior with one warning rather than failing the run -- see docs/modules/workers.md#identities.
-  if agent_apply_identity "$(project_value "worker_apps.$backend")"; then
+  if agent_apply_identity "$(backend_value "$backend" app)"; then
     # Plain `git push` (as opposed to `gh`) needs its own credential lookup; this makes it read
     # GH_TOKEN from the environment instead of asking. Worktree-local, never global.
     git -C "$worktree" config credential.helper '!gh auth git-credential'
@@ -702,6 +725,7 @@ and then stop. The driver launches the next stage in a new process."
   fi
 
   export WORKER_EVENTS="$events" WORKER_MAIN="$main" WORKER_BACKEND_BIN="$backend_bin"
+  export WORKER_BACKEND="$backend"
   # setsid so the run outlives this shell and can be stopped as one process group. The rules go
   # through the environment rather than the command line, so no quoting can mangle them.
   #
@@ -712,8 +736,10 @@ and then stop. The driver launches the next stage in a new process."
   # this same run kills the whole process group (-TERM -pgid reaches this subshell too, not just
   # the CLI child), so the hook only ever runs on a natural exit, and `check` itself never
   # overwrites a CUT_BY_GUARD a tick already wrote.
-  case "$backend" in
-  qwen)
+  # The dialect is the backend's `stream:` capability, not its name (#514): the flags that make a
+  # CLI write a stream-json log belong to the CLI whose shape that log is.
+  case "$backend_stream" in
+  qwen_jsonl)
     setsid nohup bash -c '
         cd "$1" || exit 1
         "$WORKER_BACKEND_BIN" --model "$WORKER_MODEL_ID" --approval-mode yolo -o stream-json \
@@ -725,12 +751,12 @@ and then stop. The driver launches the next stage in a new process."
         # remains and the gates pass, `stage-exit` has already launched it in a process group of
         # its own and this one must stop here without publishing anything.
         WORKER_WORKTREE="$1" WORKER_BACKEND_STATUS=$backend_status \
-          "$AGENT_OS_DIR/bin/worker_task.sh" qwen stage-exit && exit 0
-        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" qwen open-pr
-        "$AGENT_OS_PYTHON" -m agent_os.guard check qwen
+          "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" stage-exit && exit 0
+        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
+        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND"
       ' _ "$worktree" >>"$logfile" 2>&1 &
     ;;
-  claude)
+  claude_jsonl)
     # --add-dir lets the worker READ the main checkout (the rules allow reading `.cache/`); the
     # collect step checks the main tree is untouched because a write there would be invisible to
     # the branch diff. --dangerously-skip-permissions is what "headless" means; the rules and the
@@ -744,9 +770,9 @@ and then stop. The driver launches the next stage in a new process."
              >>"$WORKER_EVENTS"
         backend_status=$?
         WORKER_WORKTREE="$1" WORKER_BACKEND_STATUS=$backend_status \
-          "$AGENT_OS_DIR/bin/worker_task.sh" claude stage-exit && exit 0
-        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" claude open-pr
-        "$AGENT_OS_PYTHON" -m agent_os.guard check claude
+          "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" stage-exit && exit 0
+        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
+        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND"
       ' _ "$worktree" >>"$logfile" 2>&1 &
     ;;
   esac
@@ -882,7 +908,7 @@ start|resume)
     # THE IDENTITY BEFORE THE FIRST `gh` CALL, not after it -- #363's lesson, applied to `start`'s
     # own gates: the ambient token this shell inherited may be an hour old and expired, and a read
     # that answers 401 must not be the thing that decides where this dispatch may write.
-    if agent_apply_identity "$(project_value "worker_apps.$backend")"; then
+    if agent_apply_identity "$(backend_value "$backend" app)"; then
       git -C "$worktree" config credential.helper '!gh auth git-credential'
     fi
 
@@ -1071,7 +1097,7 @@ stage-exit)
   # its stage began, and a multi-stage run outlives it: on #363 the token minted at 11:21 was
   # already dead by 13:01, so the `gh issue view` below answered 401 and the run was declared
   # finished on a credential that had merely expired. Re-mint before reading anything.
-  agent_apply_identity "$(project_value "worker_apps.$backend")" \
+  agent_apply_identity "$(backend_value "$backend" app)" \
     && git -C "$worktree" config credential.helper '!gh auth git-credential'
 
   # No issue recorded at all is not a failed read -- it is a run that was never staged, and it
@@ -1200,7 +1226,7 @@ open-pr)
   # token inherited from a run that started over an hour ago is present and expired. On #363 the
   # re-mint sat below this read, so the read answered 401, open-pr gave up, and a finished
   # five-stage run never became a pull request.
-  if agent_apply_identity "$(project_value "worker_apps.$backend")"; then
+  if agent_apply_identity "$(backend_value "$backend" app)"; then
     git -C "$worktree" config credential.helper '!gh auth git-credential'
   fi
 
