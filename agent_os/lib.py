@@ -55,6 +55,12 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # the "COMMANDS YOU MUST NEVER RUN" paragraph, rendered from `project.never_run` with each
         # command's own reason -- ONE list behind the worker's, the validator's and the refiner's
         # RULES, injected via __NEVER_RUN_RULES__. Prints nothing when the list is empty.
+    python -m agent_os.lib render-prompt worker [--set NAME=VALUE ...]
+        # one role's whole prompt: `agent_os/prompts/<role>.md`, the host's own paragraphs from the
+        # file `project.prompt_extras` names for that role, and every placeholder filled -- the
+        # config-derived ones by itself, the ones only the run knows (MAIN_CHECKOUT, WORKTREE,
+        # REVIEW_BACKEND_LINE) from `--set`. Refuses an extras file the config names and the
+        # filesystem lacks, and a placeholder nothing supplied a value for.
     python -m agent_os.lib worker-environment
         # one `KEY<TAB>VALUE` line per `project.worker_environment` entry -- worker_task.sh
         # exports these into the backend process before launching it (roedor: a read-only
@@ -112,7 +118,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
-from agent_os.cli import host_root
+from agent_os.cli import AGENT_OS_DIR, host_root
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -359,6 +365,14 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
+    # One host-owned file per role whose text is appended at that role's `__PROJECT_EXTRAS__`
+    # extension point, as a path relative to the HOST project's root. Every key is optional, and a
+    # role with no entry renders nothing there: this is where a sentence only the host can write
+    # goes -- how its own package resolves under test, which class a worker task belongs in -- so
+    # the mechanism's own templates carry no literal of any project (`docs/AGENT_OS.md` §7 row
+    # (t), #509). A file this names and the filesystem does not have stops the render rather than
+    # silently dropping the paragraph.
+    prompt_extras: dict[str, str] = {}
     # Environment exported into every worker's own backend process before it starts (never the
     # mechanism's own process) -- roedor uses this for a read-only DATABASE_URL so a worker
     # connects to the shared Postgres read-only by default, without a project literal in
@@ -927,6 +941,124 @@ def worker_environment_rules(project: ProjectConfig | None = None) -> str:
     )
     return f"""THE ENVIRONMENT YOU RUN IN IS CONFIGURED FOR YOU, AND READ-ONLY BY DEFAULT
 {bullets}"""
+
+
+# Where every role's prompt lives: one template per role, beside the package rather than inside a
+# driver's heredoc, so the text a host reads is a file it can diff and the drivers carry none of it
+# (#509). `agent_os/tests/golden/` holds what each one renders to for the host that owns this
+# checkout, which is what proves a move of the text changed nothing an agent reads.
+PROMPTS_DIR = AGENT_OS_DIR / "prompts"
+PROMPT_ROLES = ("worker", "validator", "refiner", "planner")
+
+# The one marked extension point: where a host's own paragraphs are appended verbatim, from the
+# file `project.prompt_extras` names for that role. A host that names none renders nothing there,
+# and the section simply does not exist in that run's prompt.
+PROJECT_EXTRAS_PLACEHOLDER = "__PROJECT_EXTRAS__"
+
+# What a placeholder looks like, so a value nobody supplied is a refusal rather than a prompt an
+# agent reads `__WORKTREE__` in. No prompt's own prose carries this shape.
+PLACEHOLDER_RE = re.compile(r"__[A-Z][A-Z0-9_]*__")
+
+
+def _substitute_block(text: str, placeholder: str, value: str) -> str:
+    """One placeholder, substituted the way the shell drivers substituted it before this function
+    existed: inline where it stands inside a line, and as a paragraph of its own where it stands
+    alone on one -- an empty value then taking its own line AND the blank line that separated it
+    with it, so a host that configures nothing keeps the single blank line every other section
+    boundary has instead of a stub heading or a gap twice as wide as the one it fills."""
+    if placeholder not in text:
+        return text
+    block = value.strip("\n")
+    lines = text.split("\n")
+    rendered: list[str] = []
+    for index, line in enumerate(lines):
+        if line.strip() == placeholder:
+            if block:
+                rendered.extend(block.split("\n"))
+            elif (
+                rendered
+                and not rendered[-1].strip()
+                and index + 1 < len(lines)
+                and not lines[index + 1].strip()
+            ):
+                # The placeholder was a paragraph between two others: drop one of the two blank
+                # lines that fenced it, never both.
+                rendered.pop()
+            continue
+        rendered.append(line.replace(placeholder, block))
+    return "\n".join(rendered)
+
+
+def prompt_extras_path(role: str, project: ProjectConfig | None = None) -> pathlib.Path | None:
+    """The host-owned file whose text is appended at this role's extension point, or None when the
+    host names none. Relative to the HOST project's root, never to this package."""
+    configured = (project or load_project()).prompt_extras.get(role)
+    return HOST_ROOT / configured if configured else None
+
+
+def prompt_substitutions(
+    project: ProjectConfig | None = None, mechanism: MechanismConfig | None = None
+) -> dict[str, str]:
+    """Every placeholder a role's prompt carries that config alone answers, keyed WITHOUT the
+    surrounding underscores. What is missing here is what only the run knows -- the main checkout's
+    path, the throwaway worktree, the line naming the backend a review was written on -- and the
+    driver passes those in.
+
+    The two ownership paragraphs are the one exception to "each stands on its own": together they
+    state the rule as a contrast, so the pair renders whole or not at all (#390). The test is the
+    two audit regexes, each empty exactly when its own list is, which is the same test
+    `worker_task.sh` applied before the drivers stopped rendering their own prompts."""
+    project = project or load_project()
+    mechanism = mechanism or load_mechanism()
+    both_lists_configured = bool(forbidden_paths_regex(project)) and bool(
+        mechanism_paths_regex(mechanism)
+    )
+    return {
+        "HUMAN_LOGIN": project.human_login,
+        "HUMAN_MESSAGE_RULES": human_message_rules(project),
+        "TEST_COMMAND": project.test_command,
+        "FORBIDDEN_PATHS_RULES": forbidden_paths_rules(project) if both_lists_configured else "",
+        "MECHANISM_PATHS_RULES": mechanism_paths_rules(mechanism) if both_lists_configured else "",
+        "NEVER_RUN_RULES": never_run_rules(project),
+        "WORKER_ENVIRONMENT_RULES": worker_environment_rules(project),
+    }
+
+
+def render_prompt(
+    role: str,
+    substitutions: dict[str, str] | None = None,
+    extras_path: pathlib.Path | str | None = None,
+) -> str:
+    """One role's whole prompt: its template, the host's own text at the extension point, and every
+    placeholder filled.
+
+    Two refusals, both loud, because either one reaches an agent as prose it cannot act on: an
+    extras file the config names and the filesystem does not have, and a placeholder still standing
+    in the rendered text because nothing supplied a value for it."""
+    template = PROMPTS_DIR / f"{role}.md"
+    if not template.is_file():
+        raise KeyError(f"no prompt template for role {role!r}: {template} does not exist")
+    extras = ""
+    if extras_path is not None:
+        path = pathlib.Path(extras_path)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"project.prompt_extras names {path} for role {role!r}, and there is no such file"
+            )
+        extras = path.read_text()
+    # The extras go in FIRST, so a host's own paragraph may carry the mechanism's placeholders --
+    # `__TEST_COMMAND__` is the one roedor's worker file uses -- and is filled from the same config
+    # as the template around it.
+    text = _substitute_block(template.read_text(), PROJECT_EXTRAS_PLACEHOLDER, extras)
+    for name, value in (substitutions or {}).items():
+        text = _substitute_block(text, f"__{name}__", value)
+    unresolved = sorted(set(PLACEHOLDER_RE.findall(text)))
+    if unresolved:
+        raise KeyError(
+            f"the {role} prompt still carries {', '.join(unresolved)} after rendering: "
+            "nothing supplied a value"
+        )
+    return text.rstrip("\n") + "\n"
 
 
 def mechanism_logins(project: ProjectConfig | None = None) -> set[str]:
@@ -1754,6 +1886,16 @@ def main() -> None:
     sub.add_parser("never-run-rules")
     sub.add_parser("worker-environment")
     sub.add_parser("worker-environment-rules")
+    render = sub.add_parser("render-prompt")
+    render.add_argument("role", help="worker, validator, refiner or planner")
+    render.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        dest="set_values",
+        metavar="NAME=VALUE",
+        help="a placeholder only the run knows: MAIN_CHECKOUT, WORKTREE, REVIEW_BACKEND_LINE",
+    )
     sub.add_parser("worktree-backends")
     sub.add_parser("stages-completed")
     stage_titles = sub.add_parser("stage-titles")
@@ -1821,6 +1963,20 @@ def main() -> None:
         _print_worker_environment()
     elif args.command == "worker-environment-rules":
         print(worker_environment_rules())
+    elif args.command == "render-prompt":
+        values = prompt_substitutions()
+        for assignment in args.set_values:
+            name, separator, value = assignment.partition("=")
+            if not separator:
+                sys.exit(f"--set takes NAME=VALUE, and {assignment!r} carries no '='")
+            values[name] = value
+        try:
+            sys.stdout.write(render_prompt(args.role, values, prompt_extras_path(args.role)))
+        except (KeyError, FileNotFoundError) as error:
+            # A driver that cannot render its prompt must not launch a backend on a half-written
+            # one: every caller checks this exit status. `args[0]` rather than `str(error)`, which
+            # for a KeyError is the message's own repr, quotes and all.
+            sys.exit(str(error.args[0]))
     elif args.command == "worktree-backends":
         _print_worktree_backends()
     elif args.command == "stages-completed":
