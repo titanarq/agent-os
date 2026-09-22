@@ -360,7 +360,7 @@ def test_tick_backend_cuts_on_the_token_ceiling_when_no_event_reports_a_cost(mon
     cut that lands is `reason=budget`. Before #387 nothing in the tick could see this run at all --
     its dollar sum was 0.0 and its context was one stage's."""
     cache = tmp_path / ".cache"
-    worktree = tmp_path / "roedor-qwen"
+    worktree = tmp_path / "example-qwen"
     spend = cache / "spend" / "387"
     spend.mkdir(parents=True)
     worktree.mkdir()
@@ -407,7 +407,7 @@ def _tick_fixture(tmp_path: Path, monkeypatch, *, progress_log_lines: str) -> tu
     that would trip the budget ceiling -- shared by the malformed-cutoff tests below (#428).
     Returns the progress.log path (already written) and the run's start time."""
     cache = tmp_path / ".cache"
-    worktree = tmp_path / "roedor-qwen"
+    worktree = tmp_path / "example-qwen"
     (worktree / "scratchpad").mkdir(parents=True)
     cache.mkdir()
     monkeypatch.setenv("WORKER_CACHE_DIR", str(cache))
@@ -787,7 +787,7 @@ def test_the_exit_hook_run_for_real_writes_only_under_the_override_and_starts_no
     monkeypatch.delenv("WORKER_CACHE_DIR", raising=False)
     real_cache = agent_guard.cache_dir(ROOT)
     # This checkout's `.cache` is a tracked symlink shared by every worktree on a machine that
-    # mounts one (`/mnt/data/roedor/cache`); a CI runner's checkout has no such mount, so the
+    # mounts one for its data directories; a CI runner's checkout has no such mount, so the
     # symlink resolves to nothing and `real_cache` does not exist. Either way the guarantee under
     # test is the same -- the real exit hook must not create or write to it -- so both branches
     # below read this flag instead of assuming the directory is already there.
@@ -1521,7 +1521,7 @@ def test_the_stall_warning_carries_the_workers_own_last_progress_lines(tmp_path)
     """A warning that only says "39 turns without a commit" cannot be told apart from a worker that
     has died: the human had to open a shell on the host to see which stage it was on. The guard
     reads progress.log itself, so this costs no model turn."""
-    worktree = tmp_path / "roedor-qwen"
+    worktree = tmp_path / "example-qwen"
     (worktree / "scratchpad").mkdir(parents=True)
     (worktree / "scratchpad" / "progress.log").write_text(
         "2026-09-16 19:10  stage1-390 VERDE: 171 tests\n"
@@ -1546,7 +1546,7 @@ def test_the_stall_warning_is_unchanged_when_there_is_no_progress_log(tmp_path):
 
 def test_the_stall_warning_truncates_a_long_line(tmp_path):
     """A VERDE line is a paragraph and the warning repeats every tick."""
-    worktree = tmp_path / "roedor-qwen"
+    worktree = tmp_path / "example-qwen"
     (worktree / "scratchpad").mkdir(parents=True)
     (worktree / "scratchpad" / "progress.log").write_text("x" * 900 + "\n")
 
@@ -2694,7 +2694,7 @@ def test_a_name_paged_in_the_code_comes_from_a_parameter_or_from_the_renderer(mo
 def _rate_limited_claude_run(tmp_path, monkeypatch, *, task_class):
     """A live `claude` run whose events say the quota is rejected: the tick's one mechanical page."""
     cache = tmp_path / ".cache"
-    worktree = tmp_path / "roedor-claude"
+    worktree = tmp_path / "example-claude"
     cache.mkdir(parents=True)
     worktree.mkdir()
     monkeypatch.setenv("WORKER_CACHE_DIR", str(cache))

@@ -1117,17 +1117,17 @@ def test_merge_audit_regex_is_empty_when_every_path_is_exempted():
 
 def test_merge_audit_regex_matches_only_the_non_exempt_paths():
     project = _project(
-        ["docs/adr/*", "config/proposals/*", "roedor/metrics/*"],
+        ["docs/adr/*", "config/proposals/*", "app/metrics/*"],
         merge_audit_exempt_paths=["docs/adr/*", "config/proposals/*"],
     )
     audit = forbidden_paths_merge_audit_regex(project)
-    assert re.match(audit, "roedor/metrics/x.py")
+    assert re.match(audit, "app/metrics/x.py")
     assert not re.match(audit, "docs/adr/2026-09-21-a-decision.md")
     assert not re.match(audit, "config/proposals/y.yaml")
 
 
 def test_merge_audit_violations_reports_nothing_for_an_empty_changed_list():
-    project = _project(["roedor/metrics/*"])
+    project = _project(["app/metrics/*"])
     assert forbidden_paths_merge_audit_violations([], project) == []
 
 

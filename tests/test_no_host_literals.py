@@ -7,21 +7,34 @@ data captured from a real run, not code) and `config.example.yaml` (its own comm
 the shape of a real value by naming one, `docs/AGENT_OS.md` §4.1). Two further, narrower
 exclusions:
 
-- `SELF_REFERENTIAL_CHECKS` -- this file and `tests/test_install_templates.py` (#511) each spell
-  every forbidden literal ON PURPOSE, as the very strings their own test checks a real file
-  against (`test_the_real_canonical_issue_templates_carry_no_host_literal` there); a walk that
-  flagged a literal-checking test for containing the literals it checks for would be checking
-  nothing. Excluded by identity, never by `EXCLUDED_PATHS`, which is reserved for a file that
-  still needs its own literal removed.
+- `SELF_REFERENTIAL_CHECKS` -- files that spell every forbidden literal ON PURPOSE, as the very
+  strings their own test checks a real file or a rendered prompt against; a walk that flagged a
+  literal-checking test for containing the literals it checks for would be checking nothing.
+  Excluded by identity, never by `EXCLUDED_PATHS`, which is reserved for a file that still needs
+  its own literal removed. Three files, each for its own reason: this file and
+  `tests/test_install_templates.py` (#511) check a real shipped file against the tuple
+  (`test_the_real_canonical_issue_templates_carry_no_host_literal` there); `test_agent_task.py`'s
+  `HOST_LITERALS` tuple is the inverse of the same idea -- it asserts each literal is ABSENT from
+  every role's rendered prompt, so the tuple has to spell "roedor"/"5435" to say so (#512's own
+  fix moved it here from `EXCLUDED_PATHS` once that was noticed).
 - `EXCLUDED_PATHS` -- files #510's own audit found that still fail this walk and belong to a
   sibling wave-2 issue, #512, running in parallel; the driver-side half of the same audit, #509,
   is already clean, and #511's own new modules (`install.py`, `doctor.py`, `render.py`,
   `templates/`) were scrubbed before merge, so this walk needed no exclusion for either:
 
-  - `agent_os/tests/test_agent_guard.py`, `test_agent_lib.py`, `test_agent_task.py`,
-    `test_issues_cli.py`, `test_prompt_templates.py`, `test_role_run_environment_isolation.py`,
-    `test_worker_task.py` -- fixtures and assertions pinned to this project's own values, and one
-    `importorskip("roedor.config")` (the parent epic's own 2026-09-21 audit, #512).
+  - `agent_os/tests/test_prompt_templates.py` -- its golden comparison keeps a static, documented
+    copy of the host's own two `config/agent_prompts/*.md` extension-point files (`agent_os/tests/
+    golden/*.md` fixture data captured from a real run, the same exception `docs/AGENT_OS.md`
+    already grants `tests/golden/`), so the literal is load-bearing fixture content, not
+    incidental prose -- kept per this walk's own instructions rather than rewritten into
+    something that no longer proves the golden text matches what a real host renders.
+
+  Every other file #510's audit named -- `test_agent_guard.py`, `test_agent_lib.py`,
+  `test_issues_cli.py`, `test_role_run_environment_isolation.py`, `test_worker_task.py` -- had
+  #512's own fix rephrase or rename its one literal (all were incidental: example worktree names,
+  a made-up forbidden-path pattern, explanatory prose), and `test_agent_task.py` moved to
+  `SELF_REFERENTIAL_CHECKS` above instead, because its literal is the very thing under test.
+  `test_every_exclusion_still_applies` below is what would catch a stale entry among these.
 
 Pure filesystem. This file must not request the `engine` or `db_sandbox` fixture.
 """
@@ -37,19 +50,14 @@ FORBIDDEN = ("roedor", "MatillaM", "titanarq", "5435", "roedor_ro")
 SELF_REFERENTIAL_CHECKS = {
     "tests/test_no_host_literals.py",
     "tests/test_install_templates.py",
+    "tests/test_agent_task.py",
 }
 
 # Paths relative to `agent_os/`, owned by #512 and not fixed here -- see the module docstring
 # above. `test_every_exclusion_still_applies` below keeps this list honest: an entry the walk no
 # longer needs fails that test instead of quietly shrinking what the walk actually checks.
 EXCLUDED_PATHS = {
-    "tests/test_agent_guard.py",
-    "tests/test_agent_lib.py",
-    "tests/test_agent_task.py",
-    "tests/test_issues_cli.py",
     "tests/test_prompt_templates.py",
-    "tests/test_role_run_environment_isolation.py",
-    "tests/test_worker_task.py",
 }
 
 

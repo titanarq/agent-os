@@ -16,9 +16,9 @@ time among them) -- resolves `DEFAULT_AGENTS_CONFIG` (`agent_os/agent_os/lib.py`
 `HOST_ROOT/config/agents.yaml`, and `HOST_ROOT` finds a real project's root through `git
 rev-parse --show-toplevel` regardless of where `agent_os/` sits inside it. Run this suite from
 inside a checkout that carries a `config/agents.yaml` of its own -- exactly the layout `agent_os/
-tests -q` runs under today, vendored in `roedor` -- and every one of those bare calls silently
-reads that host's file instead of the example one, which is what let host-specific assertions
-accumulate in this suite in the first place. `DEFAULT_AGENTS_CONFIG` binds ONCE, at the first
+tests -q` runs under today, vendored in a host project -- and every one of those bare calls
+silently reads that host's file instead of the example one, which is what let host-specific
+assertions accumulate in this suite in the first place. `DEFAULT_AGENTS_CONFIG` binds ONCE, at the first
 import of `agent_os.lib` in the whole process, so this has to run before that import happens
 anywhere -- which for pytest means here, in the `conftest.py` loaded before any test module in
 this directory -- and `setdefault` rather than a plain assignment, so a caller who deliberately

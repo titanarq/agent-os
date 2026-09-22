@@ -2278,7 +2278,7 @@ def test_a_freeze_that_took_only_tracked_paths_says_nothing_about_untracked_ones
 # ---------------------------------------------------------------------------------------------
 # THE GUARD'S CUT REACHES THE SAME FREEZE (#482). `cut_run` kept a freeze of its own -- `git add
 # -u`, then a commit of whatever that staged -- so it never received #417's untracked half above:
-# #457's cut carried one modified file and left `roedor/tools/sections.py` and its test, some 900
+# #457's cut carried one modified file and left another source file and its test, some 900
 # lines, untracked behind their own `WIP: cut by guard` commit, for a human to move out of the
 # worktree by hand before anything could run there again. The three tests below call the guard's
 # real `cut_run` -- no `_start`, no backend, no events -- and read the tree it leaves behind.
@@ -2764,7 +2764,7 @@ def test_the_status_report_prints_the_issues_token_total_next_to_the_stage_conte
 # ---------------------------------------------------------------------------------------------
 # THE BACKEND'S EXECUTABLE COMES FROM CONFIG, NOT FROM THE LAUNCHER'S PATH (#380). The incident:
 # on the first unattended dispatch (#363, 2026-09-16) `qwen` lived under nvm, the PATH the systemd
-# user manager hands `roedor-guard.service` did not carry that directory, and the stage process
+# user manager hands the guard's own service unit did not carry that directory, and the stage process
 # died in under a second. These tests drive the driver with TWO binaries of the same name -- one
 # first on PATH, one named by `project.executables` -- and assert which of them ran.
 # ---------------------------------------------------------------------------------------------
@@ -2907,7 +2907,7 @@ def test_status_prints_the_failed_launch_state_and_the_command_that_was_missing(
 
 # ---------------------------------------------------------------------------------------------
 # `start` REFUSES A WORKTREE THAT IS NOT WHERE THIS ISSUE'S WORK BELONGS (#388). The evidence:
-# after #363 finished, `/home/titan/projects/roedor-qwen` stayed on its branch, nothing in `start`
+# after #363 finished, a stale worktree from a finished issue stayed on its branch, nothing in `start`
 # looked, and the next dispatch would have written its commits inside that already-open pull
 # request. Accepted: the issue's own base (`Base: <branch>`, `main` when it names none) or any
 # branch whose name carries the issue number.

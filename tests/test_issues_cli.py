@@ -197,7 +197,7 @@ def _completed(returncode=0, stdout="", stderr=""):
 
 def _project(**overrides):
     """A `ProjectConfig` that is nobody's project: the tests that assert where a value comes from
-    must not be able to pass by reading roedor's own `config/agents.yaml`."""
+    must not be able to pass by reading the host's own `config/agents.yaml`."""
     fields = {"repo": "", "tracking_epic": 1, "board_number": 1, "modules": []}
     return ProjectConfig(**(fields | overrides))
 
