@@ -5,12 +5,14 @@ fixed labels and the repository, both read from `config/agents.yaml`, the key-li
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 from unittest.mock import patch
 
 import pytest
 
 from agent_os import issues
+from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     REQUIRED_SECTIONS,
     HumanMessageError,
@@ -398,7 +400,26 @@ VALID_BODY = (
 )
 
 
-def test_create_with_a_template_and_no_title_prints_the_scaffold_and_creates_nothing(capsys):
+@pytest.fixture
+def shipped_issue_templates(tmp_path, monkeypatch):
+    """`issues.template_body()` reads `TEMPLATE_DIR / f"{name}.md"`, a HOST path
+    (`.github/ISSUE_TEMPLATE/`) that does not exist outside a checkout that ships one. The mechanism
+    ships its own copies for exactly this (`agent_os/templates/issue_template/`, also what
+    `agent_os.install.plan_issue_templates` writes into a fresh host, #511) -- this fixture copies
+    those into a throwaway directory and points `issues.TEMPLATE_DIR` at it, so `cmd_create`'s
+    `--template` path is exercised against the mechanism's own scaffold rather than any host's."""
+    template_dir = tmp_path / "ISSUE_TEMPLATE"
+    template_dir.mkdir()
+    source_dir = AGENT_OS_DIR / "templates" / "issue_template"
+    for name in ("task", "bug"):
+        shutil.copy(source_dir / f"{name}.md", template_dir / f"{name}.md")
+    monkeypatch.setattr(issues, "TEMPLATE_DIR", template_dir)
+    return template_dir
+
+
+def test_create_with_a_template_and_no_title_prints_the_scaffold_and_creates_nothing(
+    capsys, shipped_issue_templates
+):
     with patch("agent_os.issues.subprocess.run") as run:
         issues.cmd_create(
             argparse.Namespace(
@@ -428,7 +449,9 @@ def test_create_refuses_a_template_and_a_body_file_at_once():
         )
 
 
-def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_type():
+def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_type(
+    shipped_issue_templates,
+):
     created = {"number": 9, "id": 99, "html_url": "u"}
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
