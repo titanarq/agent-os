@@ -26,7 +26,7 @@ class RenderError(Exception):
 
 
 def render_worktrees(project: ProjectConfig) -> str:
-    """`qwen: ../roedor-qwen, claude: ../roedor-claude` -- one `backend: path` pair per
+    """`qwen: ../example-qwen, claude: ../example-claude` -- one `backend: path` pair per
     `project.worktrees` entry, in the order `config/agents.yaml` declares them."""
     return ", ".join(f"{backend}: {path}" for backend, path in project.worktrees.items())
 
