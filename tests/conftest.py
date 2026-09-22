@@ -50,7 +50,7 @@ def config_with_never_run(tmp_path, items):
     reason) pairs, or nothing at all for an empty list -- written under `tmp_path` and returned as
     a path. The drivers pick it up through `AGENTS_CONFIG_PATH`, which is how a test renders the
     three RULES blocks from a list this repository does not ship, and from an empty one
-    (`docs/AGENT_OS.md` §7 row (b), issue #363). Shared by `test_worker_task.py` and
+    (`agent_os/docs/AGENT_OS.md` §7 row (b), issue #363). Shared by `test_worker_task.py` and
     `test_agent_task.py` because the point of the list is that all three blocks read it."""
     text = EXAMPLE_CONFIG.read_text()
     block = (

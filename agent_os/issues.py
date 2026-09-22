@@ -115,7 +115,7 @@ STATES = ("To Do", "Doing", "Done")
 
 def type_labels(project: ProjectConfig | None = None) -> dict[str, str]:
     """`epic`/`feature`/`task`/`bug` -> their `type:<name>` label, from `project.labels.types`
-    (`config/agents.yaml`) rather than a literal dict (`docs/AGENT_OS.md` §7 row (c)'s sibling,
+    (`config/agents.yaml`) rather than a literal dict (`agent_os/docs/AGENT_OS.md` §7 row (c)'s sibling,
     #510). The four CONCEPTS are the backlog YAML's own fixed vocabulary -- `type_label` below
     decides which one an entry is -- and do not change with the project; what a project configures
     is which of them get a label and under what name, plus the `type:` prefix stays fixed."""
@@ -128,7 +128,7 @@ def fixed_labels(project: ProjectConfig | None = None) -> list[str]:
     half is `project.modules` in `config/agents.yaml`, the in-progress state is
     `project.labels.doing`, and the `type:*`/`p<n>`/`module:` vocabulary itself is
     `project.labels.{types,priorities,module_prefix}` -- never a list or a literal in this file: a
-    second project writes its own names there and changes no code (`docs/AGENT_OS.md` §7 row (c)).
+    second project writes its own names there and changes no code (`agent_os/docs/AGENT_OS.md` §7 row (c)).
     """
     project = project or load_project()
     return (
@@ -232,7 +232,7 @@ def repo_name() -> str:
     `config/agents.yaml`, so a command run from outside the clone still reaches the right tracker;
     then `gh repo view` on the cwd, which is all that is left when neither is set. The env variable
     carries no project's name, and the configured value is finally read rather than decorative
-    (`docs/AGENT_OS.md` §7 row (d))."""
+    (`agent_os/docs/AGENT_OS.md` §7 row (d))."""
     env = os.environ.get("AGENT_OS_GH_REPO")
     if env:
         return env
@@ -548,7 +548,7 @@ def page_human(message: str) -> bool:
 def page_review_ready(number: int, issue: dict) -> str:
     """The third ntfy trigger (2026-09-16): an approved PR waiting to be merged is the one thing
     only the human can finish, and until now nothing pushed to say so -- it was the touchpoint
-    with the least warning in `docs/AGENT_OS.md` §2.1. ONCE per issue, so a second `move N review`
+    with the least warning in `agent_os/docs/AGENT_OS.md` §2.1. ONCE per issue, so a second `move N review`
     (a re-validation, a reopened PR) does not page again. Returns the line `move` prints.
 
     The marker is CLAIMED before the page goes out, with `open(..., "x")`: an exclusive create is

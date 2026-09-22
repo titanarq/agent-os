@@ -7,7 +7,7 @@
 #   agent_os/bin/worker_task.sh <qwen|claude> rules                        # the resolved RULES block
 #   agent_os/bin/worker_task.sh <qwen|claude> init                         # create the worktree if absent
 #     idempotent: a worktree already there is left alone. `git worktree add` on a fresh branch
-#     from origin/main when there is none yet (#392, docs/AGENT_OS.md §7 row (r)).
+#     from origin/main when there is none yet (#392, agent_os/docs/AGENT_OS.md §7 row (r)).
 #   agent_os/bin/worker_task.sh <qwen|claude> branch <name> [<from>]       # fresh branch in that worktree
 #     no <from>: fetches and branches from origin/main, refusing if the fetch fails (#435) --
 #     an explicit <from> is honoured verbatim and fetches nothing.
@@ -209,7 +209,7 @@ issue_body_names_path() {
 # paths with. Built from `project.forbidden_paths`, which is also what renders the "FILES YOU MUST
 # NOT TOUCH" paragraph injected below -- ONE list behind both halves of that rule, so the prose the
 # worker reads and the audit that judges it cannot describe two different sets again
-# (docs/AGENT_OS.md §7 rows (a) and (s), issue #363). Empty when the project forbids nothing, and
+# (agent_os/docs/AGENT_OS.md §7 rows (a) and (s), issue #363). Empty when the project forbids nothing, and
 # then `collect` skips the audit instead of running an empty pattern, which matches every path.
 FORBIDDEN=$("$agent_python" -m agent_os.lib forbidden-paths-regex)
 
@@ -785,7 +785,7 @@ rules)
 init)
   # Idempotent: a worktree already there (however it got there -- by hand, or a previous `init`)
   # is left exactly alone, on whatever branch it is already on. This is the ONLY subcommand that
-  # may run before the worktree exists at all (docs/AGENT_OS.md §7 row (r), issue #392): every
+  # may run before the worktree exists at all (agent_os/docs/AGENT_OS.md §7 row (r), issue #392): every
   # other one refuses on `[ -e "$worktree/.git" ]` the same way `branch` does above.
   if [ -e "$worktree/.git" ]; then
     echo "$worktree already initialized (on $(git -C "$worktree" branch --show-current 2>/dev/null || echo '?'))"

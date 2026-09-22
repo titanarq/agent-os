@@ -667,7 +667,7 @@ def test_human_message_rules_defaults_to_load_project_when_none_given():
 
 
 # ---- render_human_message: every ntfy page is a template in the human's language, never a
-# literal in code (#366, `docs/AGENT_OS.md` §7 row (g))
+# literal in code (#366, `agent_os/docs/AGENT_OS.md` §7 row (g))
 # (docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) --------------
 
 
@@ -863,7 +863,7 @@ def test_print_worker_environment_prints_nothing_when_empty(monkeypatch, capsys)
 
 # What the worker READS about that same list: the paragraph `worker_task.sh` injects via
 # __WORKER_ENVIRONMENT_RULES__. Names, never values -- the sentence it replaced spelled the shared
-# server's port in the driver's own text (`docs/AGENT_OS.md` §7 row (a), #363).
+# server's port in the driver's own text (`agent_os/docs/AGENT_OS.md` §7 row (a), #363).
 
 
 def test_worker_environment_rules_render_nothing_for_a_project_that_exports_nothing():
@@ -904,7 +904,7 @@ def test_worker_environment_rules_name_the_variables_and_never_a_fragment_of_a_v
 
 # ---- forbidden_paths / never_run: the protected paths and the forbidden commands are the host
 # project's, read from config rather than spelled in a mechanism script (#363,
-# `docs/AGENT_OS.md` §7 rows (a) and (b)) -------------------------------------------------------
+# `agent_os/docs/AGENT_OS.md` §7 rows (a) and (b)) -------------------------------------------------------
 
 
 def _project_yaml(extra: str) -> str:

@@ -1,18 +1,18 @@
-"""`agent-os doctor` — the first-run checklist of `docs/AGENT_OS.md` §6, read back mechanically
+"""`agent-os doctor` — the first-run checklist of `agent_os/docs/AGENT_OS.md` §6, read back mechanically
 instead of eyeballed once and forgotten.
 
 Every check here READS state and nothing else: `gh auth status`, `gh label list`, `gh api`/`gh
 project field-list` for the Project v2 board, file existence under the host's own tree, and
 `systemctl --user is-active`. It never calls `agent_guard.py check` or any other trigger a role
 reacts to -- a manual check would re-announce a run that already finished and wake the planner for
-free (`docs/AGENT_OS.md` §7, the `role_died`/exit-hook machinery in `agent_os.guard`) -- and it
+free (`agent_os/docs/AGENT_OS.md` §7, the `role_died`/exit-hook machinery in `agent_os.guard`) -- and it
 never arms, restarts or edits a systemd unit: that stays a human decision
 (`docs/runbooks/agent_monitor.md`).
 
     agent-os-doctor        # one line per check, exit 1 if any fails
 
 Not a substitute for §4.3's GitHub steps (creating the Apps, the board, the labels) -- it only
-reports which of them are still missing, the way `docs/AGENT_OS.md`'s own "Not included" already
+reports which of them are still missing, the way `agent_os/docs/AGENT_OS.md`'s own "Not included" already
 says a browser step never becomes code.
 """
 

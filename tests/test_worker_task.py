@@ -358,7 +358,7 @@ def test_the_worker_rules_forbid_committing_the_diary_and_ask_for_it_nowhere():
 # each one is behind two halves of it -- the paragraph injected into the worker's RULES and the
 # regex `collect` audits the run's changed paths with. Two copies of the single list this replaced
 # had already drifted apart, and the doc's prose named four paths fewer than the regex protected
-# (docs/AGENT_OS.md §7 rows (a) and (s), #363). What separates the two lists is the rule a match
+# (agent_os/docs/AGENT_OS.md §7 rows (a) and (s), #363). What separates the two lists is the rule a match
 # triggers, and the two paragraphs state them as a pair (#390).
 # ---------------------------------------------------------------------------------------------
 
@@ -728,7 +728,7 @@ def test_collect_refuses_a_mechanism_path_when_no_issue_body_was_recorded(tmp_pa
 # `project.never_run`: the commands no role may run, each with the reason its prohibition rests
 # on. ONE list behind the worker's, the validator's and the refiner's RULES -- the same six verbs
 # used to be spelled once per block, and the validator's copy had already lost one of them
-# (docs/AGENT_OS.md §7 row (b), #363). `tests/test_agent_task.py` asserts the other two blocks
+# (agent_os/docs/AGENT_OS.md §7 row (b), #363). `tests/test_agent_task.py` asserts the other two blocks
 # read this very same list.
 # ---------------------------------------------------------------------------------------------
 
@@ -804,7 +804,7 @@ def test_a_project_that_forbids_no_command_gets_no_paragraph_and_no_stub_heading
 # behind both halves of that rule too -- the export loop `start` runs before launching the backend,
 # and the paragraph telling the worker what it is running inside. The sentence this replaced spelled
 # the shared server's port in the driver's own text, which is a second copy of the config and a
-# stale one the day the port moves (docs/AGENT_OS.md §7 row (a), #363).
+# stale one the day the port moves (agent_os/docs/AGENT_OS.md §7 row (a), #363).
 # ---------------------------------------------------------------------------------------------
 
 # A name and a value that exist nowhere else in this repository, so whatever reaches the rendered
@@ -3278,7 +3278,7 @@ def test_branch_honours_an_explicit_from_verbatim(tmp_path):
 
 
 # --------------------------------------------------------------------------------------------
-# `init` -- creates the worktree if absent (#392, docs/AGENT_OS.md §7 row (r))
+# `init` -- creates the worktree if absent (#392, agent_os/docs/AGENT_OS.md §7 row (r))
 # --------------------------------------------------------------------------------------------
 # Unlike `branch`, `init` runs before any worktree exists, so its fetch has nowhere to run but
 # `$main` -- which `agent_task.sh` resolves from `AGENT_OS_HOST_ROOT` and `cd`s into. These tests

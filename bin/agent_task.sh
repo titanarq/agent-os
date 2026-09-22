@@ -121,7 +121,7 @@ agent_read_launch_gate() {
 
 # The one identity line that says which backend is about to run, for stdout and for the log header
 # alike: a substituted run names itself wherever the mechanism reads it, so spend accounting never
-# books Qwen tokens to a Claude class (`docs/AGENT_OS.md` §3, `.claude/agents/control-plane.md`
+# books Qwen tokens to a Claude class (`agent_os/docs/AGENT_OS.md` §3, `.claude/agents/control-plane.md`
 # Duty 5, which reports Claude in USD and Qwen in tokens). `$1` is the class's own backend, the one
 # the substitution is a substitution FOR.
 agent_backend_identity_line() {

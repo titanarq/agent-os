@@ -1,7 +1,7 @@
 """`agent_os.install`'s stage 3: copying `.github/ISSUE_TEMPLATE/{task,bug}.md`,
 `.github/workflows/ci-agent-os.yml` and the `.claude/agents/{control-plane,worker-runner}.md`
 prompts (rendered from `agent_os/agents/*.md` via `agent_os.render`), all copy-if-absent
-(docs/AGENT_OS.md §7 row (h), issue #511).
+(agent_os/docs/AGENT_OS.md §7 row (h), issue #511).
 
 `agent_os/agents/` is #510's own deliverable, landing in parallel to this one: every test here
 patches the module's own directory constants rather than depending on that directory actually
@@ -61,7 +61,7 @@ def test_plan_issue_templates_copies_task_and_bug_if_absent(tmp_path):
 
 def test_the_real_canonical_issue_templates_carry_no_host_literal():
     # These are checked in once, seeded from roedor's own -- already project-agnostic, per
-    # docs/AGENT_OS.md §4.1's table -- so a second host gets a working template with no edit.
+    # agent_os/docs/AGENT_OS.md §4.1's table -- so a second host gets a working template with no edit.
     for name in ("task.md", "bug.md"):
         text = (install_module.ISSUE_TEMPLATES_DIR / name).read_text()
         for literal in ("roedor", "MatillaM", "titanarq"):

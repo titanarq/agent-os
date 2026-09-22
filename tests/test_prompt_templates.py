@@ -139,7 +139,7 @@ def test_the_role_renders_exactly_what_it_rendered_before_the_templates_existed(
 def test_every_template_carries_the_hosts_extension_point(role):
     """One marked place per role where a host's own paragraphs go. Without it a host has nowhere to
     put a sentence only it can write, and the sentence goes back into the mechanism's own text --
-    which is the defect `docs/AGENT_OS.md` §7 row (t) recorded."""
+    which is the defect `agent_os/docs/AGENT_OS.md` §7 row (t) recorded."""
     assert PROJECT_EXTRAS_PLACEHOLDER in (PROMPTS_DIR / f"{role}.md").read_text()
 
 

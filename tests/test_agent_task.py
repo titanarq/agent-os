@@ -52,7 +52,7 @@ DRIVER = AGENT_OS_DIR / "bin" / "agent_task.sh"
 ONE_SHOT_ROLES = ("validator", "refiner")
 
 # The commands no role may run are ONE list in `project.never_run`, rendered into the worker's,
-# the validator's and the refiner's RULES (docs/AGENT_OS.md §7 row (b), #363).
+# the validator's and the refiner's RULES (agent_os/docs/AGENT_OS.md §7 row (b), #363).
 # `tests/test_worker_task.py` asserts the worker's block reads it; these assert the other two.
 NEVER_RUN_HEADING = "COMMANDS YOU MUST NEVER RUN"
 
@@ -413,7 +413,7 @@ HOST_NEUTRAL_RULE_EXAMPLE = "a freeze the project declares, a file it protects"
 # the port its shared server listens on, its own pipeline's nouns, its importable package, its
 # database fixture, the names of its own worker classes, and the virtualenv layout only a Python
 # host has. The last five were still inside the mechanism's own prompts until #509 moved them into
-# files the host owns (`docs/AGENT_OS.md` §7 row (t)).
+# files the host owns (`agent_os/docs/AGENT_OS.md` §7 row (t)).
 HOST_LITERALS = (
     "m2",
     "5435",
@@ -435,7 +435,7 @@ ROLES_WITH_A_PROMPT = ("worker", "validator", "refiner", "planner")
 # `.venv/bin/ruff` and warns against linking `.venv` into a worktree, in two bullets that sit in
 # the middle of the mechanism's own list -- and a single extension point can only append, so moving
 # them would reorder the prompt, which is exactly what the golden test of
-# `test_prompt_templates.py` exists to refuse. Recorded as its own row in `docs/AGENT_OS.md` §7
+# `test_prompt_templates.py` exists to refuse. Recorded as its own row in `agent_os/docs/AGENT_OS.md` §7
 # rather than quietly dropped from the literal set.
 LITERALS_A_TEMPLATE_STILL_CARRIES = {"validator": (".venv",)}
 
@@ -1394,7 +1394,7 @@ def test_an_exhausted_verdict_launches_the_fallback_backend_and_not_claude(
     assert rows[0] == "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
     _ts, context, model, _turns, _cost = rows[1].split("\t")
     # The row books the run to the backend that spent it: the model column is what the control
-    # plane's report reads to decide between USD and tokens (`docs/AGENT_OS.md` §3), and an
+    # plane's report reads to decide between USD and tokens (`agent_os/docs/AGENT_OS.md` §3), and an
     # unsubstituted row keeps the context it has always had.
     assert model == fallback.model, rows[1]
     assert context == f"validator #{PULL_REQUEST}", rows[1]

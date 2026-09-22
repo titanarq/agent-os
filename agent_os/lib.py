@@ -273,7 +273,7 @@ class LabelVocabulary(Strict):
     # same tick it reads it (#413). Only a label set by the human wakes anything -- set by one of
     # the mechanism's own identities it is removed and ignored, so the planner cannot wake itself.
     wake_planner: str = "wake:planner"
-    # The rest of the vocabulary `issues.py` used to spell as literals (`docs/AGENT_OS.md` §7 row
+    # The rest of the vocabulary `issues.py` used to spell as literals (`agent_os/docs/AGENT_OS.md` §7 row
     # (c)'s sibling: the module names moved to `project.modules` there, `type:*`/`p<n>`/`module:`
     # stayed hardcoded). Defaults match what was hardcoded, so no existing config changes
     # behaviour -- a project only writes these to add a type, change its priority scale, or spell
@@ -306,7 +306,7 @@ class LabelVocabulary(Strict):
 class NeverRunCommand(Strict):
     """One command an agent must never run, and the reason why -- the reason travels with the
     command because a prohibition nobody can justify is the first one a task talks itself out of
-    (`docs/AGENT_OS.md` §7 row (b): the same verb list was baked into three RULES blocks and could
+    (`agent_os/docs/AGENT_OS.md` §7 row (b): the same verb list was baked into three RULES blocks and could
     drift between them). Rendered into every role's RULES from `project.never_run`; a project with
     an empty list gets no such paragraph at all."""
 
@@ -369,7 +369,7 @@ class ProjectConfig(Strict):
     # `<this>.timer` and `<this>.service.d/override.conf` under `~/.config/systemd/user/`.
     # `agent_os.install` needs it to know what to write and `agent_os.doctor` to know what to
     # check; empty means neither has been told a name yet, so both refuse loudly rather than
-    # guessing one from the repository's name (docs/AGENT_OS.md §7 row (h)).
+    # guessing one from the repository's name (agent_os/docs/AGENT_OS.md §7 row (h)).
     guard_unit: str = ""
     # Where this project's module docs live, one per `project.modules` entry -- read by the
     # `__MODULE_DOCS__` token the `.claude/agents/*.md` templates carry (#510), so the rendered
@@ -392,7 +392,7 @@ class ProjectConfig(Strict):
     messages: dict[str, str] = {}
     # The project's own module names, one per `docs/modules/*.md`. `issues.py` turns them into the
     # `module:<name>` half of the fixed label set it creates on the tracker; they used to be a list
-    # in that script (`docs/AGENT_OS.md` §7 row (c)). Empty by default: a project with no module
+    # in that script (`agent_os/docs/AGENT_OS.md` §7 row (c)). Empty by default: a project with no module
     # vocabulary creates no `module:` label, it does not fall back to anyone else's.
     modules: list[str] = []
     # The project's own test runner, injected into the worker RULES as __TEST_COMMAND__ rather
@@ -404,7 +404,7 @@ class ProjectConfig(Strict):
     # extension point, as a path relative to the HOST project's root. Every key is optional, and a
     # role with no entry renders nothing there: this is where a sentence only the host can write
     # goes -- how its own package resolves under test, which class a worker task belongs in -- so
-    # the mechanism's own templates carry no literal of any project (`docs/AGENT_OS.md` §7 row
+    # the mechanism's own templates carry no literal of any project (`agent_os/docs/AGENT_OS.md` §7 row
     # (t), #509). A file this names and the filesystem does not have stops the render rather than
     # silently dropping the paragraph.
     prompt_extras: dict[str, str] = {}
@@ -418,7 +418,7 @@ class ProjectConfig(Strict):
     # patterns relative to the repository root, and the ONE list behind both halves of this rule:
     # `worker_task.sh` builds the audit regex that fails a run which touched one AND the "FILES
     # YOU MUST NOT TOUCH" paragraph injected into the worker's prompt, so the two can no longer
-    # drift apart the way the prose list and the regex did (`docs/AGENT_OS.md` §7 rows (a) and
+    # drift apart the way the prose list and the regex did (`agent_os/docs/AGENT_OS.md` §7 rows (a) and
     # (s)). A pattern is matched with fnmatch semantics, where `*` crosses `/`: `docs/adr/*`
     # protects `docs/adr/2026-09-16-a-decision.md` too, as the prefix regex it replaces did, and
     # matching it any narrower would silently unprotect every nested file under a protected
@@ -433,7 +433,7 @@ class ProjectConfig(Strict):
     # -- a place a PR is expected to add a file to, whose diff changes nothing any stamp or freeze
     # protects (`config/proposals/*`, `docs/adr/*`) -- and so is exempt from condition 3 of the
     # merge gate while staying on `forbidden_paths` itself, unconditional for a worker's brief
-    # (`docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4, issue #476).
+    # (`agent_os/docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4, issue #476).
     # `forbidden_paths_merge_audit_regex` reads this as an EXCLUSION from `forbidden_paths`, never
     # as a second list of what to audit, so a new `forbidden_paths` entry is audited at merge time
     # by default and needs an entry here only for the rare delivery-directory case. Empty by
@@ -452,7 +452,7 @@ class ProjectConfig(Strict):
     merge_audit_exempt_paths: list[str] = []
 
     # Commands no role may run, each with the reason it is forbidden, rendered into the worker's,
-    # the validator's and the refiner's RULES from this one list (`docs/AGENT_OS.md` §7 row (b)).
+    # the validator's and the refiner's RULES from this one list (`agent_os/docs/AGENT_OS.md` §7 row (b)).
     # Empty renders no such paragraph, which is what a project whose database no agent can write
     # wants.
     never_run: list[NeverRunCommand] = []
@@ -701,7 +701,7 @@ def render_human_message(key: str, project: ProjectConfig | None = None, **field
     """The one ntfy page wording, rendered from `project.messages[key]` in the human's own
     language. Every caller goes through here and no script holds a message of its own: the
     quota-exhaustion page was a Spanish literal in `agent_guard.py`, so a project configuring
-    `human_language: English` still got that one page in Spanish (`docs/AGENT_OS.md` §7 row (g)).
+    `human_language: English` still got that one page in Spanish (`agent_os/docs/AGENT_OS.md` §7 row (g)).
 
     Raises `HumanMessageError` on every way this can fail -- an unknown key, a field the call site
     did not pass, a template `str.format` cannot parse -- because a page nobody receives is
@@ -733,7 +733,7 @@ def render_human_message(key: str, project: ProjectConfig | None = None, **field
 # Both path lists -- `project.forbidden_paths` and `mechanism.own_paths` -- hold globs and
 # `worker_task.sh collect` audits with `grep -E`, so something has to translate one into the other
 # -- and it has to be the same something that renders the paragraph the worker reads, or the two
-# halves of the ownership rule describe two different sets again (`docs/AGENT_OS.md` §7 rows (a)
+# halves of the ownership rule describe two different sets again (`agent_os/docs/AGENT_OS.md` §7 rows (a)
 # and (s), issue #363).
 _ERE_METACHARACTERS = frozenset(r".\[]{}()*+?^$|")
 
@@ -801,7 +801,7 @@ def forbidden_paths_regex(project: ProjectConfig | None = None) -> str:
 
 def forbidden_paths_merge_audit_regex(project: ProjectConfig | None = None) -> str:
     """The `grep -E` pattern condition 3 of the merge gate audits a pull request's diff with
-    (`docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4) -- the SUBSET of
+    (`agent_os/docs/AGENT_OS.md` §2.4, `.claude/agents/control-plane.md` Duty 4) -- the SUBSET of
     `forbidden_paths` that is not a delivery directory (`project.merge_audit_exempt_paths`, issue
     #476). Derived from `forbidden_paths_regex`'s own list minus the exemption, never from a second
     copy of either: a path added to `forbidden_paths` is audited here the moment it exists, with no
@@ -923,7 +923,7 @@ def never_run_rules(project: ProjectConfig | None = None) -> str:
     """The "COMMANDS YOU MUST NEVER RUN" paragraph, rendered from `project.never_run` and injected
     via the `__NEVER_RUN_RULES__` placeholder into the worker's, the validator's and the refiner's
     RULES. One list for three blocks, because the same verbs spelled once per block had already
-    drifted -- the validator's copy had lost one of the six (`docs/AGENT_OS.md` §7 row (b), issue
+    drifted -- the validator's copy had lost one of the six (`agent_os/docs/AGENT_OS.md` §7 row (b), issue
     #363). Each bullet carries its own reason: a prohibition nobody can justify is the first one a
     task talks itself out of.
 
@@ -957,7 +957,7 @@ def worker_environment_rules(project: ProjectConfig | None = None) -> str:
     never do: a worker that needs one reads its own environment, so the sentence that used to spell
     the shared server's port is gone rather than moved, and the paragraph is now rendered from the
     same list the export loop reads instead of describing it from memory
-    (`docs/AGENT_OS.md` §7 row (a), issue #363).
+    (`agent_os/docs/AGENT_OS.md` §7 row (a), issue #363).
 
     Empty when the project exports nothing, which is why the driver deletes the placeholder's own
     line instead of substituting an empty string into it: a worker told its connection is read-only
@@ -2013,7 +2013,7 @@ def main() -> None:
         print(forbidden_paths_merge_audit_regex())
     elif args.command == "forbidden-paths-merge-audit-violations":
         # One changed path per line on stdin, exactly what `gh pr diff N --name-only` prints --
-        # condition 3's own reading of the merge-audit subset (`docs/AGENT_OS.md` §2.4).
+        # condition 3's own reading of the merge-audit subset (`agent_os/docs/AGENT_OS.md` §2.4).
         for path in forbidden_paths_merge_audit_violations(sys.stdin.read().splitlines()):
             print(path)
     elif args.command == "mechanism-paths-rules":

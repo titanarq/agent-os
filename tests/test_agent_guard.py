@@ -2617,7 +2617,7 @@ def test_a_comment_with_no_author_at_all_is_not_a_reply(monkeypatch, tmp_path):
 
 
 # ---- ntfy: every page renders from `project.messages`, never from a literal in code
-# (#366, `docs/AGENT_OS.md` §7 row (g);
+# (#366, `agent_os/docs/AGENT_OS.md` §7 row (g);
 # docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) ---------------
 
 # The functions that hand a string to `agent_os/bin/notify.sh`, per module. Anything reaching one of

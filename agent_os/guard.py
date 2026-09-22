@@ -1792,7 +1792,7 @@ def orphan_doing_issues(*, main: Path = HOST_ROOT) -> list[int]:
     catches the narrower marker-vs-label mismatch and only prints it (#350 Part 4); this is the
     wider case, and unlike drift it is not a thing to notice but a thing only the planner can
     resolve -- return it to `status:ready`, or ask the human if the branch carries uncommitted
-    work (`docs/AGENT_OS.md` §7 row (o))."""
+    work (`agent_os/docs/AGENT_OS.md` §7 row (o))."""
     rows = _gh_issue_list("number,labels", main=main, extra=["--label", DOING_LABEL])
     if not rows:
         return []
@@ -2445,7 +2445,7 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
 
     # MECHANICAL STATE THE TICK RECONCILES ITSELF, before anything is announced: a closed issue
     # still carrying a status label, and the promotion of a refined child whose parent opted in.
-    # Neither depends on the planner remembering to run it any more (#365, `docs/AGENT_OS.md` §7
+    # Neither depends on the planner remembering to run it any more (#365, `agent_os/docs/AGENT_OS.md` §7
     # rows (j) and (l)); `promote_refined` runs first so an issue it promotes is already in this
     # tick's own dispatchable scan below.
     for line in reconcile_closed_issues(main=main, now=now):

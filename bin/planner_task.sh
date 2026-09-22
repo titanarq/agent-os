@@ -128,7 +128,7 @@ run)
   # One line per run in runs.tsv -- what woke it, what it cost. Parsed from the log's last
   # `result` event by agent_lib, so there is one implementation of "what did this run cost". The
   # model column carries the model that RAN, which is what keeps a substituted run's tokens out of
-  # the Claude total whoever reads this file next reports (`docs/AGENT_OS.md` §3).
+  # the Claude total whoever reads this file next reports (`agent_os/docs/AGENT_OS.md` §3).
   agent_append_run_row "$logfile" "$runs_tsv" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$context" "$model"
   echo "log $logfile"
   ;;
