@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GitHub Issues as the tracker, over `gh` (shell out, JSON in and out). Nothing here names a
 project: the repository and the module vocabulary come from `config/agents.yaml`'s `project:`
-section (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+section (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 
 No third-party GitHub library and no new dependency: every call is `gh api` / `gh issue` /
 `gh label` under `subprocess`.
@@ -97,7 +97,7 @@ from agent_os.lib import (
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
 # `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
 # it is derived from this package's own location, which is what made the mechanism able to run
-# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# exactly one project (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
 TEMPLATE_DIR = HOST_ROOT / ".github" / "ISSUE_TEMPLATE"
@@ -115,7 +115,7 @@ STATES = ("To Do", "Doing", "Done")
 
 def type_labels(project: ProjectConfig | None = None) -> dict[str, str]:
     """`epic`/`feature`/`task`/`bug` -> their `type:<name>` label, from `project.labels.types`
-    (`config/agents.yaml`) rather than a literal dict (`docs/AGENT_OS.md` §7 row (c)'s sibling,
+    (`config/agents.yaml`) rather than a literal dict (`agent_os/docs/AGENT_OS.md` §7 row (c)'s sibling,
     #510). The four CONCEPTS are the backlog YAML's own fixed vocabulary -- `type_label` below
     decides which one an entry is -- and do not change with the project; what a project configures
     is which of them get a label and under what name, plus the `type:` prefix stays fixed."""
@@ -128,7 +128,7 @@ def fixed_labels(project: ProjectConfig | None = None) -> list[str]:
     half is `project.modules` in `config/agents.yaml`, the in-progress state is
     `project.labels.doing`, and the `type:*`/`p<n>`/`module:` vocabulary itself is
     `project.labels.{types,priorities,module_prefix}` -- never a list or a literal in this file: a
-    second project writes its own names there and changes no code (`docs/AGENT_OS.md` §7 row (c)).
+    second project writes its own names there and changes no code (`agent_os/docs/AGENT_OS.md` §7 row (c)).
     """
     project = project or load_project()
     return (
@@ -232,7 +232,7 @@ def repo_name() -> str:
     `config/agents.yaml`, so a command run from outside the clone still reaches the right tracker;
     then `gh repo view` on the cwd, which is all that is left when neither is set. The env variable
     carries no project's name, and the configured value is finally read rather than decorative
-    (`docs/AGENT_OS.md` §7 row (d))."""
+    (`agent_os/docs/AGENT_OS.md` §7 row (d))."""
     env = os.environ.get("AGENT_OS_GH_REPO")
     if env:
         return env
@@ -525,7 +525,7 @@ def save_keys(keys: dict[str, int]) -> None:
 # --------------------------------------------------------------------------------------------
 # Paging the human (ntfy)
 # --------------------------------------------------------------------------------------------
-# docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
+# agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
 
 
 def page_human(message: str) -> bool:
@@ -548,7 +548,7 @@ def page_human(message: str) -> bool:
 def page_review_ready(number: int, issue: dict) -> str:
     """The third ntfy trigger (2026-09-16): an approved PR waiting to be merged is the one thing
     only the human can finish, and until now nothing pushed to say so -- it was the touchpoint
-    with the least warning in `docs/AGENT_OS.md` §2.1. ONCE per issue, so a second `move N review`
+    with the least warning in `agent_os/docs/AGENT_OS.md` §2.1. ONCE per issue, so a second `move N review`
     (a re-validation, a reopened PR) does not page again. Returns the line `move` prints.
 
     The marker is CLAIMED before the page goes out, with `open(..., "x")`: an exclusive create is
@@ -585,7 +585,7 @@ def page_review_ready(number: int, issue: dict) -> str:
 # --------------------------------------------------------------------------------------------
 # Templates, validation, mechanical state
 # --------------------------------------------------------------------------------------------
-# docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
+# agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
 
 FRONT_MATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
 
@@ -719,7 +719,7 @@ def mirror_board_column(repo: str, number: int, column: str, board: int) -> str:
 def compose_brief(issue: dict, parent: dict | None, supplement: str | None) -> str:
     """Issue body, then parent body, then the optional supplement — the whole of what a worker
     reads after `AGENTS.md`
-    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     state.md). The parent section is always emitted, saying so when there is no parent: a missing
     section would read as "the assembly failed" exactly like "there is nothing above this".
     """

@@ -5,7 +5,7 @@ The verdict file `agent_guard_<backend>.json` has one writer, the guard module: 
 `.cache/<role>/`. It runs at the start of `tick` and of `_wake_locked`, and every role launch only
 reads the file. The verdict is still the backend's own record, read by the worker path's detector
 (`quota_status`), never an agent's words about itself
-(docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md).
+(agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md).
 
 Pure filesystem. This file must not request the `engine` or `db_sandbox` fixture.
 """

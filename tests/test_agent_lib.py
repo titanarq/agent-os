@@ -138,7 +138,7 @@ def test_load_task_classes_rejects_a_class_with_no_token_ceiling(tmp_path):
 
 
 def test_every_worker_class_runs_on_qwen():
-    # docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md: a class with no `role:`
+    # agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md: a class with no `role:`
     # line is a worker budget (`role` defaults to "worker"), and no worker budget may name the
     # Claude backend -- Claude's window is spent on the review and planning roles instead.
     worker_classes = {
@@ -626,7 +626,7 @@ def test_worktree_path_resolves_relative_to_the_repository_root(tmp_path):
 
 # ---- human_language / human_message_rules: a question for the human is written in their own
 # language and in functional terms
-# (docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
+# (agent_os/docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
 # terms.md) -----------------------------------------------------------------------------------
 
 
@@ -667,8 +667,8 @@ def test_human_message_rules_defaults_to_load_project_when_none_given():
 
 
 # ---- render_human_message: every ntfy page is a template in the human's language, never a
-# literal in code (#366, `docs/AGENT_OS.md` §7 row (g))
-# (docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) --------------
+# literal in code (#366, `agent_os/docs/AGENT_OS.md` §7 row (g))
+# (agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) --------------
 
 
 def _messages_project(**overrides) -> ProjectConfig:
@@ -796,7 +796,7 @@ def test_the_real_configs_pages_render_with_the_fields_their_call_sites_pass():
 
 
 # ---- worker_environment / test_command: workers connect read-only by default (#350)
-# (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-owner-only-through-the-
+# (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-owner-only-through-the-
 # test-runner.md) --------------------------------------------------------------------------------
 
 
@@ -863,7 +863,7 @@ def test_print_worker_environment_prints_nothing_when_empty(monkeypatch, capsys)
 
 # What the worker READS about that same list: the paragraph `worker_task.sh` injects via
 # __WORKER_ENVIRONMENT_RULES__. Names, never values -- the sentence it replaced spelled the shared
-# server's port in the driver's own text (`docs/AGENT_OS.md` §7 row (a), #363).
+# server's port in the driver's own text (`agent_os/docs/AGENT_OS.md` §7 row (a), #363).
 
 
 def test_worker_environment_rules_render_nothing_for_a_project_that_exports_nothing():
@@ -904,7 +904,7 @@ def test_worker_environment_rules_name_the_variables_and_never_a_fragment_of_a_v
 
 # ---- forbidden_paths / never_run: the protected paths and the forbidden commands are the host
 # project's, read from config rather than spelled in a mechanism script (#363,
-# `docs/AGENT_OS.md` §7 rows (a) and (b)) -------------------------------------------------------
+# `agent_os/docs/AGENT_OS.md` §7 rows (a) and (b)) -------------------------------------------------------
 
 
 def _project_yaml(extra: str) -> str:
@@ -1140,7 +1140,7 @@ def test_merge_audit_violations_reports_nothing_when_the_audit_pattern_is_empty(
 
 # ---- `mechanism.own_paths`: the second list, the mechanism's own files, which a brief may
 # authorize where the host project's may not (#390,
-# docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md) ----
+# agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md) ----
 
 
 def _mechanism_yaml(extra: str) -> str:
@@ -1359,7 +1359,7 @@ def test_is_dispatchable_uses_the_configured_label_vocabulary():
 
 
 # ---- needs_refinement / promotable_to_ready: the refiner's own predicates
-# (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md) ----
+# (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md) ----
 
 
 INVALID_BODY = "nothing here"

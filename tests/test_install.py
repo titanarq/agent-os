@@ -1,5 +1,5 @@
 """`agent_os.install` -- `agent-os install [--dry-run] [--force]` writes the systemd units
-(docs/AGENT_OS.md §7 row (h), issue #511). Copying the host's templates
+(agent_os/docs/AGENT_OS.md §7 row (h), issue #511). Copying the host's templates
 (`.claude/agents/*.md`, the issue templates, the CI snippet) is covered separately by
 `test_install_templates.py`.
 

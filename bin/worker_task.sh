@@ -7,7 +7,7 @@
 #   agent_os/bin/worker_task.sh <qwen|claude> rules                        # the resolved RULES block
 #   agent_os/bin/worker_task.sh <qwen|claude> init                         # create the worktree if absent
 #     idempotent: a worktree already there is left alone. `git worktree add` on a fresh branch
-#     from origin/main when there is none yet (#392, docs/AGENT_OS.md §7 row (r)).
+#     from origin/main when there is none yet (#392, agent_os/docs/AGENT_OS.md §7 row (r)).
 #   agent_os/bin/worker_task.sh <qwen|claude> branch <name> [<from>]       # fresh branch in that worktree
 #     no <from>: fetches and branches from origin/main, refusing if the fetch fails (#435) --
 #     an explicit <from> is honoured verbatim and fetches nothing.
@@ -32,7 +32,7 @@
 #   agent_os/bin/worker_task.sh <qwen|claude> launch-stage  # the next stage, no gates -- chaining only
 #     Both are called by the run's own subshell, never by hand: `start` and `resume` are the doors.
 #
-# ONE STAGE PER PROCESS (#375, docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-
+# ONE STAGE PER PROCESS (#375, agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-
 # runs-in-a-fresh-process.md). An issue's `## Stages` checklist is its plan; a branch's
 # `stage N/M: <title>` commits are what has actually been done, and nothing else is ever consulted
 # for progress. `start`/`resume` launch the FIRST INCOMPLETE stage and nothing more; when that
@@ -40,7 +40,7 @@
 # new process group or writes the run's terminal state for the planner. Running out of tokens
 # therefore costs the current stage, never the task.
 #
-# THE ISSUE IS THE UNIT OF WORK (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-
+# THE ISSUE IS THE UNIT OF WORK (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-
 # labels-are-the-mechanical-state.md). `start` takes a GitHub issue number and nothing else: it
 # refuses an issue that `issues.py validate` rejects (unless --force), resolves the budget class
 # its `<!-- budget: <class> --> ` line names in config/agents.yaml, assembles the issue body and
@@ -50,11 +50,11 @@
 #
 # One worktree per backend, so both can run at once without touching each other's tree; the paths
 # and the GitHub App slugs come from config/agents.yaml's `project:` section, never from here
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+# (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 # The database is NOT per backend. It is one Postgres for everyone, and a worker's own connection
 # is read-only by default (`project.worker_environment`, below) as well as by the rules injected
 # below -- an accident guard, not an intent guard, and DB tests reach the owner only through
-# `project.test_command` (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
+# `project.test_command` (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
 # owner-only-through-the-test-runner.md). The main thread is the only writer.
 #
 # The Claude worker spends the SAME Anthropic subscription window as the main thread. A long Opus
@@ -158,7 +158,7 @@ PRE_MERGE_FREEZE_REASON=before_merge
 PRE_MERGE_FREEZE_SUBJECT="$WIP_SUBJECT ($PRE_MERGE_FREEZE_REASON)"
 
 # Driver-written, line 1: the guard's ground truth, knowable from this script's own bookkeeping
-# with zero cooperation from the agent (docs/adr/2026-09-14-driver-writes-mechanical-state-agent-
+# with zero cooperation from the agent (agent_os/docs/adr/2026-09-14-driver-writes-mechanical-state-agent-
 # writes-cooperative-state.md). Line 2, when present, is the issue/label marker `write_state_
 # marker` below writes -- every writer of line 1 preserves it (#350 Part 4).
 write_state() {
@@ -199,7 +199,7 @@ clear_state_marker() {
 # mechanism file is off limits unless the body names the path as the target of the work, and
 # "names" is a substring, not a glob and not a regex, so the check cannot be wider than what the
 # human wrote. Read off the body this run already fetched into `$bodyfile` -- never a second `gh`
-# call (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+# call (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
 issue_body_names_path() {
   [ -s "$bodyfile" ] || return 1
   grep -qF -- "$1" "$bodyfile"
@@ -209,14 +209,14 @@ issue_body_names_path() {
 # paths with. Built from `project.forbidden_paths`, which is also what renders the "FILES YOU MUST
 # NOT TOUCH" paragraph injected below -- ONE list behind both halves of that rule, so the prose the
 # worker reads and the audit that judges it cannot describe two different sets again
-# (docs/AGENT_OS.md §7 rows (a) and (s), issue #363). Empty when the project forbids nothing, and
+# (agent_os/docs/AGENT_OS.md §7 rows (a) and (s), issue #363). Empty when the project forbids nothing, and
 # then `collect` skips the audit instead of running an empty pattern, which matches every path.
 FORBIDDEN=$("$agent_python" -m agent_os.lib forbidden-paths-regex)
 
 # The mechanism's own files: the SECOND list `collect` audits with, and the only one an issue body
 # can authorize. A path matching this pattern is refused when the body does not name it and allowed
 # when it does, because these files are the machinery under development and the tracking epic
-# exists to change them (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-
+# exists to change them (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-
 # protected-paths.md). Rendered by the same translator as `FORBIDDEN`, read with the same
 # empty-means-no-audit rule, and the list the second of the two ownership paragraphs the worker
 # reads is rendered from.
@@ -230,7 +230,7 @@ MECHANISM=$("$agent_python" -m agent_os.lib mechanism-paths-regex)
 # here (#509). The pair of ownership paragraphs still renders whole or not at all, on the same test
 # the `FORBIDDEN` and `MECHANISM` patterns above are built from, and that rule now lives beside the
 # renderer instead of beside this call
-# (#390, docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+# (#390, agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
 #
 # The main checkout's path is the one value only this run knows: derived, not configured -- see
 # main_checkout() above. A prompt that will not render stops the driver here, because a backend
@@ -291,7 +291,7 @@ issue_token_line() {
 # STAGES (#375). What the issue plans and what the branch has actually done, resolved together
 # into these globals because every caller wants all of them and a bash function returns one
 # string. Progress is read off the commits, never off anything an agent wrote down
-# (docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md).
+# (agent_os/docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md).
 # ----------------------------------------------------------------------------------------------
 stage_issue_body=""   # the issue's own body, the source of both the plan and the prompt
 stage_base_ref=""     # the ref HEAD forked from -- `Base: <branch>` if the issue names one
@@ -652,8 +652,8 @@ launch_stage() {
   [ "$stages_total" -gt 0 ] && echo "stage:     $((stages_done + 1))/$stages_total of issue #$issue"
 
   # Project-specific environment for the worker's own backend process -- a common example is a
-  # read-only database URL, but the mechanism itself names nothing (docs/adr/2026-09-14-the-agent-mechanism-
-  # is-project-agnostic-and-configured-not-coded.md, docs/adr/2026-09-15-workers-connect-read-
+  # read-only database URL, but the mechanism itself names nothing (agent_os/docs/adr/2026-09-14-the-agent-mechanism-
+  # is-project-agnostic-and-configured-not-coded.md, agent_os/docs/adr/2026-09-15-workers-connect-read-
   # only-by-default-and-reach-the-owner-only-through-the-test-runner.md). Exported here, into this
   # shell, so the backend CLI launched below inherits it.
   while IFS=$'\t' read -r env_key env_value; do
@@ -663,7 +663,7 @@ launch_stage() {
   export PYTHONPATH="$worktree"
   export WORKER_RULES="$RULES" WORKER_BRIEF="$brief" WORKER_MODEL_ID="$model"
   # AGENTS.md, then the brief (the issue and its parent), then only what those name -- in that
-  # order and nothing else. docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-
+  # order and nothing else. agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-
   # are-the-mechanical-state.md
   export WORKER_FIRST_INSTRUCTION="Read AGENTS.md first. Then read your brief at $brief: it is the
 GitHub issue you are working on and its parent issue, which together are the whole task. Then read
@@ -707,7 +707,7 @@ and then stop. The driver launches the next stage in a new process."
   #
   # No `exec` on the backend CLI below: this subshell must still be alive after it exits, to call
   # the driver's own end-of-stage decision and, when the run really ends there, the guard's exit
-  # hook in the same process (docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-
+  # hook in the same process (agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-
   # as-a-standing-process.md -- "a hook fires on every worker's natural end"). A tick that cuts
   # this same run kills the whole process group (-TERM -pgid reaches this subshell too, not just
   # the CLI child), so the hook only ever runs on a natural exit, and `check` itself never
@@ -785,7 +785,7 @@ rules)
 init)
   # Idempotent: a worktree already there (however it got there -- by hand, or a previous `init`)
   # is left exactly alone, on whatever branch it is already on. This is the ONLY subcommand that
-  # may run before the worktree exists at all (docs/AGENT_OS.md §7 row (r), issue #392): every
+  # may run before the worktree exists at all (agent_os/docs/AGENT_OS.md §7 row (r), issue #392): every
   # other one refuses on `[ -e "$worktree/.git" ]` the same way `branch` does above.
   if [ -e "$worktree/.git" ]; then
     echo "$worktree already initialized (on $(git -C "$worktree" branch --show-current 2>/dev/null || echo '?'))"
@@ -843,7 +843,7 @@ start|resume)
       --force) force=yes ;;
       --after) shift; after=${1:-manual} ;;
       # What the planner hands a resumed run that has something new to act on -- today, the body
-      # of the validator's request-changes review (docs/adr/2026-09-14-a-pr-is-validated-by-a-
+      # of the validator's request-changes review (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-
       # validator-agent-against-the-issues-acceptance-criteria.md). It is appended to the fixed
       # first instruction, never substituted for the brief: the issue stays the task.
       --context) shift; extra_context=${1:-} ;;
@@ -871,7 +871,7 @@ start|resume)
     # commits inside that already-open pull request. Accepted are the issue's base branch and any
     # branch whose name carries this issue's number -- the shape the planner's own `branch
     # task/<N>-<slug>` produces. Same precedent as the parallelism cap: a rule the planner is told
-    # to follow becomes a rule the driver enforces (docs/adr/2026-09-15-parallelism-is-a-
+    # to follow becomes a rule the driver enforces (agent_os/docs/adr/2026-09-15-parallelism-is-a-
     # configured-cap-enforced-by-the-driver.md). First of the gates because it writes nothing and,
     # on the normal path -- the branch the planner has just created for this issue -- it is a
     # string comparison that costs no `gh` call, while the two gates after it do.
@@ -911,7 +911,7 @@ start|resume)
     fi
 
     # PARALLELISM CAP AND MODULE EXCLUSION, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#374,
-    # docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md). This backend
+    # agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md). This backend
     # is not alive or `start` would already have refused above -- so every alive backend found
     # here is an OTHER one, and the count below is exactly how many issues are already running.
     other_backends_alive=()
@@ -949,7 +949,7 @@ start|resume)
 
     # The issue is the unit of work: a body that does not validate is not a brief, and dispatching
     # it anyway is how a worker ends up inventing its own task. --force is for the human who knows
-    # why. docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    # why. agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     # state.md
     if [ "$force" = no ]; then
       "$agent_python" -m agent_os.issues validate "$issue" \
@@ -958,7 +958,7 @@ start|resume)
 
     # An issue is dispatchable only once its body resolves to a task class in config/agents.yaml --
     # a dispatch with no budget is a bug in the queue, never a judgment call for whoever is
-    # dispatching. docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md
+    # dispatching. agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md
     # The body the base gate above already read: one read, so the two cannot disagree.
     budget_class=$(echo "$body" | "$agent_python" -m agent_os.lib resolve-budget) \
       || { echo "refusing to dispatch: issue #$issue"; exit 1; }
@@ -990,7 +990,7 @@ start|resume)
     fi
     [ -s "$issuefile" ] || echo "WARNING: no recorded issue for this worker (.cache/worker_$backend.issue); resuming without one"
 
-    # THE RELAUNCH CAP, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#362, docs/adr/2026-09-14-a-
+    # THE RELAUNCH CAP, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#362, agent_os/docs/adr/2026-09-14-a-
     # cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md, amended 2026-09-15). A
     # third resume after two guard cuts is not a judgment call for an LLM to get right every time
     # -- it is refused mechanically, before anything is written, so a planner mistake cannot spend
@@ -1109,7 +1109,7 @@ stage-exit)
   # ended without the commit that closes it, so what it did is unfinished work, not a delivered
   # stage -- and chaining the next stage on top of it would build on a tree nobody has seen.
   # Frozen the same way the guard freezes a run it cuts, so the next process starts from a
-  # committed tree (docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-
+  # committed tree (agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-
   # relaunches.md).
   if [ "$stages_done" -le "$stage_before" ]; then
     frozen="tree clean"
@@ -1174,7 +1174,7 @@ open-pr)
   # own worktree and nobody outside can see it yet. Push that branch under the worker's own App
   # identity, open the pull request that says `Closes #N`, and move the issue to `ai-completed`
   # so the planner's next wake has something to hand the validator
-  # (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
+  # (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
   # criteria.md). Called from inside the run's own subshell, BEFORE the guard's exit hook, so the
   # `worker_finished` event never reaches the planner describing a pull request that is not there
   # yet. Every refusal below exits 0: there is nothing to publish, which is not a failure of the
@@ -1485,7 +1485,7 @@ collect)
     | sort -u | grep . || true)
   echo "=== changed files ==="; echo "$changed" | sed 's/^/  /'
   echo "=== ownership audit ==="
-  # Two lists and one rule each (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-
+  # Two lists and one rule each (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-
   # projects-protected-paths.md): the host project's paths hold whatever the brief says, and the
   # mechanism's own files yield to a body that names them. Only the second half reads that body, so
   # the lookup stays on the rare path -- a run touching no mechanism file never opens it.

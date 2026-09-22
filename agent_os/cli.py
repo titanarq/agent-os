@@ -8,7 +8,7 @@ to another of the package's own modules. There is one rule each and no second co
 Until 2026-09-21 both answers were the same accident: every call site spelled the interpreter
 inside the HOST project's own root virtualenv, and every path was derived from `__file__`'s
 grandparent, which was the host root only because the mechanism's files lived in the host's
-`scripts/`. Neither survives the move (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-
+`scripts/`. Neither survives the move (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-
 by-hosts-and-never-modified.md).
 """
 

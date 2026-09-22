@@ -3,7 +3,7 @@
 # it never edits code), that reads what the monitor tick just reported plus the tracker's own
 # state and decides what happens next: relaunch a cut/blocked worker, dispatch a queued issue,
 # freeze one at its relaunch cap, or page a human. Unlike a worker it is never resumed -- one
-# invocation is one decision, per docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-
+# invocation is one decision, per agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-
 # never-as-a-standing-process.md ("the planner itself runs to a decision and exits too").
 #
 # The backend it runs on is the `planner` class's own, unless the launch gate substitutes the
@@ -43,7 +43,7 @@ runs_tsv=$planner_dir/runs.tsv
 mkdir -p "$planner_dir"
 
 # Worktrees, identities and every other project-specific value come from config/agents.yaml's
-# `project:` section -- docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-
+# `project:` section -- agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-
 # configured-not-coded.md.
 qwen_worktree=${WORKER_WORKTREE_QWEN:-$(cd "$main" && "$python" -c 'from agent_os.lib import worktree_path; print(worktree_path("qwen"))')}
 claude_worktree=${WORKER_WORKTREE_CLAUDE:-$(cd "$main" && "$python" -c 'from agent_os.lib import worktree_path; print(worktree_path("claude"))')}
@@ -87,7 +87,7 @@ run)
   context=${2:-"(no context given -- manual invocation)"}
 
   # GitHub identity: its own App, distinct from a worker's backend identity, so a planning
-  # decision reads as one at a glance -- docs/adr/2026-09-14-the-planner-has-its-own-github-
+  # decision reads as one at a glance -- agent_os/docs/adr/2026-09-14-the-planner-has-its-own-github-
   # identity-separate-from-a-workers-backend-identity.md. Both the slug and where its secrets live
   # come from config/agents.yaml's `project:` section. Missing secrets degrade to one warning and
   # the ambient gh/git identity, the same style worker_task.sh uses -- never a hard failure.
@@ -129,7 +129,7 @@ run)
   # One line per run in runs.tsv -- what woke it, what it cost. Parsed from the log's last
   # `result` event by agent_lib, so there is one implementation of "what did this run cost". The
   # model column carries the model that RAN, which is what keeps a substituted run's tokens out of
-  # the Claude total whoever reads this file next reports (`docs/AGENT_OS.md` §3).
+  # the Claude total whoever reads this file next reports (`agent_os/docs/AGENT_OS.md` §3).
   agent_append_run_row "$logfile" "$runs_tsv" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$context" "$model"
   echo "log $logfile"
   ;;

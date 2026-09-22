@@ -2,10 +2,10 @@
 
 `agent-os install [--dry-run] [--force]` writes the systemd `--user` units the tick runs on, and
 copies the host's `.claude/agents/*.md`, `.github/ISSUE_TEMPLATE/*.md` and a CI snippet if they are
-absent -- the three files `docs/AGENT_OS.md` §5 step 7 used to say were "machine steps, not code,
-but manual regardless" (`docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
+absent -- the three files `agent_os/docs/AGENT_OS.md` §5 step 7 used to say were "machine steps, not code,
+but manual regardless" (`agent_os/docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
-(`docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
+(`agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
 `docs/runbooks/agent_monitor.md`).
 
     agent-os-install --dry-run     # print every path this would touch and its diff, write nothing
@@ -52,7 +52,7 @@ def _require_guard_unit(project: ProjectConfig) -> str:
     if not project.guard_unit:
         raise InstallError(
             "project.guard_unit is not set in config/agents.yaml -- name the systemd unit "
-            "before running install (docs/AGENT_OS.md §4.2)"
+            "before running install (agent_os/docs/AGENT_OS.md §4.2)"
         )
     return project.guard_unit
 

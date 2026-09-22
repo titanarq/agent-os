@@ -390,7 +390,7 @@ def test_sync_entry_dry_run_never_calls_gh():
 # --------------------------------------------------------------------------------------------
 # Templates, validate, move, brief
 # --------------------------------------------------------------------------------------------
-# docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
+# agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
 
 VALID_BODY = (
     "\n\n".join(f"{heading}\nsomething" for heading in REQUIRED_SECTIONS).replace(

@@ -1,7 +1,7 @@
 """The agent operating system: one directory a host project extends and never modifies.
 
-`docs/AGENT_OS.md` in the host describes what the mechanism does; the binding decision about its
-shape is `docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-
+`agent_os/docs/AGENT_OS.md` in the host describes what the mechanism does; the binding decision about its
+shape is `agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-
 modified.md`. Nothing under this package reads a literal that belongs to one project: every such
 value comes from the host's `config/agents.yaml` (`agent_os.lib`), from a host-owned file that
 config names, or from the environment.

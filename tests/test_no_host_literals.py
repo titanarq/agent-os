@@ -1,10 +1,10 @@
-"""`agent_os/` carries no literal of any host project (docs/AGENT_OS.md's own agnosticism claim,
-`docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md`).
+"""`agent_os/` carries no literal of any host project (agent_os/docs/AGENT_OS.md's own agnosticism claim,
+`agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md`).
 
 A blunt substring walk over every file under `agent_os/`, excluding `docs/` (history and the
 module doc are allowed to name the projects they were written about), `tests/golden/` (fixture
 data captured from a real run, not code) and `config.example.yaml` (its own commentary explains
-the shape of a real value by naming one, `docs/AGENT_OS.md` §4.1). Two further, narrower
+the shape of a real value by naming one, `agent_os/docs/AGENT_OS.md` §4.1). Two further, narrower
 exclusions:
 
 - `SELF_REFERENTIAL_CHECKS` -- files that spell every forbidden literal ON PURPOSE, as the very
@@ -24,7 +24,7 @@ exclusions:
 
   - `agent_os/tests/test_prompt_templates.py` -- its golden comparison keeps a static, documented
     copy of the host's own two `config/agent_prompts/*.md` extension-point files (`agent_os/tests/
-    golden/*.md` fixture data captured from a real run, the same exception `docs/AGENT_OS.md`
+    golden/*.md` fixture data captured from a real run, the same exception `agent_os/docs/AGENT_OS.md`
     already grants `tests/golden/`), so the literal is load-bearing fixture content, not
     incidental prose -- kept per this walk's own instructions rather than rewritten into
     something that no longer proves the golden text matches what a real host renders.

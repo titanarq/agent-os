@@ -1,4 +1,4 @@
-"""`agent_os.doctor` -- the first-run checklist of `docs/AGENT_OS.md` §6, read back mechanically
+"""`agent_os.doctor` -- the first-run checklist of `agent_os/docs/AGENT_OS.md` §6, read back mechanically
 (issue #511). Every check reads state only: `gh`, `systemctl --user is-active` and file existence
 are all mocked or filesystem-only here, so this suite calls nothing real and starts nothing.
 
