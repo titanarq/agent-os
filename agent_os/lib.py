@@ -72,6 +72,9 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
     python -m agent_os.lib worktree-backends
         # one backend name per line, from `project.worktrees` -- `worker_task.sh start` counts
         # alive workers across every one of them for `planner.max_parallel_issues` (#374).
+    python -m agent_os.lib worktree-path <backend>
+        # that backend's worktree, resolved against the repository root -- `worktree_path` below,
+        # for a shell caller that only has the backend's name (`worker_progress.sh`, #510).
     echo "$commit_subjects" | python -m agent_os.lib stages-completed
         # one commit subject per line on stdin -- prints the highest completed stage N, 0 if none
         # of them is a `stage N/M: <title>` commit (#375).
@@ -1907,6 +1910,8 @@ def main() -> None:
         help="a placeholder only the run knows: MAIN_CHECKOUT, WORKTREE, REVIEW_BACKEND_LINE",
     )
     sub.add_parser("worktree-backends")
+    worktree = sub.add_parser("worktree-path")
+    worktree.add_argument("backend", help="a key of project.worktrees, e.g. qwen")
     sub.add_parser("stages-completed")
     stage_titles = sub.add_parser("stage-titles")
     stage_titles.add_argument("body_file")
@@ -1989,6 +1994,11 @@ def main() -> None:
             sys.exit(str(error.args[0]))
     elif args.command == "worktree-backends":
         _print_worktree_backends()
+    elif args.command == "worktree-path":
+        try:
+            print(worktree_path(args.backend))
+        except KeyError:
+            sys.exit(f"'{args.backend}' is not a key of project.worktrees")
     elif args.command == "stages-completed":
         print(stages_completed(sys.stdin.read().splitlines()))
     elif args.command == "stage-titles":

@@ -2,14 +2,16 @@
 """Mints a GitHub App installation access token, so a worker commits and comments as its own
 bot identity (`<slug>[bot]`) rather than the human account.
 
-    python -m agent_os.gh_app_token --app roedor-claude              # token to stdout
-    python -m agent_os.gh_app_token --app roedor-claude --bot-name   # "roedor-claude[bot]"
-    python -m agent_os.gh_app_token --app roedor-claude --bot-email  # "<id>+roedor-claude[bot]@users.noreply.github.com"
-    python -m agent_os.gh_app_token --app roedor-claude --who        # all three, one per line
-    python -m agent_os.gh_app_token --app roedor-claude --org my-org # only needed the first
+    python -m agent_os.gh_app_token --app your-repo-claude              # token to stdout
+    python -m agent_os.gh_app_token --app your-repo-claude --bot-name   # "your-repo-claude[bot]"
+    python -m agent_os.gh_app_token --app your-repo-claude --bot-email  # "<id>+your-repo-claude[bot]@users.noreply.github.com"
+    python -m agent_os.gh_app_token --app your-repo-claude --who        # all three, one per line
+    python -m agent_os.gh_app_token --app your-repo-claude --org my-org # only needed the first
                                                                               # time, to discover installation_id
 
-Secrets live in `.secrets/gh_apps/<slug>.json` (gitignored), never in this repo's tracked files:
+Secrets live under `project.secrets_dir` (`.secrets/gh_apps` unless a project's own
+`config/agents.yaml` names another directory), as `<slug>.json`, gitignored and never in this
+repo's tracked files:
 
     {"app_id": 123456, "installation_id": 789, "private_key_path": ".secrets/gh_apps/<slug>.pem"}
 
@@ -44,6 +46,7 @@ from typing import NoReturn
 import jwt
 
 from agent_os.cli import host_root
+from agent_os.lib import load_project
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -52,7 +55,11 @@ from agent_os.cli import host_root
 # exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
-SECRETS_DIR = HOST_ROOT / ".secrets" / "gh_apps"
+# `project.secrets_dir` through the same config loader `agent_task.sh` reads it with
+# (`agent_project_value --path secrets_dir`, itself `agent_os.lib`'s `project-value`), resolved
+# against the host root exactly as that shell helper does -- a project that names a different
+# directory needs no edit here, only its own `config/agents.yaml`.
+SECRETS_DIR = HOST_ROOT / load_project().secrets_dir
 CACHE_DIR = HOST_ROOT / ".cache"
 API = "https://api.github.com"
 
@@ -65,10 +72,7 @@ def fail(message: str) -> NoReturn:
 def load_secrets(slug: str) -> tuple[dict, Path]:
     path = SECRETS_DIR / f"{slug}.json"
     if not path.is_file():
-        fail(
-            f"no secrets file at {path} -- create .secrets/gh_apps/{slug}.json first "
-            f"(see scratchpad/restructure/github_apps_setup.md)"
-        )
+        fail(f"no secrets file at {path} -- create it first (`project.secrets_dir` in config)")
     try:
         secrets = json.loads(path.read_text())
     except ValueError as exc:
@@ -207,7 +211,7 @@ def bot_email(slug: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    parser.add_argument("--app", required=True, help="App slug, e.g. roedor-claude")
+    parser.add_argument("--app", required=True, help="App slug, e.g. your-repo-claude")
     parser.add_argument("--org", help="Org login to disambiguate GET /app/installations")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--bot-email", action="store_true")

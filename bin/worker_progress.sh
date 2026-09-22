@@ -1,64 +1,91 @@
 #!/usr/bin/env bash
 # What the workers have done lately and what they have spent, in one screen.
 #
-#   agent_os/bin/worker_progress.sh                 # both backends, the last hour
+#   agent_os/bin/worker_progress.sh                 # every configured backend, the last hour
 #   agent_os/bin/worker_progress.sh 390             # that issue, resolving its backend
 #   agent_os/bin/worker_progress.sh --hours 3       # a wider window
 #
-# Qwen's stream carries no `total_cost_usd` (#387), so spend is only readable as tokens: this sums
-# them over the issue's archived stage logs plus the live one, the same set `max_cost_usd` is
-# checked against. The narrative half is the worker's own `scratchpad/progress.log`.
+# A backend whose stream carries no `total_cost_usd` (Qwen, #387) has spend only readable as
+# tokens: this sums them over the issue's archived stage logs plus the live one, the same set
+# `max_cost_usd` is checked against. The narrative half is the worker's own
+# `scratchpad/progress.log`.
 set -euo pipefail
 
 # shellcheck source=agent_os/bin/_python.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_python.sh"
 main=$(agent_os_host_root)
+python=$(agent_os_python)
 hours=1
 max_lines=40
 issue=""
 backends=""
 
+# `project.worktrees`' own keys -- never a hardcoded `qwen`/`claude` pair, so a third backend
+# needs no edit here (#510).
+mapfile -t all_backends < <("$python" -m agent_os.lib worktree-backends)
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --hours) hours=$2; shift 2 ;;
     --max-lines) max_lines=$2; shift 2 ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
-    qwen|claude) backends=$1; shift ;;
-    *) issue=$1; shift ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    *)
+      is_backend=""
+      for candidate in "${all_backends[@]}"; do
+        [ "$1" = "$candidate" ] && is_backend=1
+      done
+      if [ -n "$is_backend" ]; then
+        backends=$1
+      else
+        issue=$1
+      fi
+      shift
+      ;;
   esac
 done
 
-exec "$(agent_os_python)" - \
-  "${WORKER_CACHE_DIR:-$main/.cache}" "$main" "$hours" "$max_lines" "$issue" "$backends" <<'PY'
+# One `backend<TAB>worktree path` line per configured backend, resolved once here rather than by
+# the interpreter below -- `agent_os.lib worktree-path` is the one place that reads
+# `project.worktrees` (#510).
+worktree_lines=""
+for backend in "${all_backends[@]}"; do
+  worktree_lines+="$backend"$'\t'"$("$python" -m agent_os.lib worktree-path "$backend")"$'\n'
+done
+
+exec "$python" - \
+  "${WORKER_CACHE_DIR:-$main/.cache}" "$hours" "$max_lines" "$issue" "$backends" \
+  "${all_backends[*]}" "$worktree_lines" <<'PY'
 import datetime as dt
 import json
 import pathlib
 import subprocess
 import sys
 
-cache, main, hours, max_lines, issue, backends = sys.argv[1:7]
-cache, main = pathlib.Path(cache), pathlib.Path(main)
+cache, hours, max_lines, issue, backends, all_backends, worktree_lines = sys.argv[1:8]
+cache = pathlib.Path(cache)
 hours, max_lines = float(hours), int(max_lines)
+all_backends = all_backends.split()
+worktrees = dict(line.split("\t", 1) for line in worktree_lines.splitlines() if line)
 cutoff = dt.datetime.now() - dt.timedelta(hours=hours)
-window = f"desde {cutoff:%H:%M} ({hours:g} h)"
+window = f"since {cutoff:%H:%M} ({hours:g} h)"
 
 
 def recent_progress(backend):
     """The worker's own lines inside the window. Its timestamps are `YYYY-MM-DD HH:MM` in local
     time, so the cutoff formats the same way and the comparison is a string one."""
-    path = main.parent / f"roedor-{backend}" / "scratchpad" / "progress.log"
+    path = pathlib.Path(worktrees[backend]) / "scratchpad" / "progress.log"
     if not path.is_file():
-        return [f"(sin {path})"]
+        return [f"(missing {path})"]
     stamp = f"{cutoff:%Y-%m-%d %H:%M}"
     lines = [line for line in path.read_text(errors="replace").splitlines() if line.strip()]
     inside = [line for line in lines if line[:16] >= stamp]
     if not inside:
-        last = lines[-1] if lines else "(vacío)"
-        return [f"(nada en la ventana; la última línea es de antes) {last}"]
+        last = lines[-1] if lines else "(empty)"
+        return [f"(nothing in the window; the last line is older) {last}"]
     dropped = len(inside) - max_lines
     inside = inside[-max_lines:]
     if dropped > 0:
-        inside.insert(0, f"(... {dropped} línea(s) anteriores recortadas por --max-lines)")
+        inside.insert(0, f"(... {dropped} earlier line(s) trimmed by --max-lines)")
     return inside
 
 
@@ -79,7 +106,7 @@ def spend(issue_number, backend):
     for path in paths:
         billed = turns = 0
         reported = None
-        cost = "AUSENTE"
+        cost = "ABSENT"
         for line in path.read_text(errors="replace").splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -111,18 +138,18 @@ def spend(issue_number, backend):
                 )
         grand += billed
         grand_reported += reported or 0
-        shown = f"{reported:,}" if reported is not None else "sin result"
+        shown = f"{reported:,}" if reported is not None else "no result"
         rows.append(
-            f"  {path.name:42s} turnos={turns:>3}  por turno={billed:>12,}  del result={shown:>12}"
-            f"  coste={cost}"
+            f"  {path.name:42s} turns={turns:>3}  per turn={billed:>12,}  from result={shown:>12}"
+            f"  cost={cost}"
         )
     rows.append(
-        f"  {'ACUMULADO en la issue':42s}          por turno={grand:>12,} "
-        f" del result={grand_reported:>12,}"
+        f"  {'ISSUE TOTAL':42s}          per turn={grand:>12,} "
+        f" from result={grand_reported:>12,}"
     )
     rows.append(
-        "  (el techo de tokens de #387 se mide contra la columna 'del result'; una etapa cortada"
-        " no la escribe y cuenta 0)"
+        "  (#387's token ceiling is measured against the 'from result' column; a cut stage never"
+        " writes it and counts as 0)"
     )
     return rows
 
@@ -139,17 +166,17 @@ def doing_issue():
         return ""
 
 
-for backend in ([backends] if backends else ["qwen", "claude"]):
+for backend in ([backends] if backends else all_backends):
     print(f"== worker {backend} — {window} ==")
     for line in recent_progress(backend):
         print(f"  {line}")
     number = issue or doing_issue()
     rows = spend(number, backend) if number else []
     if rows:
-        print(f"  -- gasto de #{number} --")
+        print(f"  -- spend on #{number} --")
         for row in rows:
             print(row)
     elif number:
-        print(f"  -- sin etapas de {backend} en #{number} --")
+        print(f"  -- no {backend} stages on #{number} --")
     print()
 PY
