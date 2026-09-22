@@ -1574,12 +1574,13 @@ def read_persisted_quota_verdict(
 ) -> QuotaVerdict:
     """What the guard last saw of `backend`'s quota, and how long ago it saw it.
 
-    The age is the FILE'S mtime, and that is not an approximation: every tick that watches a run of
-    this backend re-derives `last_quota_status` from that run's own event stream and rewrites the
-    whole file (`agent_guard._tick_backend` into `_save_bookkeeping`), so the last write is the last
-    observation. Nothing else writes it. A file nobody has rewritten for a while is therefore a
-    verdict nobody has refreshed for exactly that long -- including the case that matters most,
-    where the run ended and the guard stopped having a stream to look at.
+    The age is the FILE'S mtime, and that is not an approximation: the guard module is the file's
+    one writer (#429), and each write leaves the mtime at the moment of the observation it records
+    -- a live worker's tick at its own now (`agent_guard._tick_backend`), a role's log at that log's
+    own mtime (`agent_guard.fold_role_quota_observations`). This function only reads. A file nobody
+    has rewritten for a while is therefore a verdict nobody has refreshed for exactly that long --
+    including the case that matters most, where the run ended and the guard stopped having a stream
+    to look at.
 
     Anything short of a readable verdict reads as `unknown`: a missing file (no run of this backend
     since the cache was cleared), an unparseable one, or one written before `last_quota_status`

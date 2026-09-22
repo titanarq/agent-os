@@ -85,6 +85,7 @@ from agent_os.lib import (
     is_human_comment,
     label_names,
     last_result_event,
+    load_mechanism,
     load_planner_config,
     load_project,
     load_task_classes,
@@ -789,6 +790,10 @@ def wake(*, main: Path = HOST_ROOT, now: datetime | None = None) -> str:
 
 
 def _wake_locked(*, main: Path, now: datetime) -> str:
+    # Before anything can launch the planner: a role whose exit hook called this `wake` directly
+    # may have just been refused by its backend, and no tick has run since to say so (#429).
+    for line in fold_role_quota_observations(main=main, now=now):
+        print(line)
     pending = pending_events(main)
     if not pending:
         return "no unconsumed planner events -- nothing to wake for"
@@ -974,6 +979,20 @@ class TickResult:
 def _tick_backend(
     backend: str, *, main: Path = HOST_ROOT, now: datetime | None = None
 ) -> TickResult:
+    """One worker backend's check, holding that backend's verdict-file lock for its whole length:
+    the worker path and `fold_role_quota_observations` are the file's two write sites inside this
+    one module, and they can run in two processes at once (a timer's tick, a role's exit-hook
+    `wake`), so the lock is what makes a lost update of the stall bookkeeping unreachable."""
+    bookkeeping_path = worker_paths(backend, main).bookkeeping
+    if not bookkeeping_path.parent.is_dir():
+        # No cache directory, so no worker has ever run here and there is nothing to race on.
+        return _tick_backend_locked(backend, main=main, now=now)
+    with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _tick_backend_locked(backend, main=main, now=now)
+
+
+def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> TickResult:
     paths = worker_paths(backend, main)
     now = now or datetime.now()  # noqa: DTZ005 -- naive, matches progress.log's own timestamps
 
@@ -2421,6 +2440,161 @@ def _report(outcome: EventOutcome) -> int:
     return outcome.written
 
 
+# ----------------------------------------------------------------------------------------------
+# Role rejections into the quota verdict (#429). The verdict file `agent_guard_<backend>.json` has
+# ONE writer, this module: `_tick_backend` writes it from a live worker's stream, and
+# `fold_role_quota_observations` below writes it from the logs the roles leave behind -- the
+# planner, the validator, the refiner -- which no worker stream ever sees. The role launch paths
+# (`agent_lib.role_launch`, through `agent_task.sh` and `planner_task.sh`) only ever READ it.
+#
+# The fold runs at the start of BOTH guard entry points that can launch a role: `tick`, before any
+# check or wake, and `_wake_locked`, under `planner.lock`, before it invokes the planner. The second
+# is the one that matters most: a role's exit hook writes `<role>_finished` and calls `wake`
+# directly, with no tick in between, so a validator rejected by Claude's window would otherwise be
+# followed at once by a planner launched on the same exhausted window.
+#
+# What is read is the backend's own terminal record, through the same detector the worker path
+# uses (`quota_status`), never what the agent wrote about itself
+# (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md).
+# ----------------------------------------------------------------------------------------------
+
+# `backend:   qwen (FALLBACK for claude -- ...)` or `backend:   claude` -- the line both role
+# drivers write into a run's log header (`agent_backend_identity_line`), naming the backend that
+# actually RAN, which on a substituted run is not the class's own.
+ROLE_RUN_BACKEND_RE = re.compile(r"^backend:\s+(?P<backend>\S+)", re.MULTILINE)
+
+RoleQuotaStatus = Literal["allowed", "exhausted"]
+
+
+@dataclass(frozen=True)
+class RoleQuotaObservation:
+    """What one role run's log says about its backend's quota, and when it said it.
+
+    `observed_at_ns` is the log's own mtime: a role log is appended to and never rewritten once its
+    run ends, so the same log yields the same time on every tick that reads it -- which is what lets
+    a rejection age out instead of being refreshed by each tick that sees it again."""
+
+    backend: str
+    status: RoleQuotaStatus
+    observed_at_ns: int
+    log: Path
+
+
+def role_run_quota_status(log_path: Path) -> RoleQuotaStatus | None:
+    """`exhausted`, `allowed`, or None for "this run says nothing about the quota".
+
+    - A run with no terminal `result` -- still running, killed, crashed, empty -- is None: it ended
+      before the backend could say anything, and leaves the verdict as it was.
+    - A terminal run the backend refused on quota, by the worker path's own detector: `exhausted`.
+    - A terminal run that worked -- no error, at least one turn (`usage_failed` false): `allowed`.
+    - Any other failure (a transport error, an error result without the quota shape): None.
+
+    The result TEXT is never read for a claim: a run whose assistant wrote "my quota is exhausted"
+    and finished cleanly is an `allowed` observation, because the backend served every turn of it."""
+    events = read_events(log_path)
+    summary = usage_summary(events)
+    if summary.result is None:
+        return None
+    if quota_status(events) == "exhausted":
+        return "exhausted"
+    if not usage_failed(summary):
+        return "allowed"
+    return None
+
+
+def _role_log_directories(*, main: Path) -> dict[Path, str]:
+    """Every directory a role's per-run logs land in, mapped to the backend of the class that owns
+    it -- the attribution for a log written before the drivers named their backend in the header.
+    Roles come from `config/agents.yaml` (every class whose `role:` is not `worker`), and the planner
+    keeps its own directory override, exactly as `planner_task.sh` does."""
+    directories: dict[Path, str] = {}
+    for task_class in load_task_classes().values():
+        if task_class.role == "worker":
+            continue
+        role = task_class.role
+        directory = planner_dir(main) if role == "planner" else role_run_dir(role, main)
+        directories.setdefault(directory, task_class.backend)
+    return directories
+
+
+def role_log_quota_observations(
+    *, main: Path = HOST_ROOT, now: datetime | None = None
+) -> dict[str, RoleQuotaObservation]:
+    """The most recent role-log observation per backend, among the logs written inside the
+    verdict's TTL. A log older than the TTL is not read at all: a verdict built from it would read
+    `unknown` at every launch anyway, and writing it would only hand the next worker tick a stale
+    baseline to report a spurious quota change against."""
+    now = now or datetime.now(UTC)
+    ttl_seconds = load_mechanism().quota_verdict_ttl_minutes * 60
+    oldest_ns = int((now.timestamp() - ttl_seconds) * 1e9)
+    latest: dict[str, RoleQuotaObservation] = {}
+    for directory, class_backend in _role_log_directories(main=main).items():
+        if not directory.is_dir():
+            continue
+        for log_path in directory.glob("*.log"):
+            try:
+                observed_at_ns = log_path.stat().st_mtime_ns
+            except OSError:
+                continue
+            if observed_at_ns < oldest_ns:
+                continue
+            status = role_run_quota_status(log_path)
+            if status is None:
+                continue
+            header = ROLE_RUN_BACKEND_RE.search(log_path.read_text(errors="replace"))
+            backend = header["backend"] if header else class_backend
+            known = latest.get(backend)
+            if known is None or observed_at_ns > known.observed_at_ns:
+                latest[backend] = RoleQuotaObservation(backend, status, observed_at_ns, log_path)
+    return latest
+
+
+def _bookkeeping_lock_path(bookkeeping: Path) -> Path:
+    return bookkeeping.with_name(bookkeeping.name + ".lock")
+
+
+def fold_role_quota_observations(
+    *, main: Path = HOST_ROOT, now: datetime | None = None
+) -> list[str]:
+    """Writes each backend's newest role-log observation into that backend's verdict file, when it
+    is NEWER than what the file already holds, and returns one line per write for the caller's log.
+
+    "Newer" is measured against the file's own mtime, which is the verdict's age for every reader
+    (`agent_lib.read_persisted_quota_verdict`): the write sets that mtime to the observation's time,
+    not to now, so the same log read again on the next tick is not newer than itself and changes
+    nothing -- and a live worker's tick, which rewrites the file at its own now, stays the most
+    recent observation for as long as it runs. Only `last_quota_status` changes; the stall
+    bookkeeping in the same file is carried over as it was.
+
+    Never emits `quota_changed`: that trigger belongs to the worker path. The lock is taken without
+    blocking, and a file whose lock is held -- a tick checking that backend's live worker right now
+    -- is left for the next fold rather than waited on, so a worker's exit hook that reaches `wake`
+    while the tick is cutting that very worker can never deadlock against it."""
+    lines = []
+    for backend, observation in sorted(role_log_quota_observations(main=main, now=now).items()):
+        bookkeeping_path = worker_paths(backend, main).bookkeeping
+        bookkeeping_path.parent.mkdir(parents=True, exist_ok=True)
+        with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                lines.append(f"{backend}: verdict file busy -- role observation left for next fold")
+                continue
+            if (
+                bookkeeping_path.is_file()
+                and bookkeeping_path.stat().st_mtime_ns >= observation.observed_at_ns
+            ):
+                continue
+            bookkeeping = _load_bookkeeping(bookkeeping_path)
+            bookkeeping.last_quota_status = observation.status
+            _save_bookkeeping(bookkeeping_path, bookkeeping)
+            os.utime(bookkeeping_path, ns=(observation.observed_at_ns, observation.observed_at_ns))
+        lines.append(
+            f"{backend}: quota verdict {observation.status} from role log {observation.log.name}"
+        )
+    return lines
+
+
 def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     """The monitor tick, per docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-
     a-standing-process.md. Each backend is checked first (budget/liveness/stall/quota -- may cut a
@@ -2428,6 +2602,10 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     whether that adds up to a planner run. Nothing at all happens while the tracking epic carries
     status:agents-paused."""
     now = now or datetime.now(UTC)
+    # First, so every launch this tick leads to reads a verdict that already includes the roles'
+    # own rejections; each worker check below then overwrites it with its live stream (#429).
+    for line in fold_role_quota_observations(main=main, now=now):
+        print(line)
     results = [_tick_backend(backend, main=main) for backend in BACKENDS]
     for result in results:
         print(result.message)
