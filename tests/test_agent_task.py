@@ -30,10 +30,11 @@ import subprocess
 import time
 
 import pytest
-from conftest import config_with_never_run
+from conftest import config_with_never_run, config_with_no_host_text
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
+    PROMPTS_DIR,
     load_mechanism,
     load_project,
     load_role_class,
@@ -269,7 +270,7 @@ def test_the_planner_is_told_to_launch_the_validator_and_what_a_review_means():
     # Grep-level on purpose: the rules are a prompt, and what this asserts is that the three
     # mechanical parts of the loop are stated in it -- who launches the validator, on what, and
     # what each verdict makes the planner do next.
-    rules = (AGENT_OS_DIR / "bin" / "planner_task.sh").read_text()
+    rules = (PROMPTS_DIR / "planner.md").read_text()
     assert "agent_os/bin/agent_task.sh validator <pr>" in rules
     assert "status:ai-completed" in rules
     assert "resume --after manual --context" in rules
@@ -281,7 +282,7 @@ def test_the_planner_is_told_to_launch_the_refiner_and_what_finishing_it_means()
     # one refiner run, checks for a prior summary before relaunching -- and, since #365, does NOT
     # run `promote-refined` on the way back: the guard's tick performs it on every fire, so the
     # one step the docs call mechanical no longer depends on an LLM remembering it.
-    rules = (AGENT_OS_DIR / "bin" / "planner_task.sh").read_text()
+    rules = (PROMPTS_DIR / "planner.md").read_text()
     assert "refine_pending" in rules
     assert "agent_os/bin/agent_task.sh refiner <N>" in rules
     assert "<!-- refiner-summary -->" in rules
@@ -292,7 +293,7 @@ def test_the_planner_is_told_to_launch_the_refiner_and_what_finishing_it_means()
 def test_the_planner_is_told_what_an_orphan_doing_event_means():
     # The event the tick raises for an issue the board says is running while no worker is (#365):
     # the guard detects it, the planner decides -- back to ready, or a question for the human.
-    rules = (AGENT_OS_DIR / "bin" / "planner_task.sh").read_text()
+    rules = (PROMPTS_DIR / "planner.md").read_text()
     assert "orphan_doing" in rules
     assert '"$AGENT_OS_PYTHON" -m agent_os.issues move <N> ready' in rules
     assert "move <N> blocked-on-human" in rules
@@ -408,8 +409,54 @@ def test_a_project_that_forbids_no_command_gets_no_paragraph_in_either_role(tmp_
 HOST_NEUTRAL_RULE_EXAMPLE = "a freeze the project declares, a file it protects"
 
 # Strings that belong to the host project and to nothing the mechanism can know: its frozen stamp,
-# the port its shared server listens on, its own pipeline's nouns.
-HOST_LITERALS = ("m2", "5435", "census", "curated", "Postgres", "roedor")
+# the port its shared server listens on, its own pipeline's nouns, its importable package, its
+# database fixture, the names of its own worker classes, and the virtualenv layout only a Python
+# host has. The last five were still inside the mechanism's own prompts until #509 moved them into
+# files the host owns (`docs/AGENT_OS.md` §7 row (t)).
+HOST_LITERALS = (
+    "m2",
+    "5435",
+    "census",
+    "curated",
+    "Postgres",
+    "roedor",
+    "db_sandbox",
+    "mechanical-qwen",
+    "complex-qwen",
+    ".venv",
+)
+
+# Every role whose prompt is a template, and the driver that resolves it: the worker's and the
+# planner's each print theirs with `rules`, the two one-shot roles with `--dry-run`.
+ROLES_WITH_A_PROMPT = ("worker", "validator", "refiner", "planner")
+
+# What #509 could NOT move, measured rather than passed over. The validator's block names
+# `.venv/bin/ruff` and warns against linking `.venv` into a worktree, in two bullets that sit in
+# the middle of the mechanism's own list -- and a single extension point can only append, so moving
+# them would reorder the prompt, which is exactly what the golden test of
+# `test_prompt_templates.py` exists to refuse. Recorded as its own row in `docs/AGENT_OS.md` §7
+# rather than quietly dropped from the literal set.
+LITERALS_A_TEMPLATE_STILL_CARRIES = {"validator": (".venv",)}
+
+
+def _role_rules(role, config_path, cache_dir=NO_VERDICT_CACHE_DIR) -> str:
+    """One role's resolved prompt, whichever driver owns it -- all four print it and run nothing."""
+    environment = dict(os.environ)
+    environment["AGENTS_CONFIG_PATH"] = str(config_path)
+    environment["WORKER_CACHE_DIR"] = str(cache_dir)
+    if role == "worker":
+        command = ["bash", str(AGENT_OS_DIR / "bin" / "worker_task.sh"), "claude", "rules"]
+    elif role == "planner":
+        command = ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "rules"]
+    else:
+        command = ["bash", str(DRIVER), role, "1", "--dry-run"]
+    result = subprocess.run(
+        command, cwd=ROOT, env=environment, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    if role in ONE_SHOT_ROLES:
+        return result.stdout.split("--- rules ---", 1)[1]
+    return result.stdout
 
 
 def test_the_refiner_cites_the_shape_of_a_project_rule_instead_of_one_of_its_own(tmp_path):
@@ -423,16 +470,39 @@ def test_the_refiner_cites_the_shape_of_a_project_rule_instead_of_one_of_its_own
     assert HOST_NEUTRAL_RULE_EXAMPLE in flattened
 
 
-def test_neither_blocks_own_text_names_anything_of_this_project(tmp_path):
-    """With `project.never_run` emptied, neither resolved block carries a literal of the project
-    this mechanism was written inside: what a second project's validator and refiner read is the
-    mechanism's own contract plus whatever their own config/agents.yaml supplies."""
-    config = config_with_never_run(tmp_path, [])
-    assert never_run_rules(load_project(config)) == ""
+def test_no_roles_rendered_prompt_names_anything_of_this_project(tmp_path):
+    """#509's own criterion, over every role rather than the two this file used to reach before it:
+    with the host's lists and its extra-prompt files emptied, what a worker, a validator, a refiner
+    and a planner read is the mechanism's own contract. Every host literal left in a rendered
+    prompt would be one a second project has to edit a file under `agent_os/` to remove, which is
+    the thing the tracking epic exists to end.
 
-    for role in ONE_SHOT_ROLES:
-        rules = _rules(role, config_path=config)
+    The one string subtracted first is the main checkout's own path, which the worker's prompt
+    names: that is a path the driver DERIVES from git, so a second host reads its own there, and
+    this checkout's happening to have `roedor` in it says nothing about the mechanism's text."""
+    config = config_with_no_host_text(tmp_path)
+    assert never_run_rules(load_project(config)) == ""
+    main_checkout = str(
+        pathlib.Path(
+            subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        ).parent
+    )
+
+    for role in ROLES_WITH_A_PROMPT:
+        rules = _role_rules(role, config).replace(main_checkout, "<the host checkout>")
+        known = LITERALS_A_TEMPLATE_STILL_CARRIES.get(role, ())
         for literal in HOST_LITERALS:
+            if literal in known:
+                # An exemption that has stopped being true is an assertion nobody is making any
+                # more, so it fails here rather than sitting in the file forever.
+                assert literal in rules, f"{role}: {literal} is exempt and no longer there"
+                continue
             assert literal not in rules, f"{role}: {literal}"
 
 

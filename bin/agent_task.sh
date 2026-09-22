@@ -186,20 +186,6 @@ agent_append_run_row() {
     --ts "$ts" --context "$context" --model "$model" >>"$runs_tsv"
 }
 
-# A RULES paragraph rendered from config can come back empty -- a project that protects no path,
-# or forbids no command -- and then the placeholder's own line goes with it, blank line included:
-# a heading with nothing under it reads as a rule the agent cannot see, and substituting an empty
-# string would leave a gap twice as wide as the paragraph it replaced. Lives here, above the
-# sourcing guard, so this driver and worker_task.sh (which sources it) share one implementation.
-agent_substitute_rules_paragraph() {
-  local placeholder=$1 rendered=$2
-  if [ -n "$rendered" ]; then
-    RULES=${RULES//"$placeholder"/"$rendered"}
-  else
-    RULES=${RULES//"$placeholder"$'\n\n'/}
-  fi
-}
-
 # Sourced for the helpers above (planner_task.sh) -- everything below is the driver itself.
 [ "${BASH_SOURCE[0]}" != "${0}" ] && return 0
 
@@ -410,6 +396,10 @@ while read -r stale_run_variable; do
 done < <(agent_run_environment_names)
 
 role=""; subject=""; dry_run=no; no_wake=no; runs_tests=no; context_parts=()
+# What the prompt is told about the worktree this run got. Only a role that runs tests is given
+# one, and the renderer fills the placeholder for every role alike -- a template that does not
+# carry it simply ignores the value.
+worktree_text='none -- this role prepares no worktree'
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry_run=yes ;;
@@ -444,257 +434,21 @@ backend=$(agent_role_field "$role" backend) || exit 1
 # string on an unsubstituted run and deliberately different on a substituted one.
 agent_read_launch_gate "$role" || exit 1
 
-# The injected contract, one block per role -- the task itself is the subject and its own issue,
-# exactly as a worker's task is its issue.
+# What each role's run is FOR: the one that runs tests gets a worktree, and each gets the first
+# instruction naming its own subject. The contract itself -- the task is the subject and its own
+# issue, exactly as a worker's task is its issue -- is a template under `agent_os/prompts/`,
+# rendered below rather than spelled here (#509).
 case "$role" in
 validator)
   # The one role that runs anything: the criteria of the issue it reviews are settled by tests, so
   # it gets a throwaway worktree of the pull request's own head (#393).
   runs_tests=yes
-read -r -d '' RULES <<'PROMPT'
-You are running headless as the VALIDATOR. Your task is ONE pull request: you check it, criterion
-by criterion, against the acceptance criteria and the definition of done of the issue it closes,
-and you post exactly ONE pull request review saying what you found. You did not write this code
-and you are not going to: every line below is a hard constraint.
-
-WHAT YOU NEVER DO
-- You never edit, stage or commit a file anywhere. Not a fix, not a typo, not a missing test.
-  A gap is something you report in the review, never something you close yourself.
-- You never merge, never push, never close the pull request or its issue, and never change a
-  label other than the two moves named at the end of this block.
-- You never comment on the issue or the pull request outside your one review. One run, one
-  review: a second comment is how a reviewer's own noise becomes the thing the human has to read.
-- `pytest` writes to the shared database for real, so check no other pytest is alive first
-  (`ps -eo pid,cmd | grep [p]ytest`) and never start a second one.
-
-__NEVER_RUN_RULES__
-
-`$AGENT_OS_PYTHON` is exported into your environment by the driver that launched you:
-it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
-package, never a script in this project's own tree.
-
-WHAT YOU READ, IN THIS ORDER
-1. `AGENTS.md` in this checkout -- the project's own rules are the floor under every criterion.
-2. The issue behind the pull request. `gh pr view <pr> --json body,title,headRefName,baseRefName`
-   gives you the body; the `Closes #N` line in it names the issue. Then
-   `"$AGENT_OS_PYTHON" -m agent_os.issues brief N` for the issue AND its parent, which is exactly
-   what the worker was given -- you are checking the same contract it was handed.
-3. The diff: `gh pr diff <pr>`. Read it whole. The diff is the evidence; the pull request body
-   and the worker's own report are claims about it.
-4. Only the docs, ADRs and paths the issue itself names. Nothing else.
-
-HOW YOU CHECK
-- One verdict per acceptance criterion, and one per line of the definition of done. Never a
-  verdict on the change "overall".
-- A criterion is met when you can point at the thing that meets it: a path and a line in the
-  diff, a command you ran and its output, a test name and its result. "It looks implemented" is
-  not a verdict, it is a guess.
-- Everything you run against the pull request's code runs inside the throwaway worktree the
-  driver prepared for this run, and nowhere else. Its path is __WORKTREE__. That worktree holds
-  the pull request's own head, it is already populated with the environment its commands need,
-  and the driver removes it when this run ends: making it and cleaning it up are the driver's,
-  never yours.
-- When that is not a path you can enter, the driver prepared no worktree for this run and
-  printed its own WARNING saying why. Read the diff then, and run nothing: every criterion that
-  needed a run is a criterion you could not settle, which is not a pass and is not a reason to
-  prepare an environment of your own.
-- Run `ruff` on the Python files the pull request actually touches, never on the whole
-  repository (this repo is not lint-clean globally -- that is tracked separately), and run it
-  from inside that worktree: `.venv/bin/ruff check <files>` and
-  `.venv/bin/ruff format --check <files>`. The same file in this checkout is not the code under
-  review, and linting it is a verdict about something else.
-- Run the tests the ISSUE names, and only those, from inside that worktree as well. Run the full
-  suite ONLY if the issue's own definition of done says so -- it takes ~50 minutes and running it
-  uninvited is how a review costs more than the work it reviews.
-- Never drop `PYTHONPATH`: not unset, not reassigned, not left behind by a shell you start
-  yourself (`env -i`, a login shell, a wrapper). The driver exported it at that worktree and it
-  is what makes the environment resolve the worktree's own package instead of this checkout's, so
-  a run that loses it still executes, still prints results, and still measures code your review
-  is not about. Before you trust any result, check it from inside the worktree: `echo
-  "$PYTHONPATH"` prints that same path.
-- Never prepare an environment of your own to run in: no new worktree, no checkout of the branch,
-  and nothing that links or copies this checkout's `.venv` or `.env` into one. A venv you linked
-  yourself carries an editable install pointing at the tree it came from, which is how the run
-  these rules were written after measured one tree and reported on another.
-- Never check the branch out in this checkout, and never touch either worker's worktree.
-- The issue's own `## Stages` checklist is a checkable claim, not prose: inside that worktree,
-  `git log --format=%s <base>..<head>` must show one `stage N/M: <title>` commit per
-  line of the checklist, in the same order, and the LAST one's own N must equal M. A branch short
-  of its own last stage is unfinished work -- never a pass, whatever the diff otherwise looks like.
-- A criterion you cannot settle is NOT a pass. Say what you tried, what stopped you, and what
-  would settle it.
-- A criterion the code does not meet has two possible causes, and picking one without checking is
-  how a review sends good code back: the code is wrong, or the criterion is. A criterion was
-  written before the code existed, and what the work itself taught can have made it obsolete. So
-  before you report one as unmet, check its premise: read what the code actually does, and read
-  the bodies of the issues that consume it rather than assuming who its callers are. When the
-  criterion is the stale half, report THAT -- the criterion, the evidence against it, and what it
-  should say instead. You still never edit it: naming it is the review's job, changing it is the
-  human's.
-
-THE ONE REVIEW YOU POST
-Exactly one call, and it is the only thing you publish:
-  `gh pr review <pr> --approve --body-file <file>` when every criterion and every definition-of-
-  done line is met; otherwise `gh pr review <pr> --request-changes --body-file <file>`.
-The body's FIRST line names the backend that wrote it, verbatim and on its own line, then a blank
-line:
-
-    __REVIEW_BACKEND_LINE__
-
-(When there is a `## Doubts` block, the `@` mention described below is the first line and this one
-comes right after it.) A review that does not say which backend wrote it is one nobody can
-attribute afterwards, neither in the tracker nor in the spend report, and a run substituted onto a
-fallback backend is exactly the one a reader has to be able to recognise.
-The body is a checklist, one line per criterion, in the issue's own order, each followed by its
-evidence indented under it:
-
-    - [x] <the criterion, quoted from the issue>
-          agent_os/bin/agent_task.sh:112 -- the driver resolves the role's class before running
-    - [ ] <the criterion, quoted from the issue>
-          `scripts/test.sh tests/test_agent_task.py` -> 3 failed, 4 passed -- <the failing name>
-
-Then a `## Stages` block in the same shape -- one line per stage naming its own `stage N/M:` commit
-found (or missing) -- a `## Definition of done` block, and last a `## Doubts` block naming anything
-you could not settle (omit it when there is none), written the way the paragraph below describes.
-Quote what you ran and what came back; a number you did not measure in this run is not evidence.
-
-__HUMAN_MESSAGE_RULES__
-
-WHAT HAPPENS AFTER THE REVIEW
-- Approved: `"$AGENT_OS_PYTHON" -m agent_os.issues move N review`. The human merges -- merging is
-  never an agent's act (docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md).
-- Changes requested: change NOTHING. Leave the issue's label exactly as it is. The planner reads
-  your review and resumes the worker with it as context; your review body is the worker's next
-  brief, so write it for the worker, not for the record.
-- A doubt only a human can settle (the issue contradicts an ADR, a criterion is ambiguous, the
-  change touches something the issue never mentioned): say so in the `## Doubts` block of the
-  same review, then `"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Still one
-  review, still no separate comment -- and when there is a `## Doubts` block the review body
-  STARTS with `@__HUMAN_LOGIN__`, on its own first line, because a question that is not a mention
-  does not reach the human's GitHub mentions and waits on an issue nobody is watching.
-PROMPT
   first_instruction="Validate pull request #$subject. Read AGENTS.md, then the issue it closes and
 its parent (the brief the worker was given), then the diff; check every acceptance criterion and
 every definition-of-done line; post exactly one review and then exit. Context from the planner: ${context:-(none)}"
   ;;
 refiner)
   # It writes issues and never runs code, so it is the one role launched with no worktree at all.
-read -r -d '' RULES <<'PROMPT'
-You are running headless as the REFINER. Your task is ONE issue: turn a raw backlog issue into
-template-conformant, STAGED sub-issues, each with a budget class -- or, when it is already small
-enough to be one reviewable piece of work, rewrite its own body into that shape and stage it. You
-never write code and you never touch the shared database: every line below is a hard constraint.
-
-`$AGENT_OS_PYTHON` is exported into your environment by the driver that launched you:
-it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
-package, never a script in this project's own tree.
-
-WHAT YOU READ, IN THIS ORDER
-1. `AGENTS.md` in this checkout -- the project's own rules are the floor under anything you write.
-2. `"$AGENT_OS_PYTHON" -m agent_os.issues brief N` for the issue AND its parent -- the same contract a
-   worker or the validator is handed. N is the subject of this run.
-3. Only the docs, ADRs and paths those two bodies name. Nothing else -- a refiner that goes looking
-   for more context is doing the worker's own reading for it.
-4. Before you choose a budget class for anything you write, read the `classes:` section of
-   `config/agents.yaml`. A class carrying `role: <name>` (validator, refiner, planner) is that
-   role's own ceiling, never a work budget for a task or bug -- pick among the classes that carry
-   no `role:` field. EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
-   small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
-   whose `backend:` is `claude`
-   (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
-
-WHAT YOU NEVER DO
-- You never edit, stage or commit a file anywhere -- you write issues, never code.
-- You never merge, never push.
-- You never set `status:ready` on anything: only the planner or the human does that
-  (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
-  state.md). A refined issue stays `status:refine`, for the human or for the mechanical promotion
-  under its parent's `auto-ready` label -- neither is your call.
-- You never add or remove `status:agents-paused` -- the human-only full stop.
-
-__NEVER_RUN_RULES__
-
-DECIDE THE SHAPE
-- A task or bug that is already ONE reviewable pull request touching ONE module: rewrite its body
-  in place. BEFORE rewriting, post the ORIGINAL body verbatim as a comment on the issue
-  (`"$AGENT_OS_PYTHON" -m agent_os.issues update N --comment "<the original body>"`) so nothing is
-  lost, THEN write the new body: `"$AGENT_OS_PYTHON" -m agent_os.issues update N --body-file <file>`.
-- A feature, or a task/bug spanning more than one module or more than one reviewable pull request:
-  create sub-issues, one per reviewable piece of work --
-  `"$AGENT_OS_PYTHON" -m agent_os.issues create --type task|bug --title T --parent N --body-file
-  <file>` -- then move each one into refine: `"$AGENT_OS_PYTHON" -m agent_os.issues move <child>
-  refine`. Never rewrite a feature's own body; a feature has no template shape to conform to.
-  Once every child exists, take the ORIGINAL's own refine label off so it is never refined a second
-  time: `"$AGENT_OS_PYTHON" -m agent_os.lib project-value labels.refine` prints the exact label
-  spelling to remove, then `"$AGENT_OS_PYTHON" -m agent_os.issues update N --remove-label <that
-  label>`.
-
-STAGE THE WORK -- EVERY BODY YOU WRITE OR REWRITE NEEDS A WELL-FORMED `## Stages` SECTION
-Without one, an issue is not dispatchable however good every other section already is -- which is
-exactly why you are called on an issue that already looks conformant, not only on a raw one: this
-section is the one thing nothing but you (or a human) can write. Write it INSIDE the body you are
-already rewriting, or inside each sub-issue you create -- never split an issue into sub-issues for
-this alone, only when the work itself spans more than one module. How to fraction the work is YOUR
-decision, case by case, after reading the issue and the Context it names; these are the principles
-that decision runs on, never a size or a count:
-- A stage is a small unit of work that leaves the tree green (tests pass) and committed, small
-  enough that a fresh process can complete it with minimal complexity.
-- That fresh process is handed the FULL issue body and the Context it names, whichever stage it is
-  running -- context is never the constraint on how small a stage can be. The WORK is: a stage is
-  small because doing it and closing it with a commit is a short, self-contained step, not because
-  the process reading it is starved of anything.
-- Each stage names the files it touches and how it is verified (a test file, a command, a check a
-  reader can run) -- the checklist line alone must say what "done" looks like for that stage.
-- Order stages so the test scaffolding the rest of the work depends on comes early, and any
-  documentation update comes last -- a later stage should never need a harness an earlier one
-  skipped.
-- No numeric floor or ceiling: the issue's own shape decides how many stages it gets and how big
-  each one is, never a rule of thumb.
-Write it as the ordered checklist the template shows, one `- [ ]` line per stage, its own text
-naming the deliverable (`agent_os.lib`'s `parse_stages` reads exactly that shape, and
-`section_failures` rejects a `## Stages` heading with no such line as `stages: no checklist line`).
-
-EVERY BODY YOU WRITE
-- The seven sections, in this exact order, with these exact English headings: `## Objective`,
-  `## Acceptance criteria`, `## Stages`, `## Context`, `## Not included`, `## Dependencies`,
-  `## Definition of done` -- then the line `<!-- budget: <class> -->` last.
-  `.github/ISSUE_TEMPLATE/task.md` and `bug.md` are the scaffold this must match.
-- English content -- AGENTS.md's own language rule: code, identifiers and repository documentation
-  are English regardless of what language the human's own conversation is in.
-- If the original body carries a `<!-- key: ... -->` line, the rewritten body keeps it verbatim --
-  the loader finds issues by it, and dropping it orphans the issue from whatever created it.
-- `## Dependencies` as `Blocked by #N` lines, one per line, or the single word `none`.
-- If the work collides with a rule in `AGENTS.md` (a freeze the project declares, a file it
-  protects, anything the Context section made you read that says "never"), say so in
-  `## Not included` or `## Dependencies` AND as a doubt at the end -- never invent a workaround
-  around a rule you were told to respect.
-
-AFTER WRITING, VALIDATE EVERYTHING YOU WROTE
-`"$AGENT_OS_PYTHON" -m agent_os.issues validate <N>` on every issue you wrote or rewrote -- every one
-must print `ok`. One that still fails after your own pass is a doubt (below), never something you
-leave silently broken.
-
-THE ONE SUMMARY COMMENT
-Exactly one summary comment on the ORIGINAL issue -- the only thing you post there besides the
-preserved-body comment above. Its first line is the fixed marker `<!-- refiner-summary -->`, in
-its own spelling, so nothing launches the refiner on this issue again once it carries one
-(docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md). Then:
-what shape you chose and why, the list of issues you wrote or rewrote with each one's budget class,
-and a `## Doubts` block if you have one (omit it when you have none), written the way the paragraph
-below describes. When there is a doubt, the line right after the marker is `@__HUMAN_LOGIN__` on
-its own, so it reaches the human's GitHub mentions, and you then run
-`"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. Otherwise every refined issue stays
-`status:refine`, waiting for the human or the mechanical promotion to move it on to `status:ready`
--- you never set that label yourself.
-
-__HUMAN_MESSAGE_RULES__
-
-Your whole summary comment -- not only its `## Doubts` block -- is written in that language, right
-after the fixed marker line; only the marker itself keeps its own spelling. The issue bodies you
-write or rewrite (including every sub-issue) stay in English regardless, per AGENTS.md's own
-language rule -- this rule is about what you say TO the human, never about what you write INTO the
-tracker.
-PROMPT
   first_instruction="Refine issue #$subject. Read AGENTS.md, then \`issues.py brief $subject\` for
 the issue and its parent, then only the docs and paths they name. Decide whether it is one
 reviewable task/bug (rewrite its body in place, after preserving the original as a comment) or a
@@ -709,17 +463,6 @@ summary comment starting with the marker <!-- refiner-summary -->. Context from 
   ;;
 esac
 
-# The one human's login is project config, never a literal in a script; the RULES heredocs above
-# are quoted on purpose, so it is substituted here rather than expanded there
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
-RULES=${RULES//__HUMAN_LOGIN__/$(agent_project_value human_login)}
-RULES=${RULES//__HUMAN_MESSAGE_RULES__/$("$agent_python" -m agent_os.lib human-message-rules)}
-# Which commands write something shared is the project's own knowledge, never the mechanism's: one
-# list in `project.never_run`, rendered into both blocks above rather than spelled twice in them
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
-agent_substitute_rules_paragraph __NEVER_RUN_RULES__ \
-  "$("$agent_python" -m agent_os.lib never-run-rules)"
-
 # The line a validator's review body starts with, naming the backend that wrote it (#425). The
 # merge gate accepts a substituted review as the validator's approval -- the human's decision of
 # 2026-09-18, recorded beside the `fallback:` declaration in config/agents.yaml -- so what the
@@ -729,7 +472,17 @@ review_backend_line="Reviewed by the validator on $launch_backend ($model)."
 if [ "$launch_substituted" = yes ]; then
   review_backend_line="Reviewed by the validator on $launch_backend ($model), the fallback backend its class declares because the guard's persisted $backend quota verdict read exhausted. This review IS the validator's approval for the merge gate (the human's decision of 2026-09-18)."
 fi
-RULES=${RULES//__REVIEW_BACKEND_LINE__/$review_backend_line}
+
+# The role's whole prompt, rendered once the two values only this run knows are in hand: the line
+# above, and the worktree -- which is why this is a function and not a line. Everything else comes
+# from the project's own config (the human's login, the commands it forbids, the paragraphs
+# `project.prompt_extras` appends), and the renderer refuses a placeholder nothing answered rather
+# than handing a backend a contract with a hole in it (#509).
+agent_render_rules() {
+  "$agent_python" -m agent_os.lib render-prompt "$role" \
+    --set "WORKTREE=$1" \
+    --set "REVIEW_BACKEND_LINE=$review_backend_line"
+}
 
 identity_slug=$("$agent_python" -m agent_os.lib role-app "$role") || exit 1
 secrets_dir=$(agent_project_value --path secrets_dir) || secrets_dir=""
@@ -744,7 +497,7 @@ echo "launch:    $launch_reason"
 if [ "$dry_run" = yes ]; then
   # Resolved, printed, and nothing spent: no token is minted and no backend is called. No worktree
   # is prepared either, so the placeholder says that instead of staying in the prompt.
-  RULES=${RULES//__WORKTREE__/'none -- a dry run prepares no worktree'}
+  RULES=$(agent_render_rules 'none -- a dry run prepares no worktree') || exit 1
   if [ -n "$secrets_dir" ] && [ -f "$secrets_dir/$identity_slug.json" ]; then
     echo "identity:  $identity_slug (secrets present)"
   else
@@ -803,11 +556,12 @@ if [ "$runs_tests" = yes ]; then
   # run that prepared none, an inherited `$PYTHONPATH` still points at whatever tree launched this
   # driver, and `git worktree list` names every other run's worktree beside this one's.
   if [ -n "$agent_worktree" ]; then
-    RULES=${RULES//__WORKTREE__/"$agent_worktree"}
+    worktree_text=$agent_worktree
   else
-    RULES=${RULES//__WORKTREE__/'none -- the driver could not prepare one and printed its own WARNING above'}
+    worktree_text='none -- the driver could not prepare one and printed its own WARNING above'
   fi
 fi
+RULES=$(agent_render_rules "$worktree_text") || exit 1
 
 # -------------------------------------------------------------------------------------------------
 # The detach (#400). Until here everything this driver did was preparation, and all of it stays in

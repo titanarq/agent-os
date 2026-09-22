@@ -14,6 +14,8 @@ from __future__ import annotations
 import pathlib
 import re
 
+import yaml
+
 from agent_os.cli import AGENT_OS_DIR
 
 # The HOST project whose `config/agents.yaml` the helper patches: the directory the package sits in.
@@ -48,4 +50,24 @@ def config_with_never_run(tmp_path, items):
     assert count == 1, "config/agents.yaml's project.never_run block changed shape"
     path = pathlib.Path(tmp_path) / "agents.yaml"
     path.write_text(patched)
+    return path
+
+
+def config_with_no_host_text(tmp_path, name="agents-without-host-text.yaml"):
+    """A copy of the real config/agents.yaml with every key a host fills PROMPT TEXT from emptied:
+    the commands it forbids, the two path lists, the environment it exports, and the extra-prompt
+    files it owns. What a role's rendered prompt still says under this config is the mechanism's
+    own contract and nothing else, which is what the literal tests measure (#363, #509).
+
+    A yaml round-trip rather than a regex over the text: five keys of four different shapes, and
+    the file's comments are of no use to a fixture."""
+    data = yaml.safe_load((HOST_ROOT / "config" / "agents.yaml").read_text())
+    data["project"]["never_run"] = []
+    data["project"]["forbidden_paths"] = []
+    data["project"]["merge_audit_exempt_paths"] = []
+    data["project"]["worker_environment"] = {}
+    data["project"]["prompt_extras"] = {}
+    data["mechanism"]["own_paths"] = []
+    path = pathlib.Path(tmp_path) / name
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
     return path
