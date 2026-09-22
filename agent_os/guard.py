@@ -343,8 +343,10 @@ def budget_exceeded(
     own stream parser (#514) -- the default shape when the caller does not know the backend."""
     if summary.context > task_class.max_context:
         return True
+    # `summary.result` IS the terminal event, whatever its own `type` field says, so the parser is
+    # handed it as one.
     own_result = (
-        (parser or backend_stream_parser()).result_usage([summary.result])
+        (parser or backend_stream_parser()).result_usage([{**summary.result, "type": "result"}])
         if summary.result
         else None
     )
@@ -1105,7 +1107,7 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         reason = "budget"
     # The backend's own `quota:` capability, never its name (#514): a backend whose stream carries
     # no quota signal to act on (`quota: none`) is recorded above and never cut here.
-    elif backend_quota_cuts(backend) and current_quota == "exhausted":
+    elif backend_quota_cuts(backend, project=PROJECT) and current_quota == "exhausted":
         reason = "quota"
     elif (
         liveness_expired(progress_text, run_started_at, now, observed_at=progress_observed_at)

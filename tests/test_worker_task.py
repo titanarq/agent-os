@@ -1173,10 +1173,20 @@ def test_open_pr_pushes_a_branch_that_drops_the_diary_it_inherited(worker_at_its
 def test_the_pr_exists_before_the_worker_finished_event_is_written():
     # The planner is woken by that event and its first act is to hand the pull request to the
     # validator, so the order of these two lines in the run's own subshell is the contract.
+    # One pair per launch dialect; since #514 the backend is `"$WORKER_BACKEND"`, not a literal.
     driver = DRIVER.read_text()
-    for backend in ("qwen", "claude"):
-        pr_step = driver.index(f'"$AGENT_OS_DIR/bin/worker_task.sh" {backend} open-pr')
-        exit_hook = driver.index(f"-m agent_os.guard check {backend}")
+    pr_steps = [
+        match.start()
+        for match in re.finditer(
+            r'"\$AGENT_OS_DIR/bin/worker_task.sh" "\$WORKER_BACKEND" open-pr', driver
+        )
+    ]
+    exit_hooks = [
+        match.start()
+        for match in re.finditer(r'-m agent_os.guard check "\$WORKER_BACKEND"', driver)
+    ]
+    assert len(pr_steps) == len(exit_hooks) == 2
+    for pr_step, exit_hook in zip(pr_steps, exit_hooks, strict=True):
         assert pr_step < exit_hook
 
 
