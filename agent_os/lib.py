@@ -340,6 +340,12 @@ class ProjectConfig(Strict):
     board_number: int
     secrets_dir: str = ".secrets/gh_apps"
     planner_app: str = "planner"
+    # The base name of the systemd --user units that run the tick: `<this>.service`,
+    # `<this>.timer` and `<this>.service.d/override.conf` under `~/.config/systemd/user/`.
+    # `agent_os.install` needs it to know what to write and `agent_os.doctor` to know what to
+    # check; empty means neither has been told a name yet, so both refuse loudly rather than
+    # guessing one from the repository's name (docs/AGENT_OS.md §7 row (h)).
+    guard_unit: str = ""
     # The GitHub login of the one human. A question addressed to them starts with `@<login>` so it
     # reaches their mentions; the drivers substitute it into the RULES they inject, which is why no
     # script under the mechanism spells a person's name.

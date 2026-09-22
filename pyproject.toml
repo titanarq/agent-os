@@ -21,6 +21,7 @@ dependencies = [
 agent-os-guard = "agent_os.guard:main"
 agent-os-issues = "agent_os.issues:main"
 agent-os-lib = "agent_os.lib:main"
+agent-os-install = "agent_os.install:main"
 
 [dependency-groups]
 dev = [

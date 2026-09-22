@@ -24,6 +24,10 @@ project:
   secrets_dir: .secrets/gh_apps
   # The planner's own App slug, distinct from any worker's.
   planner_app: your-repo-planner
+  # The base name of the systemd --user units `agent_os.install` writes and `agent_os.doctor`
+  # checks: `<this>.service`, `<this>.timer`, `<this>.service.d/override.conf`. Empty refuses
+  # both commands rather than inventing a name from the repository's own.
+  guard_unit: your-repo-guard
   # The one human. Substituted into every `@<login>` a role writes.
   human_login: your-github-login
   # Language for anything addressed to the human. Code, identifiers, commits and repository
