@@ -77,7 +77,20 @@ project_value() { "$agent_python" -m agent_os.lib project-value "$@"; }
 # from inside a worktree too (every worktree has its own copy of agent_os/bin/worker_task.sh), and in
 # that case $main would resolve to the worktree, not the checkout the RULES below need to name.
 # The shared .git directory always lives in the main checkout, worktree or not.
-main_checkout() { dirname "$(git rev-parse --path-format=absolute --git-common-dir)"; }
+#
+# `git rev-parse` failing (no `.git` anywhere above $PWD) is captured and checked explicitly:
+# under `set -uo pipefail` -- no `-e` -- an unchecked `dirname "$(failing-command)"` would still
+# exit 0 (dirname succeeds on the empty string it gets), so the caller's `|| exit 1` never fires
+# and a half-derived "." reaches the rendered RULES instead of stopping the driver. The same bug
+# `capture_golden.sh`'s own `main_checkout` resolution was fixed against (#512).
+main_checkout() {
+  local common_dir
+  common_dir=$(git rev-parse --path-format=absolute --git-common-dir) || {
+    echo "main_checkout: $PWD is not a git repository" >&2
+    exit 1
+  }
+  dirname "$common_dir"
+}
 
 backend=${1:-}
 case "$backend" in
@@ -222,8 +235,15 @@ MECHANISM=$("$agent_python" -m agent_os.lib mechanism-paths-regex)
 # The main checkout's path is the one value only this run knows: derived, not configured -- see
 # main_checkout() above. A prompt that will not render stops the driver here, because a backend
 # launched on a half-written contract is worse than one not launched at all.
+#
+# Resolved into its own variable BEFORE the `--set` it feeds: `main_checkout`'s `exit 1` runs
+# inside the subshell a nested `$(main_checkout)` would create, which only ends that subshell --
+# nested inside another substitution's argument, its failure is never checked and render-prompt
+# would run anyway, on an empty MAIN_CHECKOUT. As its own assignment, `$?` is `main_checkout`'s
+# own exit status and `|| exit 1` stops this driver before render-prompt is even invoked.
+main_checkout_value=$(main_checkout) || exit 1
 RULES=$("$agent_python" -m agent_os.lib render-prompt worker \
-  --set "MAIN_CHECKOUT=$(main_checkout)") || exit 1
+  --set "MAIN_CHECKOUT=$main_checkout_value") || exit 1
 
 # `alive_pidfile` takes an explicit path so `start` can also ask about backends other than this
 # one (#374, the parallelism cap below) -- `alive` is this backend's own pidfile, unchanged.

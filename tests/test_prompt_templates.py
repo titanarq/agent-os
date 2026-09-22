@@ -6,9 +6,11 @@ paragraphs roedor's own `config/agent_prompts/` supplies -- COPIED in below rath
 from this checkout, the same way `agent_os/tests/golden/*.md` itself is allowed to carry a host's
 literal text (#509, #510, #512): both are snapshots of one host's rendering, not text a second host
 reads through this suite. `AGENT_OS_HOST_ROOT` points every launched driver at a throwaway
-directory carrying only those two files, so the capture is exactly as reproducible outside this
-checkout as everywhere else in this suite (#512 -- this was the one test left reading a host's real
-`config/agents.yaml`, through `capture_golden.sh`'s bare invocation).
+directory carrying only those two files and a `.git` of its own (`worker_task.sh`'s
+`main_checkout()` needs a real repository to name, not just a config to read), so the capture is
+exactly as reproducible outside this checkout as everywhere else in this suite (#512 -- this was
+the one test left reading a host's real `config/agents.yaml`, through `capture_golden.sh`'s bare
+invocation).
 
 Pure filesystem and subprocess: nothing here launches a backend, mints an identity or touches a
 database.
@@ -83,6 +85,27 @@ def captured(tmp_path_factory) -> pathlib.Path:
             "    refiner: config/agent_prompts/refiner.md\n",
             1,
         )
+    )
+    # A real checkout for `worker_task.sh`'s `main_checkout()` to name: without a `.git` here, the
+    # rendered worker RULES would fail to render at all (#512 follow-up -- `main_checkout()` used
+    # to answer a silent "." instead, which is what golden/worker.md used to certify). Same recipe
+    # the out-of-tree CI step uses to make a bare copy a real repository.
+    subprocess.run(["git", "init", "-q"], cwd=host, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=host, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+        cwd=host,
+        check=True,
     )
 
     out = tmp_path_factory.mktemp("captured-prompts")

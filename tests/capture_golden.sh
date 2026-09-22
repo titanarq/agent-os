@@ -31,7 +31,21 @@ mkdir -p "$out"
 # sentinel no placeholder syntax can be confused with; and a live quota verdict in the host's real
 # `.cache/` decides which backend a one-shot role resolves to, so the drivers are pointed at an
 # empty cache directory that holds none.
-main_checkout=$(cd "$root" && dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+#
+# The sentinel has to be computed from wherever the drivers below will ACTUALLY land, not always
+# `$root`: `worker_task.sh`'s own `main_checkout()` derives the checkout from `$PWD` after
+# `agent_task.sh`'s `cd "$agent_main"`, and `agent_main` is `$AGENT_OS_HOST_ROOT` when a caller set
+# one -- the `captured` fixture's throwaway host, #512 -- not `$root`. Computing it from `$root`
+# regardless meant the substitution below matched nothing there, and a bare "." (the same defect
+# `main_checkout()` was fixed against, #512 follow-up) leaked straight into the golden file. Fails
+# loudly rather than the historic `dirname "$(failing-command)"` pattern, which still exits 0 on
+# an empty argument and would silently normalize nothing.
+checkout_root=${AGENT_OS_HOST_ROOT:-$root}
+common_dir=$(cd "$checkout_root" && git rev-parse --path-format=absolute --git-common-dir) || {
+  echo "capture_golden: $checkout_root is not a git repository" >&2
+  exit 1
+}
+main_checkout=$(dirname "$common_dir")
 cache=$(mktemp -d)
 trap 'rm -rf "$cache"' EXIT
 export WORKER_CACHE_DIR=$cache

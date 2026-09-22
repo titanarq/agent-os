@@ -6,7 +6,7 @@ because it already went wrong once.
 
 WHERE YOU WORK
 - Your checkout is the current directory. Never edit, stage, or commit anything under
-  . -- that is the other agent's checkout. You may READ it (its
+  <HOST-MAIN-CHECKOUT> -- that is the other agent's checkout. You may READ it (its
   .cache/ holds inputs you may copy) but you may never write there.
 - Work on the branch you are already on. Never switch branches, never rebase, and never run a
   destructive git command anywhere: no `reset --hard`, no `checkout .`, no `clean -fd`, no

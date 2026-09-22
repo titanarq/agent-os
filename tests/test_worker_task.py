@@ -262,6 +262,34 @@ def test_the_resolved_rules_name_the_main_checkout_by_derivation_not_a_literal()
     assert "__MAIN_CHECKOUT__" not in result.stdout
 
 
+def test_a_host_root_that_is_not_a_git_repository_fails_loudly_and_renders_no_rules(tmp_path):
+    """`main_checkout()` derives the checkout from `git rev-parse --git-common-dir`, and a host
+    root with no `.git` at all must not resolve to a bare "." -- the defect a golden comparison
+    caught once already (#512 follow-up): under `set -uo pipefail` (no `-e`), `dirname` on a
+    failed substitution still exits 0, so an unchecked call renders a half-written prompt instead
+    of stopping the driver. This asserts the driver now stops before rendering anything at all and
+    says why on stderr, the regression this golden certified without anyone noticing."""
+    host = tmp_path / "host"
+    cache = host / ".cache"
+    cache.mkdir(parents=True)
+    result = subprocess.run(
+        ["bash", str(DRIVER), "claude", "rules"],
+        cwd=host,
+        env={
+            **os.environ,
+            "AGENT_OS_HOST_ROOT": str(host),
+            "WORKER_CACHE_DIR": str(cache),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "main_checkout" in result.stderr
+    assert "not a git repository" in result.stderr
+
+
 def test_the_resolved_rules_name_the_test_command_by_substitution_not_a_literal():
     """#350: the worker's own connection is read-only by default, and the rules point it back to
     the owner role through `project.test_command` -- injected the same way as __HUMAN_LOGIN__ and
