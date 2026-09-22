@@ -3317,6 +3317,133 @@ def test_branch_honours_an_explicit_from_verbatim(tmp_path):
     assert new_head == earlier_head
 
 
+# --------------------------------------------------------------------------------------------
+# `init` -- creates the worktree if absent (#392, docs/AGENT_OS.md §7 row (r))
+# --------------------------------------------------------------------------------------------
+# Unlike `branch`, `init` runs before any worktree exists, so its fetch has nowhere to run but
+# `$main` -- which `agent_task.sh` resolves from `AGENT_OS_HOST_ROOT` and `cd`s into. These tests
+# override it with a throwaway HOST ROOT of their own, pushed to a throwaway (bare, local) origin,
+# so `init`'s fetch never touches the real repository or the network.
+
+
+def _minimal_host_root(tmp_path, *, name="main_checkout"):
+    """The smallest `AgentsConfig` accepts, committed and pushed to a local bare origin -- `init`
+    only ever reads `project.repo`/`tracking_epic`/`board_number` (required) and `classes` (an
+    empty mapping is a valid, if pointless, one)."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    root = tmp_path / name
+    root.mkdir()
+    _git("init", "-q", "-b", "main", cwd=root)
+    _git("config", "user.email", "host@example.invalid", cwd=root)
+    _git("config", "user.name", "host", cwd=root)
+    (root / "config").mkdir()
+    (root / "config" / "agents.yaml").write_text(
+        "project:\n  repo: owner/name\n  tracking_epic: 1\n  board_number: 1\nclasses: {}\n"
+    )
+    _git("add", "config/agents.yaml", cwd=root)
+    _git("commit", "-qm", "base", cwd=root)
+    _git("remote", "add", "origin", str(remote), cwd=root)
+    _git("push", "-q", "-u", "origin", "main", cwd=root)
+    return root
+
+
+def _init_environment(tmp_path, root, worktree):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    environment = dict(os.environ)
+    environment.update(
+        AGENT_OS_HOST_ROOT=str(root),
+        WORKER_WORKTREE=str(worktree),
+        WORKER_CACHE_DIR=str(cache),
+    )
+    return environment
+
+
+def _init(environment):
+    return subprocess.run(
+        ["bash", str(DRIVER), "claude", "init"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_init_creates_the_worktree_on_a_fresh_branch_from_origin_main(tmp_path):
+    root = _minimal_host_root(tmp_path)
+    worktree = tmp_path / "worktree"
+
+    result = _init(_init_environment(tmp_path, root, worktree))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "created" in result.stdout, result.stdout
+    assert (worktree / ".git").exists()
+
+    remote_tip = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "origin/main"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    branch_head = subprocess.run(
+        ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert branch_head == remote_tip
+    branch_name = subprocess.run(
+        ["git", "-C", str(worktree), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert branch_name == "agent-os/init-claude"
+
+
+def test_init_is_idempotent_on_an_already_initialized_worktree(tmp_path):
+    root = _minimal_host_root(tmp_path)
+    worktree = tmp_path / "worktree"
+    environment = _init_environment(tmp_path, root, worktree)
+    first = _init(environment)
+    assert first.returncode == 0, first.stdout + first.stderr
+
+    second = _init(environment)
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert "already initialized" in second.stdout, second.stdout
+    branch_name = subprocess.run(
+        ["git", "-C", str(worktree), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert branch_name == "agent-os/init-claude", "the second call must not have touched the branch"
+
+
+def test_init_links_venv_and_env_from_the_host_root_when_present(tmp_path):
+    root = _minimal_host_root(tmp_path)
+    (root / ".venv").mkdir()
+    (root / ".env").write_text("SECRET=1\n")
+    worktree = tmp_path / "worktree"
+
+    result = _init(_init_environment(tmp_path, root, worktree))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (worktree / ".venv").is_symlink()
+    assert (worktree / ".env").is_symlink()
+
+
+def test_init_refuses_when_the_fetch_fails_and_creates_nothing(tmp_path):
+    root = _minimal_host_root(tmp_path)
+    _git("remote", "set-url", "origin", "/no/such/path.git", cwd=root)
+    worktree = tmp_path / "worktree"
+
+    result = _init(_init_environment(tmp_path, root, worktree))
+    assert result.returncode != 0
+    assert "could not fetch origin/main" in result.stdout, result.stdout
+    assert not worktree.exists()
+
+
 def test_open_pr_merges_a_base_that_moved_ahead_before_pushing(worker_at_its_end):
     environment, worktree, remote, _cache, calls = worker_at_its_end
     _advance_the_base(remote, path="BASE.md", contents="moved\n", subject="the base moved ahead")

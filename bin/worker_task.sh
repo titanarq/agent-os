@@ -5,6 +5,9 @@
 # budget); nothing about them changed, they just apply to two backends now.
 #
 #   agent_os/bin/worker_task.sh <qwen|claude> rules                        # the resolved RULES block
+#   agent_os/bin/worker_task.sh <qwen|claude> init                         # create the worktree if absent
+#     idempotent: a worktree already there is left alone. `git worktree add` on a fresh branch
+#     from origin/main when there is none yet (#392, docs/AGENT_OS.md §7 row (r)).
 #   agent_os/bin/worker_task.sh <qwen|claude> branch <name> [<from>]       # fresh branch in that worktree
 #     no <from>: fetches and branches from origin/main, refusing if the fetch fails (#435) --
 #     an explicit <from> is honoured verbatim and fetches nothing.
@@ -757,6 +760,36 @@ case "${1:-status}" in
 rules)
   # The resolved block, for reading and for a test -- no worktree touched, no backend called.
   echo "$RULES"
+  ;;
+
+init)
+  # Idempotent: a worktree already there (however it got there -- by hand, or a previous `init`)
+  # is left exactly alone, on whatever branch it is already on. This is the ONLY subcommand that
+  # may run before the worktree exists at all (docs/AGENT_OS.md §7 row (r), issue #392): every
+  # other one refuses on `[ -e "$worktree/.git" ]` the same way `branch` does above.
+  if [ -e "$worktree/.git" ]; then
+    echo "$worktree already initialized (on $(git -C "$worktree" branch --show-current 2>/dev/null || echo '?'))"
+    exit 0
+  fi
+  # Same base resolution as `branch`'s own no-`<from>` case: the remote's tip, fetched from the
+  # MAIN checkout (there is no worktree yet to fetch from). A fresh branch, never `main` itself --
+  # a worktree cannot check out a branch another worktree (this one) already has checked out.
+  git -C "$main" fetch -q origin main \
+    || { echo "could not fetch origin/main -- refusing to init a worktree from a base nobody can name"; exit 1; }
+  init_branch="agent-os/init-$backend"
+  git -C "$main" worktree add -q -b "$init_branch" "$worktree" origin/main \
+    || { echo "git worktree add failed for $worktree"; exit 1; }
+  echo "created $worktree on $init_branch @ $(git -C "$worktree" rev-parse --short HEAD) (from origin/main)"
+  # `git worktree add` brings tracked files only; without these two gitignored links a worker
+  # cannot run a test (`.venv`) or reach a network credential (`.env`) the first time it starts --
+  # the same reasoning `agent_prepare_worktree`'s throwaway worktree already applies to a role run.
+  # A link, never a copy: one file stays authoritative for every tree.
+  for linked in .venv .env; do
+    if [ ! -e "$worktree/$linked" ] && [ -e "$main/$linked" ]; then
+      ln -s "$main/$linked" "$worktree/$linked"
+      echo "linked $worktree/$linked -> $main/$linked"
+    fi
+  done
   ;;
 
 branch)
