@@ -126,6 +126,17 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.streams import (
+    DEFAULT_STREAM_PARSER,
+    STREAM_PARSERS,
+    StreamParser,
+    UsageSummary,
+    get_stream_parser,
+)
+from agent_os.streams.claude_jsonl import (  # noqa: F401 -- re-exported: guard and tests import them here
+    result_total_tokens,
+    turn_context_tokens,
+)
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -1265,20 +1276,25 @@ def stages_completed(commit_subjects: list[str]) -> int:
     return completed
 
 
-def cumulative_cost_usd(jsonl_paths: list[pathlib.Path]) -> float:
+def cumulative_cost_usd(
+    jsonl_paths: list[pathlib.Path], *, parser: StreamParser | None = None
+) -> float:
     """Sum of `total_cost_usd` across many stage `.jsonl` logs -- what `max_cost_usd` is checked
     against for the whole issue, as the sum of its stage processes (#375), archived files under
     `.cache/spend/<issue>/` plus the live one. A file with no terminal `result` event (killed
-    before finishing) contributes 0, reusing the same `usage_summary` a single log's report uses."""
+    before finishing) contributes 0, read by the same stream parser a single log's report uses."""
+    parser = parser or backend_stream_parser()
     total = 0.0
     for path in jsonl_paths:
-        result = usage_summary(read_events(path)).result
+        result = parser.result_usage(read_events(path))
         if result:
-            total += float(result.get("total_cost_usd") or 0)
+            total += float(result.cost_usd or 0)
     return total
 
 
-def cumulative_total_tokens(jsonl_paths: list[pathlib.Path]) -> int:
+def cumulative_total_tokens(
+    jsonl_paths: list[pathlib.Path], *, parser: StreamParser | None = None
+) -> int:
     """Sum of the terminal `result` events' tokens across many stage `.jsonl` logs -- what
     `max_total_tokens` is checked against for the whole issue, the same scope
     `cumulative_cost_usd` above has, and the one of the two ceilings a Qwen class can cross
@@ -1288,11 +1304,12 @@ def cumulative_total_tokens(jsonl_paths: list[pathlib.Path]) -> int:
     figure UNDERCOUNTS an issue that had a stage cut before it finished: the tokens that stage
     spent are in its archived log and nothing here reads them. Stated rather than papered over --
     the alternative is trusting a per-turn sum, which no terminal event corroborates."""
+    parser = parser or backend_stream_parser()
     total = 0
     for path in jsonl_paths:
-        result = usage_summary(read_events(path)).result
+        result = parser.result_usage(read_events(path))
         if result:
-            total += result_total_tokens(result)
+            total += result.total_tokens
     return total
 
 
@@ -1434,56 +1451,25 @@ def read_events(path: pathlib.Path | str) -> list[dict]:
     return events
 
 
-def turn_context_tokens(usage: dict) -> int:
-    """Context size of one turn = everything it read: uncached input plus what came from the
-    prompt cache. A warm turn reports `input_tokens: 2, cache_read_input_tokens: 18919`; reading
-    `input_tokens` alone would call a 19k-token turn a 2-token one. Qwen reports the full figure in
-    `input_tokens` alone, so summing is right for both."""
-    return sum(
-        usage.get(k) or 0
-        for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
-    )
+def stream_parser_name_for_backend(backend: str) -> str:
+    """The stream parser a backend's logs are read with. Stage 2/3 of #514 replaces this derivation
+    with a read of the backend's own `stream:` entry in `config/agents.yaml`; until then the name
+    is `<backend>_jsonl` when that parser is registered, and the default shape otherwise -- which
+    is how every backend's log was read before the parsers had names, so a third backend reads
+    exactly as it did."""
+    candidate = f"{backend}_jsonl"
+    return candidate if candidate in STREAM_PARSERS else DEFAULT_STREAM_PARSER
 
 
-def result_total_tokens(result: dict) -> int:
-    """Tokens one run's terminal `result` event reports for the run as a whole. Qwen puts the
-    figure in `usage.total_tokens`, and its cache reads are already inside `input_tokens`: the
-    first archived stage log of #363 reports input 30,215,389 + output 196,945 = `total_tokens`
-    30,412,334, with `cache_read_input_tokens` 29,875,819 a part of that input and not an addition
-    to it. A log that reports no `total_tokens` falls back to the four counters summed, which is
-    the figure `usage-report` has always printed. ONE implementation for both, because what a
-    single stage's report shows and what the issue-wide ceiling is measured with are the same
-    number at two scopes (#387)."""
-    usage = result.get("usage") or {}
-    return usage.get("total_tokens") or (
-        turn_context_tokens(usage) + (usage.get("output_tokens") or 0)
-    )
+def backend_stream_parser(backend: str | None = None) -> StreamParser:
+    """`backend`'s parser, or the default one for a log whose backend the caller does not know."""
+    if backend is None:
+        return get_stream_parser(DEFAULT_STREAM_PARSER)
+    return get_stream_parser(stream_parser_name_for_backend(backend))
 
 
-@dataclass
-class UsageSummary:
-    session_id: str
-    turns: int
-    context: int
-    output_tokens: int
-    result: dict | None
-
-
-def usage_summary(events: list[dict]) -> UsageSummary:
-    context = out = turns = 0
-    session_id = ""
-    result = None
-    for event in events:
-        session_id = event.get("session_id") or session_id
-        usage = (event.get("message") or {}).get("usage") or event.get("usage") or {}
-        size = turn_context_tokens(usage)
-        if event.get("type") == "assistant" and size:
-            context = max(context, size)
-            turns += 1
-        out += usage.get("output_tokens") or 0
-        if event.get("type") == "result":
-            result = event
-    return UsageSummary(session_id, turns, context, out, result)
+def usage_summary(events: list[dict], *, parser: StreamParser | None = None) -> UsageSummary:
+    return (parser or backend_stream_parser()).turn_usage(events)
 
 
 def usage_failed(summary: UsageSummary) -> bool:
@@ -1498,30 +1484,22 @@ def usage_failed(summary: UsageSummary) -> bool:
     return bool(summary.result.get("is_error")) or text.startswith("[API Error")
 
 
-def quota_exhausted(events: list[dict]) -> str | None:
-    """Claude-only (see module docstring). Returns the reason string, or None if the quota looks
-    open. Authority order per the ADR: `rate_limit_event` first (it is the backend saying so on
-    every turn), the terminal `result`'s `api_error_status`/`is_error` as a fallback for a run that
-    ended before a `rate_limit_event` could report the rejection."""
-    for event in events:
-        if event.get("type") == "rate_limit_event":
-            info = event.get("rate_limit_info") or {}
-            if info.get("status") == "rejected":
-                windows = info.get("unifiedWindows") or {}
-                rejected = [w for w, v in windows.items() if v] or ["unknown"]
-                return f"rate_limit_event status=rejected window={rejected[0]}"
-    summary = usage_summary(events)
-    if summary.result and summary.result.get("is_error") and summary.result.get("api_error_status"):
-        return f"result api_error_status={summary.result['api_error_status']}"
-    return None
+def quota_exhausted(events: list[dict], *, parser: StreamParser | None = None) -> str | None:
+    """The reason string the backend refused the run with, or None if the quota looks open --
+    the stream parser's `quota_verdict` (`agent_os.streams`), which carries the authority order the
+    ADR sets."""
+    return (parser or backend_stream_parser()).quota_verdict(events).reason
 
 
-def quota_status(events: list[dict]) -> Literal["allowed", "exhausted"]:
+def quota_status(
+    events: list[dict], *, parser: StreamParser | None = None
+) -> Literal["allowed", "exhausted"]:
     """The same verdict as `quota_exhausted` above, as the word the guard's tick compares between
-    ticks and the driver's stage gate reads off a finished stage's log (#375). Claude-only, per
+    ticks and the driver's stage gate reads off a finished stage's log (#375). Per
     agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md --
-    Qwen's stream carries no comparable signal, so its runs always read `allowed`."""
-    return "exhausted" if quota_exhausted(events) else "allowed"
+    Qwen's stream carries no `rate_limit_event`, so its runs read `allowed` unless their terminal
+    `result` itself carries the refusal."""
+    return (parser or backend_stream_parser()).quota_verdict(events).status
 
 
 # -------------------------------------------------------------------------------------------------

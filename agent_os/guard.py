@@ -82,6 +82,7 @@ from agent_os.lib import (
     LabelVocabulary,
     TaskClass,
     UsageSummary,
+    backend_stream_parser,
     cumulative_cost_usd,
     cumulative_total_tokens,
     is_dispatchable,
@@ -515,19 +516,27 @@ def issue_stage_logs(issue: str, live_events: Path, main: Path = HOST_ROOT) -> l
     return logs
 
 
-def cost_spent_on_issue(issue: str, live_events: Path, main: Path = HOST_ROOT) -> float:
+def cost_spent_on_issue(
+    issue: str, live_events: Path, main: Path = HOST_ROOT, *, backend: str | None = None
+) -> float:
     """What this issue has cost so far across every stage process. This, not the live log alone, is
     what `max_cost_usd` is checked against -- and on a Qwen class it is always 0.0, because that
     backend's `result` event reports no `total_cost_usd` at all (#387)."""
-    return cumulative_cost_usd(issue_stage_logs(issue, live_events, main))
+    return cumulative_cost_usd(
+        issue_stage_logs(issue, live_events, main), parser=backend_stream_parser(backend)
+    )
 
 
-def tokens_spent_on_issue(issue: str, live_events: Path, main: Path = HOST_ROOT) -> int:
+def tokens_spent_on_issue(
+    issue: str, live_events: Path, main: Path = HOST_ROOT, *, backend: str | None = None
+) -> int:
     """What this issue has spent in tokens across every stage process: the same scope the dollar
     sum above has, and the one of the two that means anything on Qwen (#387). It UNDERCOUNTS an
     issue that had a stage cut before it finished, for the reason `cumulative_total_tokens`
     states -- that stage's tokens are in its archived log and no terminal event corroborates them."""
-    return cumulative_total_tokens(issue_stage_logs(issue, live_events, main))
+    return cumulative_total_tokens(
+        issue_stage_logs(issue, live_events, main), parser=backend_stream_parser(backend)
+    )
 
 
 def worker_paths(backend: str, main: Path = HOST_ROOT) -> WorkerPaths:
@@ -1040,8 +1049,9 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         )
     task_class = classes[task_class_name]
 
+    stream_parser = backend_stream_parser(backend)
     events = read_events(paths.events)
-    summary = usage_summary(events)
+    summary = usage_summary(events, parser=stream_parser)
     progress_log = paths.worktree / "scratchpad" / "progress.log"
     progress_text = progress_log.read_text() if progress_log.is_file() else ""
     run_started_at = datetime.fromtimestamp(paths.statefile.stat().st_mtime)  # noqa: DTZ006 -- naive, matches progress.log
@@ -1065,7 +1075,7 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
     # Tracked for both backends alike (Qwen's is always "allowed", per agent_lib's own quota_
     # exhausted docstring -- no signal, not a guess), so a change is only ever reported once a
     # prior tick has actually observed a baseline to compare against.
-    current_quota = quota_status(events)
+    current_quota = quota_status(events, parser=stream_parser)
     quota_changed = (
         bookkeeping.last_quota_status is not None and bookkeeping.last_quota_status != current_quota
     )
@@ -1075,10 +1085,11 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
     if budget_exceeded(
         summary,
         task_class,
-        issue_cost_usd=cost_spent_on_issue(issue, paths.events, main),
-        issue_total_tokens=tokens_spent_on_issue(issue, paths.events, main),
+        issue_cost_usd=cost_spent_on_issue(issue, paths.events, main, backend=backend),
+        issue_total_tokens=tokens_spent_on_issue(issue, paths.events, main, backend=backend),
     ):
         reason = "budget"
+    # Stage 2/3 of #514 replaces this name comparison with the backend's own `quota:` capability.
     elif backend == "claude" and current_quota == "exhausted":
         reason = "quota"
     elif (
@@ -2512,12 +2523,17 @@ def role_run_quota_status(log_path: Path) -> RoleQuotaStatus | None:
     - Any other failure (a transport error, an error result without the quota shape): None.
 
     The result TEXT is never read for a claim: a run whose assistant wrote "my quota is exhausted"
-    and finished cleanly is an `allowed` observation, because the backend served every turn of it."""
+    and finished cleanly is an `allowed` observation, because the backend served every turn of it.
+
+    The log is read with the parser of the backend its header names; a log from before the drivers
+    wrote that header is read with the default shape."""
+    header = ROLE_RUN_BACKEND_RE.search(log_path.read_text(errors="replace"))
+    stream_parser = backend_stream_parser(header["backend"] if header else None)
     events = read_events(log_path)
-    summary = usage_summary(events)
+    summary = usage_summary(events, parser=stream_parser)
     if summary.result is None:
         return None
-    if quota_status(events) == "exhausted":
+    if quota_status(events, parser=stream_parser) == "exhausted":
         return "exhausted"
     if not usage_failed(summary):
         return "allowed"
