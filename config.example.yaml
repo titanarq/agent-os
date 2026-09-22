@@ -38,13 +38,6 @@ project:
   human_language: English
   # Gitignored file holding the ntfy topic string, relative to the host's root.
   notify_topic_file: .secrets/ntfy_topic
-  # Base name of the systemd `--user` `.timer`/`.service` pair the guard runs under, substituted
-  # into the agent templates (`agent_os/agents/*.md`) as `__GUARD_UNIT__`. Empty by default: a
-  # project that runs the guard some other way names nothing here.
-  guard_unit: your-repo-guard
-  # Where a module doc lives, relative to the host root -- one file per `project.modules` entry.
-  # Substituted into the agent templates as `__MODULE_DOCS__`.
-  module_docs_dir: docs/modules
   # One one-line template per page the mechanism can send, written in `human_language`. A key the
   # mechanism asks for and this mapping does not carry is an error when the config loads, not when
   # the page is due; so is a template `str.format` cannot parse. The placeholders each one may use

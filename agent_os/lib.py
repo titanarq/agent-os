@@ -385,17 +385,6 @@ class ProjectConfig(Strict):
     # the tracker.
     human_language: str = "English"
     notify_topic_file: str = ".secrets/ntfy_topic"
-    # The base name of the systemd `--user` `.timer`/`.service` pair the guard runs under (§4.4):
-    # `<guard_unit>.timer` fires the tick, `<guard_unit>.service` is what it fires and what
-    # `journalctl -u` reads. Substituted into the agent templates (`agent_os/agents/*.md`) as
-    # `__GUARD_UNIT__`. Empty by default: a project that runs the guard some other way names
-    # nothing here and the templates keep the placeholder unresolved, which is the render's job to
-    # refuse, not this field's.
-    guard_unit: str = ""
-    # Where a module doc lives, relative to the host root -- one file per `project.modules` entry
-    # (`docs/AGENT_OS.md` `ADOPTION.md` prerequisite). Substituted into the agent templates as
-    # `__MODULE_DOCS__`.
-    module_docs_dir: str = "docs/modules"
     # One template per ntfy page, written in `human_language` above and rendered by
     # `render_human_message` below. Empty by default, and a project that leaves it empty simply
     # cannot page: the renderer refuses an unknown key rather than inventing a wording of its own

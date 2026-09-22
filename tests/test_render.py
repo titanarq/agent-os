@@ -1,8 +1,9 @@
 """`agent_os.render` -- the generic `__TOKEN__` substitution `agent_os.install` uses to render
 `agent_os/agents/*.md` into a host's `.claude/agents/*.md` (#510, #511). Exercised against a
-fixture template under a temp directory, never against #510's own templates: those land in a
-parallel PR, and this renderer is generic over whatever token names a template carries, as long
-as they are in `token_values`'s known set.
+fixture template under a temp directory for the renderer's own rules, and against #510's two real
+templates at the bottom of this file, once that PR landed alongside this one: the renderer is
+generic over whatever token names a template carries, as long as they are in `token_values`'s
+known set, and the two real templates are what proves that set is actually sufficient.
 
 Pure filesystem. This file must not request the `engine` or `db_sandbox` fixture.
 """
@@ -11,7 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent_os.lib import ProjectConfig
+from agent_os.cli import AGENT_OS_DIR
+from agent_os.lib import ProjectConfig, load_agents_config
 from agent_os.render import RenderError, render_agent_template, render_worktrees, token_values
 
 
@@ -91,3 +93,20 @@ def test_render_agent_template_refuses_a_typo_of_a_known_token(tmp_path):
     template.write_text("Guard unit: __GUARDUNIT__\n")
     with pytest.raises(RenderError, match="__GUARDUNIT__"):
         render_agent_template(template.read_text(), _project())
+
+
+# ---- #510's own templates: the two real files `agent_os.install` copies ----------------------
+
+
+AGENT_TEMPLATES_DIR = AGENT_OS_DIR / "agents"
+
+
+@pytest.mark.parametrize("name", ["control-plane.md", "worker-runner.md"])
+def test_the_real_agent_templates_render_clean_against_the_example_config(name):
+    # `config.example.yaml` is the one file every key of §4.2 is filled in on, with no real
+    # repository, identity or topic -- exactly the config a fresh adopter's first `agent-os
+    # install` runs against, so this is the render #510's own templates have to survive.
+    example = load_agents_config(AGENT_OS_DIR / "config.example.yaml").project
+    template = (AGENT_TEMPLATES_DIR / name).read_text()
+    rendered = render_agent_template(template, example)
+    assert "__" not in rendered, f"{name} still carries a token after rendering"

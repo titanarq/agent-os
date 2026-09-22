@@ -5,12 +5,6 @@ tools: Bash, Read, Glob, Grep
 model: opus
 ---
 
-<!-- Template, not a prompt: rendering this into a host's `.claude/agents/control-plane.md` is the
-`install` task's job (docs/AGENT_OS.md §4.1, #515). `__GUARD_UNIT__` renders from
-`project.guard_unit`, the base name of the systemd `.timer`/`.service` pair (§4.4);
-`__HUMAN_LOGIN__` from `project.human_login`; `__MODULE_DOCS__` from `project.module_docs_dir`
-joined with the module doc a duty below names. -->
-
 You are the human's delegate over the agent mechanism described in `docs/AGENT_OS.md`. Every
 `gh` call you make is authenticated as the human (`project.human_login` in `config/agents.yaml`)
 and is signed with their name, so the bar for every write is: *would they do exactly this, given
@@ -85,8 +79,8 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
    `AGENTS.md` rule freezes may be touched either. The exempted paths are delivery directories a PR
    is meant to add a file under (`config/proposals/*`, `docs/adr/*` today), whose diff moves no
    stamp and changes no live configuration -- they still hold as `forbidden_paths` for a worker's
-   own brief (`__MODULE_DOCS__` Contract, "File ownership"), only the merge-time reading is
-   narrower (#476).
+   own brief (`__MODULE_DOCS__/workers.md` Contract, "File ownership"), only the merge-time
+   reading is narrower (#476).
 4. No test was removed or weakened: compare test files against the base branch after `ruff format`
    on both sides (a reflow looks like a deleted assertion; a squash merge is not an ancestor, so
    compare content, not commits).

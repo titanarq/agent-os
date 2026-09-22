@@ -4,32 +4,40 @@
 A blunt substring walk over every file under `agent_os/`, excluding `docs/` (history and the
 module doc are allowed to name the projects they were written about), `tests/golden/` (fixture
 data captured from a real run, not code) and `config.example.yaml` (its own commentary explains
-the shape of a real value by naming one, `docs/AGENT_OS.md` §4.1). #510's own audit found files
-that still fail this walk and belong to a sibling wave-2 issue, #512, running in parallel --
-excluded by name below rather than fixed here, so the PR that lands #512 also shrinks
-`EXCLUDED_PATHS` (the driver-side half of the same audit, #509, is already clean: it merged first
-and this walk was written against its result):
+the shape of a real value by naming one, `docs/AGENT_OS.md` §4.1). Two further, narrower
+exclusions:
 
-- `agent_os/tests/test_agent_guard.py`, `test_agent_lib.py`, `test_agent_task.py`,
-  `test_issues_cli.py`, `test_prompt_templates.py`, `test_role_run_environment_isolation.py`,
-  `test_worker_task.py` -- fixtures and assertions pinned to this project's own values, and one
-  `importorskip("roedor.config")` (the parent epic's own 2026-09-21 audit, #512).
+- `SELF_REFERENTIAL_CHECKS` -- this file and `tests/test_install_templates.py` (#511) each spell
+  every forbidden literal ON PURPOSE, as the very strings their own test checks a real file
+  against (`test_the_real_canonical_issue_templates_carry_no_host_literal` there); a walk that
+  flagged a literal-checking test for containing the literals it checks for would be checking
+  nothing. Excluded by identity, never by `EXCLUDED_PATHS`, which is reserved for a file that
+  still needs its own literal removed.
+- `EXCLUDED_PATHS` -- files #510's own audit found that still fail this walk and belong to a
+  sibling wave-2 issue, #512, running in parallel; the driver-side half of the same audit, #509,
+  is already clean, and #511's own new modules (`install.py`, `doctor.py`, `render.py`,
+  `templates/`) were scrubbed before merge, so this walk needed no exclusion for either:
+
+  - `agent_os/tests/test_agent_guard.py`, `test_agent_lib.py`, `test_agent_task.py`,
+    `test_issues_cli.py`, `test_prompt_templates.py`, `test_role_run_environment_isolation.py`,
+    `test_worker_task.py` -- fixtures and assertions pinned to this project's own values, and one
+    `importorskip("roedor.config")` (the parent epic's own 2026-09-21 audit, #512).
 
 Pure filesystem. This file must not request the `engine` or `db_sandbox` fixture.
 """
 
 from __future__ import annotations
 
-import pathlib
-
 from agent_os.cli import AGENT_OS_DIR
 
 FORBIDDEN = ("roedor", "MatillaM", "titanarq", "5435", "roedor_ro")
 
-# This file's own path, relative to `agent_os/` -- it necessarily spells every forbidden literal
-# to check for it, so it is excluded by identity rather than added to `EXCLUDED_PATHS`, which is
-# reserved for files a SIBLING issue still needs to fix.
-_SELF = pathlib.Path(__file__).resolve().relative_to(AGENT_OS_DIR).as_posix()
+# Paths relative to `agent_os/` that spell every forbidden literal ON PURPOSE, as the strings
+# their own test checks a real file against -- see the module docstring above.
+SELF_REFERENTIAL_CHECKS = {
+    "tests/test_no_host_literals.py",
+    "tests/test_install_templates.py",
+}
 
 # Paths relative to `agent_os/`, owned by #512 and not fixed here -- see the module docstring
 # above. `test_every_exclusion_still_applies` below keeps this list honest: an entry the walk no
@@ -63,9 +71,10 @@ def _files():
         if not path.is_file():
             continue
         relative = path.relative_to(AGENT_OS_DIR)
-        if _is_excluded_by_location(relative.parts) or relative.as_posix() == _SELF:
+        posix = relative.as_posix()
+        if _is_excluded_by_location(relative.parts) or posix in SELF_REFERENTIAL_CHECKS:
             continue
-        yield path, relative.as_posix()
+        yield path, posix
 
 
 def _literals_in(path):
