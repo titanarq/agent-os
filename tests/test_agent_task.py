@@ -30,7 +30,7 @@ import subprocess
 import time
 
 import pytest
-from conftest import config_with_never_run, config_with_no_host_text
+from conftest import EXAMPLE_CONFIG, config_with_never_run, config_with_no_host_text
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
@@ -619,10 +619,10 @@ PULL_REQUEST = "352"
 
 
 def _config_without_secrets(tmp_path) -> pathlib.Path:
-    """The real config/agents.yaml with `project.secrets_dir` pointed at nothing, so
+    """`config.example.yaml` with `project.secrets_dir` pointed at nothing, so
     `agent_apply_identity` degrades to its warning instead of minting a GitHub App token -- the one
     step of the launch path that would otherwise reach the network."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     patched, count = re.subn(
         r"^  secrets_dir: .*$",
         "  secrets_dir: .secrets/no-such-app",
@@ -630,7 +630,7 @@ def _config_without_secrets(tmp_path) -> pathlib.Path:
         count=1,
         flags=re.MULTILINE,
     )
-    assert count == 1, "config/agents.yaml's project.secrets_dir line changed shape"
+    assert count == 1, "config.example.yaml's project.secrets_dir line changed shape"
     path = tmp_path / "agents-no-secrets.yaml"
     path.write_text(patched)
     return path
@@ -1232,12 +1232,12 @@ def _marking_stub(path: pathlib.Path, mark: pathlib.Path, target: pathlib.Path) 
 
 
 def _config_with_no_fallback_declared(tmp_path) -> pathlib.Path:
-    """The real config with every `fallback:` block taken out, so a test can measure the case the
-    field's absence leaves behind: a class that declares no way round an exhausted quota behaves
-    exactly as it did before the field existed."""
+    """`config.example.yaml` with every `fallback:` block taken out, so a test can measure the case
+    the field's absence leaves behind: a class that declares no way round an exhausted quota
+    behaves exactly as it did before the field existed."""
     text = _config_without_secrets(tmp_path).read_text()
     patched, count = re.subn(r"^    fallback:\n(?:      .*\n)+", "", text, flags=re.MULTILINE)
-    assert count == 3, "config/agents.yaml no longer declares exactly three role fallbacks"
+    assert count == 3, "config.example.yaml no longer declares exactly three role fallbacks"
     path = tmp_path / "agents-no-fallback.yaml"
     path.write_text(patched)
     return path

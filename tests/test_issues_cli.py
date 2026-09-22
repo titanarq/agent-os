@@ -11,7 +11,6 @@ from unittest.mock import patch
 import pytest
 
 from agent_os import issues
-from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     REQUIRED_SECTIONS,
     HumanMessageError,
@@ -20,11 +19,6 @@ from agent_os.lib import (
     load_project,
     render_human_message,
 )
-
-# The HOST project this suite runs inside: the directory the package sits in. The mechanism's
-# own files are under AGENT_OS_DIR; `config/agents.yaml`, the issue templates and the module
-# docs are the host's, under ROOT (#508).
-ROOT = AGENT_OS_DIR.parent
 
 # --------------------------------------------------------------------------------------------
 # YAML/ADO entry -> GitHub mapping
@@ -275,16 +269,6 @@ def test_fixed_labels_of_a_project_with_no_modules_carry_no_module_label():
     ]
 
 
-def test_fixed_labels_read_the_real_config_and_cover_every_module_doc():
-    documented = sorted(path.stem for path in (ROOT / "docs" / "modules").glob("*.md"))
-    from_config = sorted(
-        label.removeprefix("module:")
-        for label in issues.fixed_labels()
-        if label.startswith("module:")
-    )
-    assert from_config == documented
-
-
 def test_gh_json_parses_success():
     with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout='{"a": 1}')):
         assert issues.gh_json("issue", "view", "1") == {"a": 1}
@@ -412,29 +396,6 @@ VALID_BODY = (
     )
     + "\n\n<!-- budget: mechanical-qwen -->"
 )
-
-
-@pytest.mark.parametrize("name", ["task", "bug"])
-def test_the_shipped_templates_scaffold_a_body_that_validates(name):
-    # The template is the contract's other half: a scaffold the validator would reject is a trap
-    # for whoever fills it in.
-    body = issues.template_body(name)
-    assert not body.startswith("---")  # GitHub's front matter is stripped
-    assert (
-        issues.validate_issue_body(
-            body, task_classes=issues.load_task_classes(), open_issue_numbers=set()
-        )
-        == []
-    )
-
-
-@pytest.mark.parametrize("name", ["task", "bug"])
-def test_the_shipped_templates_carry_the_front_matter_github_needs(name):
-    raw = (ROOT / ".github" / "ISSUE_TEMPLATE" / f"{name}.md").read_text()
-    assert raw.startswith("---\n")
-    front = raw.split("---\n")[1]
-    assert "name:" in front and "about:" in front and "title:" in front
-    assert f"labels: type:{name}" in front
 
 
 def test_create_with_a_template_and_no_title_prints_the_scaffold_and_creates_nothing(capsys):

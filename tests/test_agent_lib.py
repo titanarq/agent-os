@@ -16,6 +16,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from conftest import EXAMPLE_CONFIG
 from pydantic import ValidationError
 
 from agent_os import lib as agent_lib
@@ -634,11 +635,6 @@ def test_project_config_human_language_defaults_to_english_when_absent(tmp_path)
     assert load_project(path).human_language == "English"
 
 
-def test_real_config_sets_human_language_to_spanish():
-    # roedor's own value (issue #357's acceptance criteria).
-    assert load_project().human_language == "Spanish"
-
-
 def test_human_message_rules_contains_the_configured_language():
     project = ProjectConfig(repo="someone/something", tracking_epic=1, board_number=1)
     rules = human_message_rules(project)
@@ -790,22 +786,12 @@ def test_the_real_configs_pages_render_with_the_fields_their_call_sites_pass():
         "backend_worktree_missing",
         project,
         backend="qwen",
-        worktree="/x/roedor-qwen",
+        worktree="/x/example-qwen",
         issue_count=2,
     )
     assert render_human_message(
         "unreviewed_pull_request", project, pr=409, issue=394, role="validator"
     )
-
-
-def test_the_real_configs_pages_are_written_in_the_humans_language():
-    # Not a translation check: the point of #366 is that the wording lives in config beside
-    # `human_language`, so the assertion is that nothing renders empty and every page is one line.
-    project = load_project()
-    assert project.human_language == "Spanish"
-    for key, template in project.messages.items():
-        assert template.strip(), key
-        assert "\n" not in template, key
 
 
 # ---- worker_environment / test_command: workers connect read-only by default (#350)
@@ -833,7 +819,7 @@ project:
   board_number: 1
   test_command: bin/run-tests
   worker_environment:
-    DATABASE_URL: postgresql+psycopg://roedor_ro:roedor_ro@localhost:5435/roedor
+    DATABASE_URL: postgresql+psycopg://app_ro:app_ro@localhost:5432/app
 
 classes:
   mechanical-qwen:
@@ -849,17 +835,8 @@ classes:
     project = load_project(path)
     assert project.test_command == "bin/run-tests"
     assert project.worker_environment == {
-        "DATABASE_URL": "postgresql+psycopg://roedor_ro:roedor_ro@localhost:5435/roedor"
+        "DATABASE_URL": "postgresql+psycopg://app_ro:app_ro@localhost:5432/app"
     }
-
-
-def test_real_config_sets_worker_environment_database_url_to_the_readonly_role():
-    # roedor's own value (#350's acceptance criteria): workers connect read-only by default.
-    assert (
-        load_project()
-        .worker_environment.get("DATABASE_URL", "")
-        .startswith("postgresql+psycopg://roedor_ro:roedor_ro@")
-    )
 
 
 def test_print_worker_environment_prints_one_tab_separated_line_per_entry(monkeypatch, capsys):
@@ -1160,123 +1137,6 @@ def test_merge_audit_violations_reports_nothing_when_the_audit_pattern_is_empty(
     assert forbidden_paths_merge_audit_violations(["anything/at/all.py"], project) == []
 
 
-def test_real_config_merge_audit_reports_no_violation_for_a_delivery_directory_and_one_for_config():
-    # RED before the fix (#476): condition 3 audited the full `forbidden_paths`, so a diff adding
-    # only a file under `docs/adr/*` or `config/proposals/*` reported a violation for a path that
-    # changes nothing any stamp or freeze protects, and the merge gate refused work that had earned
-    # it (measured on PRs #466, #469, #472). GREEN after: those two delivery directories are exempt
-    # from condition 3's own pattern while staying on `forbidden_paths` itself, so
-    # `roedor/metrics/x.py` (m2 freeze) and `config/v0.yaml` (m2 freeze) still violate.
-    project = load_project()
-    assert (
-        forbidden_paths_merge_audit_violations(["docs/adr/2026-09-21-a-decision.md"], project) == []
-    )
-    assert forbidden_paths_merge_audit_violations(["config/proposals/y.yaml"], project) == []
-    assert forbidden_paths_merge_audit_violations(["roedor/metrics/x.py"], project) == [
-        "roedor/metrics/x.py"
-    ]
-    assert forbidden_paths_merge_audit_violations(["config/v0.yaml"], project) == ["config/v0.yaml"]
-
-
-def test_real_config_forbidden_paths_are_the_ones_the_worker_audit_enforced():
-    # roedor's own values, the list the `FORBIDDEN` regex in `worker_task.sh` and its
-    # "FILES YOU MUST NOT TOUCH" paragraph spelled separately before they moved here (#363).
-    # Exact on purpose: a path dropped from this config is a path a worker may now write. The
-    # three that left it for `mechanism.own_paths` (#390) are asserted in their own test below --
-    # unconditional protection here would have made the mechanism unable to develop itself.
-    assert load_project().forbidden_paths == [
-        "config/cik_chains.yaml",
-        "config/concepts.yaml",
-        "config/proposals/*",
-        "baselines/*",
-        "AGENTS.md",
-        "CLAUDE.md",
-        "docs/PRODUCT.md",
-        "docs/ARCHITECTURE.md",
-        "docs/DOMAIN.md",
-        "docs/adr/*",
-        "docker-compose.yml",
-        "scripts/cp34_*.sh",
-        "scripts/census_baseline.py",
-        "scripts/chains_candidates.py",
-        # the m2 freeze, until the cut on 2026-10-01 (docs/adr/2026-09-10-freeze-m2-until-the-cut.md)
-        "roedor/metrics/*",
-        "roedor/normalize/*",
-        "roedor/config.py",
-        "roedor/universe.py",
-        "roedor/chains.py",
-        "roedor/ingest/symbol_ownership.py",
-        "config/v0.yaml",
-        "config/overrides.yaml",
-        "config/symbol_reuse.yaml",
-        "config/action_adjudications.yaml",
-    ]
-
-
-def test_real_config_merge_audit_exempts_exactly_the_two_delivery_directories():
-    # Exact on purpose, same reasoning as the assertion above: a path added here without also
-    # being a delivery directory silently narrows what condition 3 audits.
-    project = load_project()
-    assert project.merge_audit_exempt_paths == ["config/proposals/*", "docs/adr/*"]
-    assert set(project.merge_audit_exempt_paths) <= set(project.forbidden_paths)
-
-
-def test_real_config_forbids_every_file_inside_the_m2_stamp_until_the_cut():
-    # The freeze (docs/adr/2026-09-10-freeze-m2-until-the-cut.md) checked against the stamp's own
-    # definition rather than a copy of it: every tracked file under `METRICS_SOURCES` and every
-    # yaml hashed into the metrics `cfg` digest. A source added to the fingerprint without a
-    # matching entry here fails. Delete this test together with the entries after 2026-10-01.
-    #
-    # THE ONE TEST IN THIS SUITE THAT NEEDS THE HOST, and it needs the host's own interpreter to
-    # import it: `roedor.config` pulls the host's dependency set, which the mechanism's virtualenv
-    # does not carry, by construction (#508). So it is SKIPPED on the mechanism's interpreter and
-    # runs only where the host package is importable -- which means the m2 freeze is not actually
-    # guarded by either suite until this assertion is moved into the host's own, the sibling task
-    # #508 leaves open. Named out loud rather than left as a green tick over nothing.
-    roedor_config = pytest.importorskip(
-        "roedor.config",
-        reason="the host package is not importable here -- this assertion belongs in the host's "
-        "own suite (a sibling task of #507)",
-    )
-
-    root = ROOT
-    stamped = [
-        str(path.relative_to(root))
-        for source in roedor_config.METRICS_SOURCES
-        for path in (
-            [root / source] if (root / source).is_file() else (root / source).rglob("*.py")
-        )
-    ]
-    stamped += [
-        str(yaml_path.relative_to(root))
-        for yaml_path in (
-            roedor_config.DEFAULT_CONFIG,
-            roedor_config.OVERRIDES_CONFIG,
-            roedor_config.CIK_CHAINS_CONFIG,
-            roedor_config.SYMBOL_REUSE_CONFIG,
-            roedor_config.ACTION_ADJUDICATIONS_CONFIG,
-            roedor_config.CONCEPTS_CONFIG,
-        )
-    ]
-    audit = forbidden_paths_regex(load_project())
-    assert [path for path in stamped if not re.match(audit, path)] == []
-
-
-def test_real_config_never_run_carries_every_pipeline_verb_with_its_reason():
-    # The six verbs the three RULES blocks spelled out (the validator's copy had already lost
-    # `census_baseline.py record`, which is exactly the drift one list prevents).
-    never_run = {item.command: item.reason for item in load_project().never_run}
-    assert set(never_run) == {
-        "--write",
-        "census-build",
-        "scripts/cp34_*.sh",
-        "quality scan",
-        "--adopt",
-        "census_baseline.py record",
-    }
-    assert all(len(reason.split()) > 3 for reason in never_run.values()), never_run
-
-
 # ---- `mechanism.own_paths`: the second list, the mechanism's own files, which a brief may
 # authorize where the host project's may not (#390,
 # docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md) ----
@@ -1395,41 +1255,6 @@ def test_mechanism_paths_rules_names_every_configured_path_and_states_the_condit
 
 def test_mechanism_paths_rules_defaults_to_load_mechanism_when_none_given():
     assert mechanism_paths_rules() == mechanism_paths_rules(load_mechanism())
-
-
-def test_real_config_mechanism_own_paths_are_the_mechanisms_own_files():
-    # Exact on purpose, in both directions: a path added here is one a brief can authorize by
-    # naming it, and a path dropped is one no audit looks at any more. One glob for the directory
-    # the mechanism became in #508, then the host's own entry points, which are shims into it and
-    # so belong to the mechanism rather than to the host.
-    assert load_mechanism().own_paths == [
-        "agent_os/*",
-        "scripts/worker_task.sh",
-        "scripts/agent_task.sh",
-        "scripts/planner_task.sh",
-        "scripts/worker_progress.sh",
-        "scripts/notify.sh",
-        "scripts/qwen_task.sh",
-        "scripts/agent_guard.py",
-        "scripts/agent_lib.py",
-        "scripts/issues.py",
-        "scripts/gh_app_token.py",
-        ".claude/*",
-    ]
-
-
-def test_the_three_paths_that_moved_left_the_host_projects_list():
-    # The move is the point of the split: while these three sat on the unconditional list, no brief
-    # could authorize the work #336 exists to do (#363 wrote `scripts/worker_task.sh` because its
-    # body named it in four acceptance criteria, and PR #386 then failed the merge gate on the rule
-    # the same driver enforces).
-    host_paths = load_project().forbidden_paths
-    for moved in (".claude/*", "scripts/qwen_task.sh", "scripts/worker_task.sh"):
-        assert moved not in host_paths, moved
-        assert moved in load_mechanism().own_paths, moved
-    # One list each, and no path on both: a path protected twice would be refused by the
-    # unconditional rule whatever the brief says, which is the behaviour the split removes.
-    assert not set(host_paths) & set(load_mechanism().own_paths)
 
 
 # ---- the dispatchable predicate --------------------------------------------------------------
@@ -2059,16 +1884,6 @@ def test_the_real_config_declares_qwen_as_the_fallback_of_all_three_claude_roles
         assert set(fallback.ceilings) == {"max_context", "max_total_tokens"}, role
 
 
-def test_the_validators_fallback_records_that_it_counts_as_the_validators_approval():
-    # The human's decision of 2026-09-18, written where the declaration is: a review produced by
-    # the fallback counts as the validator's approval for the merge gate. Asserted on the file's
-    # own text because the decision is a sentence, and the sentence is the deliverable.
-    text = (ROOT / "config" / "agents.yaml").read_text()
-    validator_block = text.split("  validator:", 1)[1].split("  refiner:", 1)[0]
-    assert "COUNTS AS THE VALIDATOR'S APPROVAL" in validator_block
-    assert "2026-09-18" in validator_block
-
-
 def test_a_worker_class_declares_no_fallback_and_behaves_as_it_did_before():
     # `qwen_fallback_eligible` is the planner's redispatch of a WORKER and stays as the 2026-09-16
     # ADR left it; the new field is a role's own launch gate and no worker class carries one.
@@ -2251,7 +2066,7 @@ def test_the_ttl_the_decision_uses_is_the_configured_one_not_a_literal(tmp_path)
     # Same verdict, same age, two configs: one whose TTL the verdict is inside and one whose it is
     # past. The answer moves with the file, which is what "a threshold lives in config" means.
     config = tmp_path / "agents.yaml"
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     config.write_text(
         re.sub(
             r"^  quota_verdict_ttl_minutes: .*$",

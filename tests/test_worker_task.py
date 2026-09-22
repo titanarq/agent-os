@@ -22,7 +22,7 @@ import subprocess
 import time
 
 import pytest
-from conftest import config_with_never_run
+from conftest import EXAMPLE_CONFIG, config_with_never_run
 
 from agent_os import guard as agent_guard
 from agent_os.cli import AGENT_OS_DIR
@@ -34,7 +34,6 @@ from agent_os.lib import (
     load_planner_config,
     load_project,
     load_task_classes,
-    mechanism_paths_regex,
     mechanism_paths_rules,
     never_run_rules,
     worker_environment_rules,
@@ -334,50 +333,6 @@ def test_the_worker_rules_forbid_committing_the_diary_and_ask_for_it_nowhere():
 # triggers, and the two paragraphs state them as a pair (#390).
 # ---------------------------------------------------------------------------------------------
 
-# The literal `FORBIDDEN` this replaced, frozen here on purpose: the assertion below is that the
-# pattern now derived from config/agents.yaml matches exactly the same paths over the same corpus,
-# so exporting the mechanism changed nothing about what a roedor worker is blocked from touching.
-FORBIDDEN_BEFORE_CONFIG = (
-    r"^(config/cik_chains\.yaml|config/concepts\.yaml|config/proposals/|baselines/|AGENTS\.md"
-    r"|CLAUDE\.md|docs/(PRODUCT|ARCHITECTURE|DOMAIN)\.md|docs/adr/|docker-compose\.yml|\.claude/"
-    r"|scripts/(cp34_.*\.sh|census_baseline\.py|chains_candidates\.py|qwen_task\.sh"
-    r"|worker_task\.sh))"
-)
-
-# Both the protected set and its neighbours: a path one character off a protected one must stay
-# clean, and a nested path under a protected directory must not.
-OWNERSHIP_CORPUS = (
-    "config/cik_chains.yaml",
-    "config/cik_chains.yaml.bak",  # prefix-anchored, as the literal above was
-    "config/concepts.yaml",
-    "config/proposals/revenue.yaml",
-    "config/prices.yaml",
-    "config/agents.yaml",
-    "baselines/census.json",
-    "baselines/nested/deep.json",
-    "AGENTS.md",
-    "CLAUDE.md",
-    "docs/PRODUCT.md",
-    "docs/ARCHITECTURE.md",
-    "docs/DOMAIN.md",
-    "docs/adr/2026-09-14-a-decision.md",
-    "docs/modules/workers.md",
-    "docker-compose.yml",
-    ".claude/settings.json",
-    ".claude/agents/worker-runner.md",  # `*` crosses `/`: fnmatch semantics, not glob's
-    "scripts/cp34_metrics.sh",
-    "scripts/cp34b_scores.sh",
-    "scripts/census_baseline.py",
-    "scripts/chains_candidates.py",
-    "scripts/qwen_task.sh",
-    "scripts/worker_task.sh",
-    "scripts/test.sh",
-    "scripts/agent_lib.py",
-    "roedor/metrics/compute.py",
-    "tests/test_worker_task.py",
-    "scratchpad/worker_report.md",
-)
-
 SENTINEL_PATHS = ("sentinel/keep-out/*", "sentinel/OWNERS.md")
 
 # The paragraph's own heading and closing line, both rendered by `agent_lib.forbidden_paths_rules`
@@ -409,26 +364,24 @@ def _patch_path_list(text, key, paths):
     patched, count = re.subn(
         rf"^  {key}:\n(?:    - .*\n)+", block, text, count=1, flags=re.MULTILINE
     )
-    assert count == 1, f"config/agents.yaml's {key} block changed shape"
+    assert count == 1, f"config.example.yaml's {key} block changed shape"
     return patched
 
 
 def _config_with_path_lists(tmp_path, forbidden_paths, own_paths):
     """A config where BOTH audited lists are the test's: `project.forbidden_paths`, which no body
     can authorize, and `mechanism.own_paths`, which only a body that names the path can."""
-    text = _patch_path_list(
-        (ROOT / "config" / "agents.yaml").read_text(), "forbidden_paths", forbidden_paths
-    )
+    text = _patch_path_list(EXAMPLE_CONFIG.read_text(), "forbidden_paths", forbidden_paths)
     path = tmp_path / "agents.yaml"
     path.write_text(_patch_path_list(text, "own_paths", own_paths))
     return path
 
 
 def _config_with_forbidden_paths(tmp_path, paths):
-    """A copy of the real config/agents.yaml with `project.forbidden_paths` replaced by `paths` --
+    """A copy of config.example.yaml with `project.forbidden_paths` replaced by `paths` --
     the same `AGENTS_CONFIG_PATH` isolation `_config_with_max_parallel_issues` uses, so a test can
     render the worker's RULES from a list this repository does not ship."""
-    text = _patch_path_list((ROOT / "config" / "agents.yaml").read_text(), "forbidden_paths", paths)
+    text = _patch_path_list(EXAMPLE_CONFIG.read_text(), "forbidden_paths", paths)
     path = tmp_path / "agents.yaml"
     path.write_text(text)
     return path
@@ -458,7 +411,7 @@ def _paragraph(rules, heading):
     return rules.split(heading + "\n")[1].split("\n\n")[0]
 
 
-def _grep_matches(pattern, corpus=OWNERSHIP_CORPUS):
+def _grep_matches(pattern, corpus):
     """The paths of `corpus` the pattern matches, through the real `grep -E` the driver audits
     with -- so a pattern only POSIX ERE would reject cannot pass here."""
     result = subprocess.run(
@@ -495,44 +448,6 @@ def test_the_rules_paragraph_and_the_audit_regex_are_rendered_from_one_configure
         derived,
         ("sentinel/keep-out/deeper/nested.md", "sentinel/OWNERS.md", "config/cik_chains.yaml"),
     ) == {"sentinel/keep-out/deeper/nested.md", "sentinel/OWNERS.md"}
-
-
-def test_the_regex_derived_from_the_real_config_protects_exactly_the_paths_the_literal_did():
-    """#363 moved the list into config and #390 split it in two; this is the assertion that neither
-    move left a path the single literal protected unwritten-for: over one corpus, the two patterns
-    built from `config/agents.yaml` -- the host project's and the mechanism's own -- cover every
-    path it covered, through the same `grep -E`. What the split changed is the rule a match
-    triggers (`agent_os/bin/worker_task.sh`'s audit), and it widened the audited set by the mechanism's
-    own files, which no list named before."""
-    assert load_project().forbidden_paths, "config/agents.yaml protects no path at all"
-    assert load_mechanism().own_paths, "config/agents.yaml names none of the mechanism's own files"
-    protected_before = _grep_matches(FORBIDDEN_BEFORE_CONFIG)
-    host_protected = _grep_matches(forbidden_paths_regex())
-    mechanism_protected = _grep_matches(mechanism_paths_regex())
-
-    assert protected_before <= host_protected | mechanism_protected
-    # The host list on its own lost exactly the paths that moved to the mechanism's, and the
-    # mechanism list covers every one of them -- a driver that lost the second pattern would stop
-    # auditing exactly these.
-    moved = protected_before - host_protected
-    assert moved == {
-        ".claude/settings.json",
-        ".claude/agents/worker-runner.md",
-        "scripts/qwen_task.sh",
-        "scripts/worker_task.sh",
-    }
-    assert moved <= mechanism_protected
-    # ... and it is wider than those: #390 names the mechanism's own files, four of which no list
-    # protected at all before (checked against their own corpus, not the shared one, so extending
-    # `OWNERSHIP_CORPUS` later cannot silently drop one of them from this assertion).
-    never_protected = (
-        "scripts/agent_task.sh",
-        "scripts/agent_guard.py",
-        "scripts/agent_lib.py",
-        "scripts/planner_task.sh",
-    )
-    assert _grep_matches(mechanism_paths_regex(), never_protected) == set(never_protected)
-    assert not _grep_matches(FORBIDDEN_BEFORE_CONFIG, never_protected)
 
 
 def test_a_project_that_forbids_no_path_gets_no_paragraph_and_no_stub_heading(tmp_path):
@@ -871,11 +786,11 @@ CONFIGURED_VARIABLE = "DATABASE_URL"
 
 
 def _config_with_worker_environment(tmp_path, environment):
-    """A copy of the real config/agents.yaml with `project.worker_environment` replaced by
+    """A copy of config.example.yaml with `project.worker_environment` replaced by
     `environment` -- nothing at all for an empty mapping -- the same `AGENTS_CONFIG_PATH` isolation
     the two helpers above use, so a test can render the worker's RULES from a mapping this
     repository does not ship."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     block = (
         "  worker_environment: {}\n"
         if not environment
@@ -889,7 +804,7 @@ def _config_with_worker_environment(tmp_path, environment):
         count=1,
         flags=re.MULTILINE,
     )
-    assert count == 1, "config/agents.yaml's project.worker_environment block changed shape"
+    assert count == 1, "config.example.yaml's project.worker_environment block changed shape"
     path = tmp_path / "agents.yaml"
     path.write_text(patched)
     return path
@@ -1444,40 +1359,40 @@ NEVER_EXITS_BACKEND_STUB = "#!/usr/bin/env bash\nexec sleep 600\n"
 
 
 def _config_with_max_parallel_issues(tmp_path, cap):
-    """A copy of the real config/agents.yaml with `planner.max_parallel_issues` patched to `cap`
+    """A copy of config.example.yaml with `planner.max_parallel_issues` patched to `cap`
     -- `AGENTS_CONFIG_PATH` (`agent_os.lib`) exists so a test can exercise a cap other
     than the real file's shipped default (1), the same way `WORKER_CACHE_DIR` isolates `.cache/`.
     Everything else (worktrees, apps, task classes) stays the real file's own."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     patched, count = re.subn(r"max_parallel_issues:\s*\d+", f"max_parallel_issues: {cap}", text)
-    assert count == 1, "config/agents.yaml's planner.max_parallel_issues line changed shape"
+    assert count == 1, "config.example.yaml's planner.max_parallel_issues line changed shape"
     path = tmp_path / "agents.yaml"
     path.write_text(patched)
     return path
 
 
 def _config_with_relaunch_cap(tmp_path, cap):
-    """A copy of the real config/agents.yaml with `planner.relaunch_cap` patched to `cap`. The
+    """A copy of config.example.yaml with `planner.relaunch_cap` patched to `cap`. The
     shipped one is 3, and the count a refusal reports is only ever printed when it reaches the cap,
     so a test that reads the number off the message needs a cap it can reach with the commits it
     builds. Same `AGENTS_CONFIG_PATH` isolation `_config_with_max_parallel_issues` uses."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     patched, count = re.subn(r"relaunch_cap:\s*\d+", f"relaunch_cap: {cap}", text)
-    assert count == 1, "config/agents.yaml's planner.relaunch_cap line changed shape"
+    assert count == 1, "config.example.yaml's planner.relaunch_cap line changed shape"
     path = tmp_path / "agents-relaunch-cap.yaml"
     path.write_text(patched)
     return path
 
 
 def _config_with_max_total_tokens(tmp_path, cap):
-    """A copy of the real config/agents.yaml with `complex-qwen`'s `max_total_tokens` patched to
+    """A copy of config.example.yaml with `complex-qwen`'s `max_total_tokens` patched to
     `cap` -- `complex-qwen` being the class `_staged_body` dispatches under. The shipped token
     ceilings are placeholders #342 owns the calibration of, so a test that asserted against one of
     them would break on that calibration instead of on the behaviour it is about; the same
     `AGENTS_CONFIG_PATH` isolation `_config_with_max_parallel_issues` uses keeps it off the real
     file. `max_cost_usd` is deliberately left at its shipped value: the point of the token gate is
     that the dollar one is untouched while it fires."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     patched, count = re.subn(
         r"(^  complex-qwen:\n(?:    .*\n)*?    max_total_tokens: )\d+",
         rf"\g<1>{cap}",
@@ -1485,7 +1400,7 @@ def _config_with_max_total_tokens(tmp_path, cap):
         count=1,
         flags=re.MULTILINE,
     )
-    assert count == 1, "config/agents.yaml's complex-qwen block changed shape"
+    assert count == 1, "config.example.yaml's complex-qwen block changed shape"
     path = tmp_path / "agents.yaml"
     path.write_text(patched)
     return path
@@ -2839,12 +2754,12 @@ def test_the_status_report_prints_the_issues_token_total_next_to_the_stage_conte
 
 
 def _config_with_executable(tmp_path, name, path):
-    """A copy of the real config/agents.yaml with `project.executables` carrying one entry. The
+    """A copy of config.example.yaml with `project.executables` carrying one entry. The
     shipped file leaves the mapping empty on purpose -- a configured absolute path outranks the
     PATH stubbing every driver test protects itself with -- so a test that wants one writes its
     own, through the same `AGENTS_CONFIG_PATH` isolation the cap fixtures use."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
-    assert "\n  executables: {}\n" in text, "config/agents.yaml's project.executables line changed"
+    text = EXAMPLE_CONFIG.read_text()
+    assert "\n  executables: {}\n" in text, "config.example.yaml's project.executables line changed"
     patched = text.replace("\n  executables: {}\n", f"\n  executables:\n    {name}: {path}\n", 1)
     config = tmp_path / "executables.yaml"
     config.write_text(patched)
@@ -3695,9 +3610,9 @@ def test_a_config_that_does_not_load_stops_the_driver_instead_of_launching_an_em
     executable -- pointing whoever is debugging at the very key the broken file made unreadable."""
     broken = tmp_path / "broken.yaml"
     broken.write_text(
-        (ROOT / "config" / "agents.yaml")
-        .read_text()
-        .replace("\n  worktrees:\n", "\n  a_key_no_schema_has: 1\n  worktrees:\n", 1)
+        EXAMPLE_CONFIG.read_text().replace(
+            "\n  worktrees:\n", "\n  a_key_no_schema_has: 1\n  worktrees:\n", 1
+        )
     )
     environment, cache, _worktree = _base_check_environment(tmp_path, branch="task/347-the-work")
     environment["AGENTS_CONFIG_PATH"] = str(broken)

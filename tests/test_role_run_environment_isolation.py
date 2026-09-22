@@ -51,6 +51,7 @@ import time
 from collections.abc import Iterator
 
 import pytest
+from conftest import EXAMPLE_CONFIG
 
 from agent_os.cli import AGENT_OS_DIR
 
@@ -183,11 +184,11 @@ exec "$REAL_AGENT_OS_PYTHON" "$@"
 
 
 def _config_without_secrets(directory: pathlib.Path) -> pathlib.Path:
-    """The real `config/agents.yaml` with `project.secrets_dir` pointed at nothing, so
+    """`config.example.yaml` with `project.secrets_dir` pointed at nothing, so
     `agent_apply_identity` degrades to its warning instead of minting a GitHub App token -- the one
     step of the launch path that would otherwise reach the network. The same patch
     `test_agent_task.py` applies to its own launch tests."""
-    text = (ROOT / "config" / "agents.yaml").read_text()
+    text = EXAMPLE_CONFIG.read_text()
     patched, count = re.subn(
         r"^  secrets_dir: .*$",
         "  secrets_dir: .secrets/no-such-app",
@@ -195,7 +196,7 @@ def _config_without_secrets(directory: pathlib.Path) -> pathlib.Path:
         count=1,
         flags=re.MULTILINE,
     )
-    assert count == 1, "config/agents.yaml's project.secrets_dir line changed shape"
+    assert count == 1, "config.example.yaml's project.secrets_dir line changed shape"
     path = directory / "agents-no-secrets.yaml"
     path.write_text(patched)
     return path
@@ -221,7 +222,7 @@ def _commit_with_no_history(tree: str, parent: str | None) -> str:
         "-C",
         str(ROOT),
         "-c",
-        "user.name=roedor-tests",
+        "user.name=agent-os-tests",
         "-c",
         "user.email=tests@localhost",
         "-c",
@@ -255,7 +256,12 @@ def _build_stand_in_main(directory: pathlib.Path) -> pathlib.Path:
     # what git accepts in place of the directory a plain clone has: `git -C <main> worktree add`
     # then works the same in this worktree and in CI's checkout.
     (main / ".git").write_text(f"gitdir: {_git('rev-parse', '--absolute-git-dir')}\n")
-    (main / "config").symlink_to(ROOT / "config", target_is_directory=True)
+    # A copy of `config.example.yaml`, not a symlink to a host's real `config/` (#512): nothing
+    # this chain measures depends on a project's own values, and a copy keeps the disposable tree
+    # self-contained -- `AGENT_OS_HOST_ROOT=main` below is what points both launched roles at it,
+    # whether or not a subprocess inherits this session's own `AGENTS_CONFIG_PATH`.
+    (main / "config").mkdir()
+    (main / "config" / "agents.yaml").write_text(EXAMPLE_CONFIG.read_text())
     for name in ("agent_task.sh", "_python.sh"):
         (main / "agent_os" / "bin" / name).symlink_to(AGENT_OS_DIR / "bin" / name)
     return main
