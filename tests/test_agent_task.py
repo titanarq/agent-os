@@ -42,8 +42,10 @@ from agent_os.lib import (
     load_role_class,
     never_run_rules,
     read_persisted_quota_verdict,
+    read_role_run_exit_marker,
     role_app_slug,
     role_launch,
+    role_run_exit_marker,
 )
 
 # The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
@@ -1468,9 +1470,23 @@ def _stream_file(path: pathlib.Path, events: list[dict]) -> pathlib.Path:
 
 def _age_by(path: pathlib.Path, seconds: float) -> None:
     """Moves a file's mtime back: for the detached driver, which reads the real clock, this is the
-    clock moving forward -- both the verdict's age and a role log's age are read off mtimes."""
+    clock moving forward -- the verdict's age is read off its file's mtime."""
     stat = path.stat()
     os.utime(path, (stat.st_atime - seconds, stat.st_mtime - seconds))
+
+
+def _age_exit_marker_by(log: pathlib.Path, seconds: float) -> None:
+    """The same clock move for a role run, whose time is its exit marker's content. The driver
+    writes the marker once and never again; only the test rewrites it, to stand in for time."""
+    exited_at = read_role_run_exit_marker(log)
+    assert exited_at is not None, f"{log.name}: the driver wrote no exit marker"
+    role_run_exit_marker(log).write_text(
+        (exited_at - timedelta(seconds=seconds)).isoformat() + "\n"
+    )
+
+
+def _ns(moment: datetime) -> int:
+    return int(moment.timestamp() * 1e9)
 
 
 def test_a_role_refused_on_quota_sends_the_next_launch_to_the_fallback_until_the_ttl(
@@ -1524,11 +1540,12 @@ def test_a_role_refused_on_quota_sends_the_next_launch_to_the_fallback_until_the
         "the driver wrote the verdict itself -- the guard is meant to be its one writer"
     )
 
-    # 2. One guard tick folds the refusal into the verdict, timed by the refused run's own log.
+    # 2. One guard tick folds the refusal into the verdict, dated by the moment the refused
+    # backend exited -- the marker the driver wrote then -- not by the log the run kept writing.
     agent_guard.tick(main=tmp_path)
     verdict_file = cache / f"agent_guard_{task_class.backend}.json"
     assert read_persisted_quota_verdict(task_class.backend).status == "exhausted"
-    assert verdict_file.stat().st_mtime_ns == rejected_log.stat().st_mtime_ns
+    assert verdict_file.stat().st_mtime_ns == _ns(read_role_run_exit_marker(rejected_log))
 
     # 3. The next launch reads it and runs on the declared fallback.
     second = launch(served, "0")
@@ -1549,11 +1566,106 @@ def test_a_role_refused_on_quota_sends_the_next_launch_to_the_fallback_until_the
     assert (plan.backend, plan.substituted) == (task_class.backend, False), plan
 
     # ...and for the detached driver, which reads the real clock, by moving the refusal's two
-    # records back by the same amount. A real tick in between re-reads nothing into the verdict.
-    _age_by(rejected_log, ttl_seconds + 300)
+    # records -- its exit marker and the verdict file -- back by the same amount. A real tick in between re-reads nothing into the verdict.
+    _age_exit_marker_by(rejected_log, ttl_seconds + 300)
     _age_by(verdict_file, ttl_seconds + 300)
     agent_guard.tick(main=tmp_path)
     third = launch(served, "0")
     assert claude_mark.is_file(), "the class's own backend did not run once the verdict aged out"
     assert not qwen_mark.exists()
     assert f"past the {ttl_seconds // 60} min TTL" in third.stdout, third.stdout
+
+
+# Stands in for the planner's backend on the one run a validator's exit-hook `wake` starts: records
+# that it ran and answers with Claude's refusal, exiting 1 the way the CLI does.
+REFUSED_PLANNER_STUB = """#!/usr/bin/env bash
+: > "$PLANNER_STUB_MARK"
+cat "$PLANNER_STUB_STREAM"
+exit 1
+"""
+
+
+def test_a_planner_refused_after_the_validator_that_woke_it_leaves_the_verdict_exhausted(
+    launch_environment, tmp_path, monkeypatch
+):
+    """The review's sequence, as it happened on this host on 2026-09-21: a validator finishes
+    cleanly, its exit hook's `wake` runs a planner synchronously, Claude refuses that planner, and
+    the validator's log is appended to AFTER the planner has ended (the wake's own lines, the
+    worktree's removal). Dated by log mtimes, the validator's `allowed` was the newest Claude
+    observation and the refusal was lost. Dated by the backends' exit markers, the wake itself
+    leaves the verdict `exhausted`, aged from the planner's exit, and the next role launch takes
+    the fallback. Only the backends are stubs: the driver, its exit hook, `guard wake` and
+    `planner_task.sh` are the real ones, in a sandboxed cache."""
+    cache = pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
+    planner_cache = cache / "planner"
+    launch_environment["WORKER_CACHE_DIR"] = str(cache)
+    # `planner_task.sh` and `guard.planner_dir` must agree on where the planner's run lands; with
+    # `AGENT_CACHE_DIR` set they would not unless this names it.
+    launch_environment["PLANNER_CACHE_DIR"] = str(planner_cache)
+    for name, value in (
+        ("AGENT_CACHE_DIR", cache),
+        ("WORKER_CACHE_DIR", cache),
+        ("PLANNER_CACHE_DIR", planner_cache),
+    ):
+        monkeypatch.setenv(name, str(value))
+
+    stub = pathlib.Path(launch_environment["AGENT_CLAUDE_BIN"])
+    qwen_mark = tmp_path / "qwen-was-launched.txt"
+    claude_mark = tmp_path / "claude-was-launched.txt"
+    planner_mark = tmp_path / "planner-was-launched.txt"
+    launch_environment["AGENT_QWEN_BIN"] = str(
+        _marking_stub(tmp_path / "bin" / "qwen", qwen_mark, stub)
+    )
+    launch_environment["AGENT_CLAUDE_BIN"] = str(
+        _marking_stub(tmp_path / "bin" / "claude", claude_mark, stub)
+    )
+    planner_stub = tmp_path / "bin" / "planner-backend"
+    planner_stub.write_text(REFUSED_PLANNER_STUB)
+    planner_stub.chmod(0o755)
+    launch_environment.update(
+        # Both of the planner driver's backends, so whichever the gate picks never reaches a real
+        # CLI; before the refusal the gate reads the validator's `allowed` and picks claude.
+        PLANNER_CLAUDE_BIN=str(planner_stub),
+        PLANNER_QWEN_BIN=str(planner_stub),
+        PLANNER_STUB_MARK=str(planner_mark),
+        PLANNER_STUB_STREAM=str(
+            _stream_file(tmp_path / "rejected.jsonl", REJECTED_BY_THE_QUOTA_STREAM)
+        ),
+        STUB_STREAM=str(_stream_file(tmp_path / "served.jsonl", SERVED_STREAM)),
+    )
+    _, task_class = load_role_class("validator")
+    fallback = task_class.fallback
+    assert fallback is not None, "config.example.yaml declares no validator fallback"
+
+    # The validator runs on its own backend, is served, and its exit hook wakes the planner.
+    first = _launch(launch_environment, "validator", no_wake=False)
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert claude_mark.is_file() and not qwen_mark.exists()
+    assert planner_mark.is_file(), "the exit hook's wake never ran the planner"
+    validator_log = _printed_path(first.stdout, "log")
+    planner_logs = sorted(planner_cache.glob("*.log"))
+    assert len(planner_logs) == 1, planner_logs
+    validator_exited = read_role_run_exit_marker(validator_log)
+    planner_exited = read_role_run_exit_marker(planner_logs[0])
+    assert validator_exited is not None and planner_exited is not None
+    # The review's premise, measured: the validator's log was still being written after the
+    # planner it woke had exited, while its backend had exited before that planner started.
+    assert validator_exited < planner_exited
+    assert validator_log.stat().st_mtime_ns > _ns(planner_exited)
+
+    # No tick has run: the wake itself folded the planner's refusal before it returned.
+    verdict = read_persisted_quota_verdict(task_class.backend)
+    assert verdict.status == "exhausted", verdict.reason
+    verdict_file = cache / f"agent_guard_{task_class.backend}.json"
+    assert verdict_file.stat().st_mtime_ns == _ns(planner_exited)
+    # And a tick after it re-reads nothing into a fresher verdict.
+    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: True)
+    agent_guard.tick(main=tmp_path)
+    assert verdict_file.stat().st_mtime_ns == _ns(planner_exited)
+
+    for mark in (qwen_mark, claude_mark):
+        mark.unlink(missing_ok=True)
+    second = _launch(launch_environment, "validator")
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert qwen_mark.is_file(), "the fallback backend was never launched"
+    assert not claude_mark.exists(), "Claude was launched on a verdict that read exhausted"

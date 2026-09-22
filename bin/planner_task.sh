@@ -124,6 +124,7 @@ run)
     --append-system-prompt "$RULES" \
     "You have been woken by agent_os.guard. The events since the last planner run: $context. Act on them and exit." \
     >>"$logfile" 2>&1
+  agent_mark_backend_exited "$logfile" >>"$logfile" 2>&1
 
   # One line per run in runs.tsv -- what woke it, what it cost. Parsed from the log's last
   # `result` event by agent_lib, so there is one implementation of "what did this run cost". The

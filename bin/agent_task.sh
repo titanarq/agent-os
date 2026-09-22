@@ -186,6 +186,15 @@ agent_append_run_row() {
     --ts "$ts" --context "$context" --model "$model" >>"$runs_tsv"
 }
 
+# The moment the backend process returned, as `<log>.exited` (#429): what the guard dates this run's
+# quota observation by. It has to be written HERE, right after the backend call and before the exit
+# hook, because everything after it -- the `wake` that runs a whole planner synchronously, the
+# worktree's removal -- keeps appending to the log, so the log's mtime is no clock for the refusal.
+agent_mark_backend_exited() {
+  "$agent_python" -m agent_os.lib mark-backend-exited "$1" \
+    || echo "WARNING: no exit marker for $1 -- the guard will not read this run's quota"
+}
+
 # Sourced for the helpers above (planner_task.sh) -- everything below is the driver itself.
 [ "${BASH_SOURCE[0]}" != "${0}" ] && return 0
 
@@ -336,6 +345,7 @@ agent_detached_run() {
     --append-system-prompt "$AGENT_RUN_RULES" \
     "$AGENT_RUN_INSTRUCTION" \
     >>"$AGENT_RUN_LOGFILE" 2>&1
+  agent_mark_backend_exited "$AGENT_RUN_LOGFILE" >>"$AGENT_RUN_LOGFILE" 2>&1
 
   agent_append_run_row "$AGENT_RUN_LOGFILE" "$AGENT_RUN_DIR/runs.tsv" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$AGENT_RUN_CONTEXT" "$AGENT_RUN_MODEL"

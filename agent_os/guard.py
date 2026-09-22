@@ -73,8 +73,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+import yaml
+
 from agent_os.cli import AGENT_OS_DIR, agent_os_python, host_root
 from agent_os.lib import (
+    ROLE_RUN_EXIT_MARKER_SUFFIX,
     HumanMessageError,
     LabelVocabulary,
     TaskClass,
@@ -94,6 +97,7 @@ from agent_os.lib import (
     promotable_to_ready,
     quota_status,
     read_events,
+    read_role_run_exit_marker,
     render_human_message,
     result_total_tokens,
     role_app_slug,
@@ -614,7 +618,12 @@ def _load_bookkeeping(path: Path) -> StallBookkeeping:
 
 
 def _save_bookkeeping(path: Path, bookkeeping: StallBookkeeping) -> None:
-    path.write_text(json.dumps(asdict(bookkeeping)))
+    """Atomic: the launch gate reads this file without the lock (`agent_lib.
+    read_persisted_quota_verdict`), so it must only ever see the old file or the new one, never a
+    half-written one -- a temporary beside it, then `os.replace` over it."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(asdict(bookkeeping)))
+    os.replace(temporary, path)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -792,8 +801,7 @@ def wake(*, main: Path = HOST_ROOT, now: datetime | None = None) -> str:
 def _wake_locked(*, main: Path, now: datetime) -> str:
     # Before anything can launch the planner: a role whose exit hook called this `wake` directly
     # may have just been refused by its backend, and no tick has run since to say so (#429).
-    for line in fold_role_quota_observations(main=main, now=now):
-        print(line)
+    _fold_role_quota_observations_or_say_why(main=main, now=now)
     pending = pending_events(main)
     if not pending:
         return "no unconsumed planner events -- nothing to wake for"
@@ -828,6 +836,9 @@ def _wake_locked(*, main: Path, now: datetime) -> str:
 
     context = event_context(pending)
     log_path = _invoke_planner(context, main=main)
+    # The planner this wake just ran may itself have been refused; the next launch -- a role that
+    # planner started, or the next exit hook's wake -- must not wait a tick to know (#429).
+    _fold_role_quota_observations_or_say_why(main=main, now=now)
     _record_idle_wake_outcome_if_woken(pending, log_path, main=main)
     consume_events(pending, main=main)
     return f"planner run on {len(pending)} event(s): {context}"
@@ -2448,10 +2459,16 @@ def _report(outcome: EventOutcome) -> int:
 # (`agent_lib.role_launch`, through `agent_task.sh` and `planner_task.sh`) only ever READ it.
 #
 # The fold runs at the start of BOTH guard entry points that can launch a role: `tick`, before any
-# check or wake, and `_wake_locked`, under `planner.lock`, before it invokes the planner. The second
-# is the one that matters most: a role's exit hook writes `<role>_finished` and calls `wake`
-# directly, with no tick in between, so a validator rejected by Claude's window would otherwise be
-# followed at once by a planner launched on the same exhausted window.
+# check or wake, and `_wake_locked`, under `planner.lock`, before it invokes the planner -- and once
+# more in `_wake_locked` right after that planner returns. The wake is the one that matters most: a
+# role's exit hook writes `<role>_finished` and calls `wake` directly, with no tick in between, so a
+# validator rejected by Claude's window would otherwise be followed at once by a planner launched
+# on the same exhausted window; and a planner the wake ran and Claude refused is on the verdict
+# before the wake returns, not a tick later.
+#
+# A run's observation is dated by its exit marker (`<log>.exited`, `agent_lib.role_run_exit_marker`),
+# which the driver writes the moment the backend returns -- never by the log's mtime, which the
+# detached half keeps moving after the `result` (the exit hook's whole planner run lands in it).
 #
 # What is read is the backend's own terminal record, through the same detector the worker path
 # uses (`quota_status`), never what the agent wrote about itself
@@ -2468,11 +2485,16 @@ RoleQuotaStatus = Literal["allowed", "exhausted"]
 
 @dataclass(frozen=True)
 class RoleQuotaObservation:
-    """What one role run's log says about its backend's quota, and when it said it.
+    """What one role run's log says about its backend's quota, and when the backend said it.
 
-    `observed_at_ns` is the log's own mtime: a role log is appended to and never rewritten once its
-    run ends, so the same log yields the same time on every tick that reads it -- which is what lets
-    a rejection age out instead of being refreshed by each tick that sees it again."""
+    `observed_at_ns` is the moment the run's backend process exited, read off the exit marker the
+    driver wrote right then (`agent_lib.read_role_run_exit_marker`) and never rewrites. It is not
+    the log's mtime: the detached half keeps appending to its log after the backend's `result` --
+    the exit hook's `wake`, which runs a whole planner synchronously, and the worktree's removal --
+    so the mtime of a validator's log can be later than the planner run that validator woke. Dated
+    by the marker, the same run yields the same time on every fold that reads it, which is what
+    lets a rejection age out instead of being refreshed, and a planner refused after the validator
+    that woke it is the newer of the two."""
 
     backend: str
     status: RoleQuotaStatus
@@ -2520,10 +2542,14 @@ def _role_log_directories(*, main: Path) -> dict[Path, str]:
 def role_log_quota_observations(
     *, main: Path = HOST_ROOT, now: datetime | None = None
 ) -> dict[str, RoleQuotaObservation]:
-    """The most recent role-log observation per backend, among the logs written inside the
-    verdict's TTL. A log older than the TTL is not read at all: a verdict built from it would read
-    `unknown` at every launch anyway, and writing it would only hand the next worker tick a stale
-    baseline to report a spurious quota change against."""
+    """The most recent role-run observation per backend, among the runs whose backend exited
+    inside the verdict's TTL. A run with no exit marker is not read at all -- still running, died
+    before its backend returned, or older than the marker -- and neither is one whose marker is
+    older than the TTL: a verdict built from it would read `unknown` at every launch anyway, and
+    writing it would only hand the next worker tick a stale baseline.
+
+    A log that vanishes or cannot be read between the listing and the read is skipped, not raised:
+    one unreadable run must not hide what the others say."""
     now = now or datetime.now(UTC)
     ttl_seconds = load_mechanism().quota_verdict_ttl_minutes * 60
     oldest_ns = int((now.timestamp() - ttl_seconds) * 1e9)
@@ -2531,17 +2557,21 @@ def role_log_quota_observations(
     for directory, class_backend in _role_log_directories(main=main).items():
         if not directory.is_dir():
             continue
-        for log_path in directory.glob("*.log"):
-            try:
-                observed_at_ns = log_path.stat().st_mtime_ns
-            except OSError:
+        for marker in directory.glob(f"*.log{ROLE_RUN_EXIT_MARKER_SUFFIX}"):
+            log_path = marker.with_name(marker.name.removesuffix(ROLE_RUN_EXIT_MARKER_SUFFIX))
+            exited_at = read_role_run_exit_marker(log_path)
+            if exited_at is None:
                 continue
+            observed_at_ns = int(exited_at.timestamp() * 1e9)
             if observed_at_ns < oldest_ns:
                 continue
-            status = role_run_quota_status(log_path)
+            try:
+                status = role_run_quota_status(log_path)
+                header = ROLE_RUN_BACKEND_RE.search(log_path.read_text(errors="replace"))
+            except OSError:
+                continue
             if status is None:
                 continue
-            header = ROLE_RUN_BACKEND_RE.search(log_path.read_text(errors="replace"))
             backend = header["backend"] if header else class_backend
             known = latest.get(backend)
             if known is None or observed_at_ns > known.observed_at_ns:
@@ -2556,20 +2586,24 @@ def _bookkeeping_lock_path(bookkeeping: Path) -> Path:
 def fold_role_quota_observations(
     *, main: Path = HOST_ROOT, now: datetime | None = None
 ) -> list[str]:
-    """Writes each backend's newest role-log observation into that backend's verdict file, when it
+    """Writes each backend's newest role-run observation into that backend's verdict file, when it
     is NEWER than what the file already holds, and returns one line per write for the caller's log.
 
     "Newer" is measured against the file's own mtime, which is the verdict's age for every reader
     (`agent_lib.read_persisted_quota_verdict`): the write sets that mtime to the observation's time,
-    not to now, so the same log read again on the next tick is not newer than itself and changes
+    not to now, so the same run read again by the next fold is not newer than itself and changes
     nothing -- and a live worker's tick, which rewrites the file at its own now, stays the most
     recent observation for as long as it runs. Only `last_quota_status` changes; the stall
     bookkeeping in the same file is carried over as it was.
 
-    Never emits `quota_changed`: that trigger belongs to the worker path. The lock is taken without
-    blocking, and a file whose lock is held -- a tick checking that backend's live worker right now
-    -- is left for the next fold rather than waited on, so a worker's exit hook that reaches `wake`
-    while the tick is cutting that very worker can never deadlock against it."""
+    Never WRITES `quota_changed`: that trigger belongs to the worker path. It does move the baseline
+    that path compares against, though, so while a worker of the same backend is alive, a fold that
+    changes `last_quota_status` can make that worker's next tick see a change and emit the event --
+    see `docs/modules/workers.md`. The lock is taken without blocking, and a file whose lock is
+    held -- a tick checking that backend's live worker right now -- is left for the next fold rather
+    than waited on, so a worker's exit hook that reaches `wake` while the tick is cutting that very
+    worker can never deadlock against it. A verdict file that does not parse is left alone with a
+    line: it is the worker path's to rewrite, and guessing its stall bookkeeping would be worse."""
     lines = []
     for backend, observation in sorted(role_log_quota_observations(main=main, now=now).items()):
         bookkeeping_path = worker_paths(backend, main).bookkeeping
@@ -2585,7 +2619,13 @@ def fold_role_quota_observations(
                 and bookkeeping_path.stat().st_mtime_ns >= observation.observed_at_ns
             ):
                 continue
-            bookkeeping = _load_bookkeeping(bookkeeping_path)
+            try:
+                bookkeeping = _load_bookkeeping(bookkeeping_path)
+            except (ValueError, TypeError) as error:
+                lines.append(
+                    f"{backend}: {bookkeeping_path.name} unreadable ({error}) -- not folded"
+                )
+                continue
             bookkeeping.last_quota_status = observation.status
             _save_bookkeeping(bookkeeping_path, bookkeeping)
             os.utime(bookkeeping_path, ns=(observation.observed_at_ns, observation.observed_at_ns))
@@ -2593,6 +2633,25 @@ def fold_role_quota_observations(
             f"{backend}: quota verdict {observation.status} from role log {observation.log.name}"
         )
     return lines
+
+
+# What a fold can meet on a host and must not let out of `tick` or `wake`: a file that vanishes or
+# is unreadable (OSError), a verdict file or a config that does not parse (ValueError -- which
+# covers JSONDecodeError and pydantic's ValidationError --, TypeError, yaml.YAMLError), and a
+# config that names no such key (KeyError).
+FOLD_ERRORS = (OSError, ValueError, TypeError, KeyError, yaml.YAMLError)
+
+
+def _fold_role_quota_observations_or_say_why(*, main: Path, now: datetime) -> None:
+    """The fold as its two callers run it: an enrichment of the verdict, never a precondition of
+    the tick or the wake that follows. A failure prints one line -- the verdict stays what it was,
+    which is exactly what a run that said nothing would have left -- and the caller goes on."""
+    try:
+        lines = fold_role_quota_observations(main=main, now=now)
+    except FOLD_ERRORS as error:
+        lines = [f"role quota fold skipped -- {type(error).__name__}: {error}"]
+    for line in lines:
+        print(line)
 
 
 def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
@@ -2604,8 +2663,7 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     now = now or datetime.now(UTC)
     # First, so every launch this tick leads to reads a verdict that already includes the roles'
     # own rejections; each worker check below then overwrites it with its live stream (#429).
-    for line in fold_role_quota_observations(main=main, now=now):
-        print(line)
+    _fold_role_quota_observations_or_say_why(main=main, now=now)
     results = [_tick_backend(backend, main=main) for backend in BACKENDS]
     for result in results:
         print(result.message)

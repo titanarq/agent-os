@@ -16,6 +16,10 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # max_total_tokens`, the token ceiling a Qwen class is actually cut on (#387).
     python -m agent_os.lib planner-run-row <log> --ts T --context C --model M
         # one `.cache/planner/runs.tsv` line, read off the log's last `result` event.
+    python -m agent_os.lib mark-backend-exited <log>
+        # `<log>.exited`: the moment the role's backend process returned, written by both role
+        # drivers right after the backend call and before anything else of the run -- the time the
+        # guard dates that run's quota observation by (#429), never the log's own mtime.
     python -m agent_os.lib role-class validator [--field model|name|max_context]
     python -m agent_os.lib role-app validator
         # the one class carrying `role: validator`, and the App slug that role signs as --
@@ -1576,8 +1580,9 @@ def read_persisted_quota_verdict(
 
     The age is the FILE'S mtime, and that is not an approximation: the guard module is the file's
     one writer (#429), and each write leaves the mtime at the moment of the observation it records
-    -- a live worker's tick at its own now (`agent_guard._tick_backend`), a role's log at that log's
-    own mtime (`agent_guard.fold_role_quota_observations`). This function only reads. A file nobody
+    -- a live worker's tick at its own now (`agent_guard._tick_backend`), a role run at the moment its
+    backend exited, off the run's exit marker (`agent_guard.fold_role_quota_observations`). This
+    function only reads. A file nobody
     has rewritten for a while is therefore a verdict nobody has refreshed for exactly that long --
     including the case that matters most, where the run ended and the guard stopped having a stream
     to look at.
@@ -1715,6 +1720,41 @@ def role_launch(
 
 
 RUNS_TSV_HEADER = "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
+
+# A role run's exit marker (#429): `<stamp>.log.exited`, one ISO-8601 UTC timestamp, written by the
+# driver the moment the backend process returns. The log itself is no clock for that moment: the
+# detached half keeps appending to it after the backend's `result` -- the exit hook's `wake`, which
+# runs a whole planner synchronously, and the worktree's removal -- so its mtime can be minutes
+# later than the refusal it records, and later than the planner run it started.
+ROLE_RUN_EXIT_MARKER_SUFFIX = ".exited"
+
+
+def role_run_exit_marker(log_path: pathlib.Path | str) -> pathlib.Path:
+    log_path = pathlib.Path(log_path)
+    return log_path.with_name(log_path.name + ROLE_RUN_EXIT_MARKER_SUFFIX)
+
+
+def write_role_run_exit_marker(
+    log_path: pathlib.Path | str, *, now: datetime | None = None
+) -> pathlib.Path:
+    """Written once per run and never again: a second call for the same log is a driver bug, and
+    it would move the observation's time, so it is refused rather than overwritten."""
+    marker = role_run_exit_marker(log_path)
+    with marker.open("x") as handle:
+        handle.write((now or datetime.now(UTC)).isoformat() + "\n")
+    return marker
+
+
+def read_role_run_exit_marker(log_path: pathlib.Path | str) -> datetime | None:
+    """When the run's backend exited, or None: no marker (the run is still going, it died before
+    its backend returned, or it predates the marker), or one that does not read as an aware
+    timestamp -- which dates nothing, and so observes nothing."""
+    try:
+        text = role_run_exit_marker(log_path).read_text().strip()
+        exited_at = datetime.fromisoformat(text)
+    except (OSError, ValueError):
+        return None
+    return exited_at if exited_at.tzinfo is not None else None
 
 
 def last_result_event(log_text: str) -> dict | None:
@@ -1906,6 +1946,8 @@ def main() -> None:
     resolve.add_argument(
         "--field", default="name", help="a field of the resolved class (default: its name)"
     )
+    exited = sub.add_parser("mark-backend-exited")
+    exited.add_argument("log")
     row = sub.add_parser("planner-run-row")
     row.add_argument("log")
     row.add_argument("--ts", required=True)
@@ -1977,6 +2019,8 @@ def main() -> None:
         _print_usage_report(args.events, body)
     elif args.command == "resolve-budget":
         sys.exit(_resolve_budget(sys.stdin.read(), args.field))
+    elif args.command == "mark-backend-exited":
+        write_role_run_exit_marker(args.log)
     elif args.command == "planner-run-row":
         log_text = pathlib.Path(args.log).read_text(errors="replace")
         print(planner_run_row(log_text, ts=args.ts, context=args.context, model=args.model))
