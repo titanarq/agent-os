@@ -353,6 +353,10 @@ MECHANISM_CLOSING = "If the body does not name one, stop and say so rather than 
 # `agent_lib.never_run_rules` -- the split point a test reads the configured commands out of, and
 # the paragraph that follows the two ownership ones in the worker's RULES.
 NEVER_RUN_HEADING = "COMMANDS YOU MUST NEVER RUN"
+NEVER_RUN_CLOSING = (
+    "The reason is part of the rule: it is what you judge an edge case against. If a task "
+    "genuinely\nneeds one of these, stop and say so rather than working around it."
+)
 
 
 def _patch_path_list(text, key, paths):
@@ -752,13 +756,17 @@ def test_the_workers_paragraph_is_the_configured_list_verbatim():
 def test_a_project_that_forbids_no_command_gets_no_paragraph_and_no_stub_heading(tmp_path):
     """An empty `project.never_run` renders nothing at all -- not a heading with nothing under it,
     and not a gap twice as wide as the one the paragraph filled: the placeholder's own line goes
-    with it, and what is left around it is the single blank line every other boundary has."""
+    with it, and what is left around it is the single blank line every other boundary has.
+
+    `config.example.yaml` names no `prompt_extras` either, so the next paragraph the template
+    actually renders is the environment one -- ENVIRONMENT_HEADING, not a host's own extension-
+    point text, is what a config-agnostic test can rely on following it (#512)."""
     rules = _rendered_rules(config_with_never_run(tmp_path, []))
 
     assert NEVER_RUN_HEADING not in rules
     assert "__NEVER_RUN_RULES__" not in rules
     assert "\n\n\n" not in rules
-    between = rules.split(MECHANISM_CLOSING + "\n")[1].split("RUNNING PYTHON AND TESTS")[0]
+    between = rules.split(MECHANISM_CLOSING + "\n")[1].split(ENVIRONMENT_HEADING)[0]
     assert between == "\n", repr(between)
 
 
@@ -777,7 +785,10 @@ SENTINEL_ENVIRONMENT = {
 }
 
 # The paragraph's own heading, rendered by `agent_lib.worker_environment_rules` from the configured
-# keys -- what a test splits on, and the paragraph that follows RUNNING PYTHON AND TESTS.
+# keys -- what a test splits on. It follows `__PROJECT_EXTRAS__` in the template
+# (`agent_os/prompts/worker.md`), which a host with none configured (`config.example.yaml`) renders
+# as nothing, so this heading is the mechanism's own next fixed thing after the ownership rule and
+# `never_run` (#512).
 ENVIRONMENT_HEADING = "THE ENVIRONMENT YOU RUN IN IS CONFIGURED FOR YOU, AND READ-ONLY BY DEFAULT"
 
 # The variable the real config exports, whose absence from a prompt rendered from the sentinel
@@ -862,7 +873,12 @@ def test_a_project_that_exports_no_environment_gets_no_paragraph_and_no_stub_hea
     """An empty `project.worker_environment` renders nothing at all -- no heading, no placeholder,
     and no gap twice as wide as the one the paragraph filled -- and with it goes every claim that
     the worker's own connection is read-only: a worker told about a guard nobody exported would
-    trust one that does not exist."""
+    trust one that does not exist.
+
+    Split on `NEVER_RUN_CLOSING`, the mechanism's own fixed closing line, rather than on any host's
+    extension-point text: `config.example.yaml` names no `prompt_extras`, so nothing renders at
+    that placeholder here, and `never_run_rules`' own paragraph is what actually precedes the gap
+    this test measures (#512)."""
     config = _config_with_worker_environment(tmp_path, {})
     assert worker_environment_rules(load_project(config)) == ""
     rules = _rendered_rules(config)
@@ -872,7 +888,7 @@ def test_a_project_that_exports_no_environment_gets_no_paragraph_and_no_stub_hea
     assert "__WORKER_ENVIRONMENT_RULES__" not in rules
     assert "\n\n\n" not in rules
     # The sections around it stay separated by the one blank line every other boundary has.
-    between = rules.split("writes to it for real.\n")[1].split("SPLIT THE WORK")[0]
+    between = rules.split(NEVER_RUN_CLOSING + "\n")[1].split("SPLIT THE WORK")[0]
     assert between == "\n", repr(between)
 
 
