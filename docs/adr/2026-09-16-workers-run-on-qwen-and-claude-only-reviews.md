@@ -87,3 +87,19 @@ Not by argument: **#342** is the open task that tunes the classes from recorded 
 The split between `mechanical-qwen` and `complex-qwen`, both ceilings, and whether a Claude worker
 class earns its place back are all inputs to that task, with real numbers behind them. Until then
 the numbers here remain what the file already says they are: placeholders.
+
+## Amendment, 2026-09-22 (#514)
+This decision reads as a rule about two hardcoded names, `qwen` and `claude`, because those were
+the only backends `config/agents.yaml` could describe when it was written -- three parallel maps
+(`project.worktrees`, `project.worker_apps`, `project.executables`) keyed by a backend's own name,
+compared against string literals across the mechanism. #514 replaced the description with
+`project.backends.<name>: {command, worktree, app, stream, quota}`, so nothing in the mechanism
+compares a backend's name against a literal any more: a worker task class names a `backend:` key,
+a role class names a `fallback.backend:` key, and the guard cuts on whatever `quota:` detector that
+key declares (`none` for `qwen`, `claude_rate_limit` for `claude`, unchanged). Read this ADR's
+"Every worker task runs on the Qwen backend" and "Claude is kept for the roles that review and
+plan" as **which class names which configured backend today**, not as a property of the names
+themselves -- the rule this decision states is about a role's own class and its declared backend
+capability, and a third backend earns its place the same way `qwen` and `claude` did: one
+`project.backends` entry, a stream parser only if its jsonl shape is new, and a class or a
+`fallback:` naming it. Nothing else in the Decision, Consequences or reversal sections changes.
