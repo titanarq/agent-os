@@ -262,7 +262,7 @@ def test_budget_exceeded_sums_every_stage_process_of_the_issue(tmp_path):
 
 def _qwen_result_event(total_tokens: int) -> dict:
     """Qwen's terminal `result` as `.cache/spend/363/*.jsonl` records it, which is the shape every
-    worker class now runs on (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md):
+    worker class now runs on (agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md):
     `usage.total_tokens` present, `cache_read_input_tokens` a part of `input_tokens`, and no
     `total_cost_usd` anywhere in the event (#387)."""
     output_tokens = max(total_tokens // 100, 1)
@@ -863,7 +863,7 @@ def test_the_exit_hook_run_for_real_writes_only_under_the_override_and_starts_no
 
 
 # ---- planner events, the lock, and wake: the only path to a planner run
-# (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
+# (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
 # `_invoke_planner` is the one thing monkeypatched -- everything else (the lock, the event files,
 # the consume, the cap) runs for real against tmp_path. ----
 
@@ -1008,7 +1008,7 @@ def test_wake_runs_again_once_the_day_rolls_over(tmp_path, monkeypatch, invocati
 
 
 # ---- refine_pending: idle_dispatchable's sibling for the refiner, behind planner.refiner_
-# unattended (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-
+# unattended (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-
 # dry-run.md) ------------------------------------------------------------------------------------
 
 
@@ -1841,7 +1841,7 @@ def test_no_idle_event_and_one_page_when_the_exclusion_leaves_nothing(
 
 
 # ---- #384: an issue BECOMING dispatchable is an edge (unthrottled); a set SITTING dispatchable
-# stays the rate-limited condition (docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-
+# stays the rate-limited condition (agent_os/docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-
 # not-a-condition.md) ----
 
 
@@ -2618,7 +2618,7 @@ def test_a_comment_with_no_author_at_all_is_not_a_reply(monkeypatch, tmp_path):
 
 # ---- ntfy: every page renders from `project.messages`, never from a literal in code
 # (#366, `agent_os/docs/AGENT_OS.md` §7 row (g);
-# docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) ---------------
+# agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md) ---------------
 
 # The functions that hand a string to `agent_os/bin/notify.sh`, per module. Anything reaching one of
 # them must already have been rendered from the configured templates -- that is the whole claim

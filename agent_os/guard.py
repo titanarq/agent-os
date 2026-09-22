@@ -39,7 +39,7 @@ files under `.cache/` this module itself owns:
         # promoted, or that there was nothing to. `tick` runs this on every fire since #365, so
         # this subcommand is a manual sweep, not the only way it ever happens. Never sets
         # status:ready on an issue with no parent -- that stays a human decision
-        # (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-
+        # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-
         # run.md).
 
 Every decision function below is pure: it takes parsed events/state/commit info and returns a
@@ -48,16 +48,16 @@ verdict, with no filesystem or process access, so it is unit-tested over fixture
 shelling out to `git log`, killing the process, committing, posting -- lives only in the `_tick_*`
 and action functions below the pure section.
 
-    docs/adr/2026-09-14-a-stall-inside-budget-is-caught-by-commit-cadence.md
-    docs/adr/2026-09-14-liveness-is-judged-against-a-plan-the-worker-declares.md
-    docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md
-    docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md
-    docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md
-    docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
-    docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md
-    docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-worker-that-asked.md
-    docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md
-    docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md
+    agent_os/docs/adr/2026-09-14-a-stall-inside-budget-is-caught-by-commit-cadence.md
+    agent_os/docs/adr/2026-09-14-liveness-is-judged-against-a-plan-the-worker-declares.md
+    agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md
+    agent_os/docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md
+    agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md
+    agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
+    agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md
+    agent_os/docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-worker-that-asked.md
+    agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md
+    agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ from agent_os.lib import (
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
 # `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
 # it is derived from this package's own location, which is what made the mechanism able to run
-# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# exactly one project (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
 
@@ -115,7 +115,7 @@ DEFAULT_LIVENESS_CUTOFF = timedelta(minutes=30)
 # Everything below that names this particular project -- the worktree of each backend, the label
 # vocabulary, the tracking epic whose status:agents-paused is the full stop -- is read from
 # `config/agents.yaml`'s `project:` section, never written as a literal here
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md). It is
+# (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md). It is
 # read once at import: a malformed section should fail the guard loudly, not on the tick that
 # happens to need the value.
 PROJECT = load_project()
@@ -146,16 +146,16 @@ TRACKING_EPIC_ISSUE = str(PROJECT.tracking_epic)
 
 # The things that can make a planner run worth its cost. Anything not on this list is not an
 # event: the planner is woken by edges, never by a condition someone re-derives every tick
-# (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
+# (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
 # The one-shot roles' own ends and the refine-the-backlog edge: a validator that has posted its
 # review is an edge the planner acts on (approve -> the human merges, request-changes -> resume
-# the worker), exactly like a worker's end (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-
+# the worker), exactly like a worker's end (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-
 # agent-against-the-issues-acceptance-criteria.md); `refine_pending` is `idle_dispatchable`'s
 # sibling for the refiner -- a condition, not an edge, so it is rate-limited the same way
-# (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+# (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
 # `new_dispatchable` is `idle_dispatchable`'s own edge half: an issue *becoming* dispatchable is
 # an edge and is not rate-limited, while a set of issues *sitting* dispatchable stays the
-# rate-limited condition (docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-
+# rate-limited condition (agent_os/docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-
 # condition.md). `orphan_doing` is the tick's own reconciliation edge (#365): an issue labeled
 # status:doing that no live worker is running is state nobody is acting on, and unlike the drift
 # the tick merely logs, only the planner can decide what to do with it. `role_died` is that same
@@ -230,7 +230,7 @@ _EXPECT_LINE_RE = re.compile(
 
 def last_declared_cutoff(progress_log_text: str) -> tuple[datetime, timedelta] | None:
     """The most recent EXPECT/HEARTBEAT line's own timestamp and cutoff, read in file order --
-    last match wins, per docs/adr/2026-09-14-liveness-is-judged-against-a-plan-the-worker-
+    last match wins, per agent_os/docs/adr/2026-09-14-liveness-is-judged-against-a-plan-the-worker-
     declares.md. `None` if the worker has not posted one yet.
 
     A line whose `cutoff=` cannot be parsed is skipped, never raised (#428): one malformed
@@ -283,7 +283,7 @@ def liveness_expired(
     declared cutoff -- never a number the guard invents, and never the timestamp text the worker
     typed into the line (#419). `observed_at` is the guard's own reading of when the last
     declaration arrived -- the file's mtime in production -- because a worker's own clock is
-    cooperative state the same way the cutoff VALUE is (docs/adr/2026-09-14-driver-writes-
+    cooperative state the same way the cutoff VALUE is (agent_os/docs/adr/2026-09-14-driver-writes-
     mechanical-state-agent-writes-cooperative-state.md), but unlike the cutoff value, the arrival
     of the line is not something the worker is better placed to know than the guard is. Before the
     first EXPECT, the anchor is the run's own start (when worker_task.sh wrote STARTED/RESUMED)
@@ -313,7 +313,7 @@ def budget_exceeded(
     issue_cost_usd: float | None = None,
     issue_total_tokens: int | None = None,
 ) -> bool:
-    """True when ANY of the three ceilings a task class names is passed (docs/adr/2026-09-14-agent-
+    """True when ANY of the three ceilings a task class names is passed (agent_os/docs/adr/2026-09-14-agent-
     spend-is-tokens-not-time-and-needs-a-written-budget.md), which since #375 are measured over
     different things: `max_context` is per stage process -- a fresh process starts from an empty
     context, which is the whole point of staging -- while `max_cost_usd` and `max_total_tokens` are
@@ -343,7 +343,7 @@ def budget_exceeded(
 @dataclass
 class StallBookkeeping:
     """Guard-internal, distinct from the driver's `.state` and the agent's `progress.log`
-    (docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md). Only
+    (agent_os/docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md). Only
     Qwen's fallback path below actually advances it -- Claude's events carry their own timestamp,
     so turns-since-commit never needs a running counter for that backend."""
 
@@ -352,7 +352,7 @@ class StallBookkeeping:
     warned_at_turn_count: int | None = None
     # The tick's own memory of "allowed"/"exhausted" from the previous tick, so `tick` can tell a
     # freshly-observed quota state from a *changed* one -- checkpoint 4's third planner trigger
-    # (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md).
+    # (agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md).
     # `None` before the first tick has ever observed this backend, so that first observation is
     # never itself reported as a change.
     last_quota_status: str | None = None
@@ -391,7 +391,7 @@ def stall_detected(
     bookkeeping: StallBookkeeping,
 ) -> tuple[StallTier | None, int, StallBookkeeping]:
     """Turns since the worker's last commit, judged against the task class's two thresholds
-    (docs/adr/2026-09-14-a-stall-inside-budget-is-caught-by-commit-cadence.md): past the lower one
+    (agent_os/docs/adr/2026-09-14-a-stall-inside-budget-is-caught-by-commit-cadence.md): past the lower one
     it is a warning still worth watching, past the higher one it cuts. Returns the tier (if any),
     the turn count itself (for the warning message), and the bookkeeping to persist."""
     since_commit, bookkeeping = turns_since_commit(events, commit_timestamps, turns, bookkeeping)
@@ -620,7 +620,7 @@ def _save_bookkeeping(path: Path, bookkeeping: StallBookkeeping) -> None:
 # Planner events: the only thing that wakes the planner. Neither the tick nor the exit hook calls
 # planner_task.sh itself -- each writes one file under `.cache/planner_events/` and then calls
 # `wake`, which is the single serialized door to a planner run
-# (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
+# (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
 # ----------------------------------------------------------------------------------------------
 
 
@@ -838,7 +838,7 @@ def notify(message: str, *, main: Path = HOST_ROOT) -> None:
 def cut_run(
     backend: str, reason: CutReason, *, worktree: Path, statefile: Path, main: Path = HOST_ROOT
 ) -> None:
-    """docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md:
+    """agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md:
     stop the process and freeze what it left, both reused from worker_task.sh -- never
     reimplemented here -- then write the terminal state. The freeze is the driver's own
     `freeze_uncommitted_work`, reached through its `freeze` subcommand (#482), so a run a tick cuts
@@ -1068,7 +1068,7 @@ def _tick_backend(
         # never disagree about what was available. The cut above is unchanged either way: the
         # guard still cuts on the backend's own signal, and only the launch decides where the
         # work runs next
-        # (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-
+        # (agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-
         # agent.md).
         if reason == "quota" and not task_class.allows_backend_fallback:
             try:
@@ -1199,7 +1199,7 @@ def _clear_blocked_label(issue: str, *, main: Path) -> None:
 
 
 def _check_human_replies(*, main: Path = HOST_ROOT) -> list[str]:
-    """The mechanical half of docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-
+    """The mechanical half of agent_os/docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-
     worker-that-asked.md: for every open issue still labeled status:blocked-on-human, compare the
     label's own timestamp (the timeline's last "labeled" event for it) against the latest comment.
     A newer comment BY THE HUMAN clears the label and is reported so `tick` can fold it into the
@@ -1305,7 +1305,7 @@ def _write_nudged_events(*, main: Path, now: datetime) -> list[EventOutcome]:
 
 def _agents_paused(*, main: Path = HOST_ROOT) -> bool:
     """The repo-wide, human-only full stop: status:agents-paused on the tracking epic (#12) skips
-    invoking the planner at all, per docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-
+    invoking the planner at all, per agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-
     never-as-a-standing-process.md. A `gh` failure here is read as "not paused" rather than
     silently blocking the planner forever on a transient API hiccup."""
     result = subprocess.run(
@@ -1456,7 +1456,7 @@ def _page_missing_worktree_if_due(
     scan: DispatchableScan, *, main: Path = HOST_ROOT, now: datetime
 ) -> str | None:
     """Page the human for every backend whose missing worktree is holding ready work back. This is
-    the second trigger of docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-
+    the second trigger of agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-
     human.md in its concrete form, not a third rule: on that backend nothing can proceed, and only
     a human can create the worktree (§7 row (r)). Which is why it is NOT conditioned on the whole
     dispatchable set being empty -- another backend still having work of its own does not make
@@ -1468,7 +1468,7 @@ def _page_missing_worktree_if_due(
     under the guard's own cache directory, the way `_page_run_cap_once` makes "once a day"
     mechanical rather than remembered. One `backend_worktree_missing` page per due backend,
     rendered by `agent_lib.render_human_message` like every other page -- nothing here composes
-    what the human reads (docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-
+    what the human reads (agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-
     human.md, amended 2026-09-16, #366)."""
     if not scan.without_worktree:
         return None
@@ -1511,7 +1511,7 @@ def refinable_issues(*, main: Path = HOST_ROOT) -> list[int]:
     """Every open issue the REFINER should be pointed at right now: labeled `status:refine` and
     carrying a STRUCTURAL defect (`agent_lib.needs_refinement`: a missing/misordered section or an
     unresolvable budget line) -- the mechanical half of
-    docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md. An
+    agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md. An
     issue whose body is otherwise template-conformant but carries an open `Blocked by #N` is NOT
     refinable this way: that is not something the refiner wrote or can rewrite away (#356). Same
     two-`gh`-call shape as `dispatchable_issues` above even though `needs_refinement` itself no
@@ -1535,7 +1535,7 @@ def _write_refine_pending_event_if_due(*, main: Path, now: datetime) -> EventOut
     """`refine_pending` is `idle_dispatchable`'s sibling for the refiner: a condition, not an edge,
     so it gets the same rate limit (`planner.idle_wake_minutes`), and it is written at all only
     once a human has flipped `planner.refiner_unattended` to true
-    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)."""
+    (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)."""
     if not load_planner_config().refiner_unattended:
         return EventOutcome()
     issues = refinable_issues(main=main)
@@ -1609,7 +1609,7 @@ def _log_state_drift(backend: str, statefile: Path, *, main: Path) -> str | None
 def _move_issue(issue: str, state: str, *, main: Path) -> bool:
     """The one door the guard has to the tracker's mechanical state: `issues.py move`, never a
     `gh` call of its own, so the label vocabulary, the "exactly one status label" rule and the
-    board mirroring have a single implementation (docs/adr/2026-09-14-driver-writes-mechanical-
+    board mirroring have a single implementation (agent_os/docs/adr/2026-09-14-driver-writes-mechanical-
     state-agent-writes-cooperative-state.md).
 
     Returns whether the move actually landed. The tick's own log is the only evidence anyone has
@@ -1642,7 +1642,7 @@ def promote_refined(*, main: Path = HOST_ROOT) -> list[int]:
     """Every open `status:refine` issue whose parent carries `auto-ready` and whose body now
     validates gets moved to `status:ready` mechanically -- `promotable_to_ready` is already the
     tested decision, this is only the `gh`-backed selection and the one action it triggers
-    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
     An issue with no parent is never promotable this way; the human promotes it by hand."""
     refine = _gh_issue_list(
         "number,state,labels,body,parent", main=main, extra=["--label", REFINE_LABEL]
@@ -2137,7 +2137,7 @@ def write_seen_dispatchable(issues: list[int], *, main: Path = HOST_ROOT) -> Non
 def _occupied_worker_slots(*, main: Path) -> tuple[int, int]:
     """(workers alive right now, `planner.max_parallel_issues`) -- the SAME cap
     `worker_task.sh start` refuses a dispatch against
-    (docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md, #374), read
+    (agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md, #374), read
     with the SAME `_is_alive` reading `tick`'s own `any_alive` below already uses, so a
     `new_dispatchable` edge the tick suppresses for lack of a slot can never disagree with what the
     driver would have said about the same moment (#436) -- one implementation of "is there a free
@@ -2152,7 +2152,7 @@ def _write_new_dispatchable_event_if_gained(
     """An issue BECOMING dispatchable is an edge, so it wakes the planner on the next tick and is
     NOT subject to `planner.idle_wake_minutes` -- unlike a set that merely sits dispatchable,
     which stays `idle_dispatchable`'s rate-limited condition
-    (docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-condition.md).
+    (agent_os/docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-condition.md).
 
     The very first tick after the state file does not exist records everything as already-seen and
     writes nothing: installing this must not fire a burst for a backlog that was already waiting.
@@ -2422,7 +2422,7 @@ def _report(outcome: EventOutcome) -> int:
 
 
 def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
-    """The monitor tick, per docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-
+    """The monitor tick, per agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-
     a-standing-process.md. Each backend is checked first (budget/liveness/stall/quota -- may cut a
     run); then every edge it found is written as an event and `wake` decides, under the lock,
     whether that adds up to a planner run. Nothing at all happens while the tracking epic carries
@@ -2519,7 +2519,7 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     # ONE scan per tick, whether or not a worker is alive: the edge below is about the backlog
     # changing, not about a slot being free, and how much may run at once is the driver's own
     # configured cap (`planner.max_parallel_issues`), never something the guard second-guesses
-    # (docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-condition.md).
+    # (agent_os/docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-condition.md).
     scan = dispatchable_scan(main=main)
     written += _report(_write_new_dispatchable_event_if_gained(scan.issues, main=main, now=now))
 

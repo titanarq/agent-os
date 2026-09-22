@@ -100,8 +100,8 @@ quota-refused turn surfaces as a `result` event with `is_error: true` and `api_e
 no `rate_limit_event`, no `api_error_status` -- so quota detection below is Claude-only by the data
 actually available, not by design choice.
 
-    docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md
-    docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md
+    agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md
+    agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md
 """
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ from agent_os.cli import AGENT_OS_DIR, host_root
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
 # `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
 # it is derived from this package's own location, which is what made the mechanism able to run
-# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# exactly one project (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
 # `AGENTS_CONFIG_PATH` isolates a test from the repository's real config/agents.yaml, the same
@@ -197,7 +197,7 @@ class RoleFallback(Strict):
 
 
 class TaskClass(Strict):
-    # Which of the four headless roles this class configures (docs/adr/2026-09-14-a-pr-is-
+    # Which of the four headless roles this class configures (agent_os/docs/adr/2026-09-14-a-pr-is-
     # validated-by-a-validator-agent-against-the-issues-acceptance-criteria.md). A worker's class
     # is picked by the issue's `<!-- budget: <class> -->` line and there may be many of them; the
     # other three roles have exactly one class each, named after the role, which is how
@@ -248,11 +248,11 @@ class TaskClass(Strict):
 
 class LabelVocabulary(Strict):
     """The mechanical state labels. Named here so a project that spells them differently changes
-    one file instead of the guard (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
+    one file instead of the guard (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
     and-configured-not-coded.md).
 
     The first six are the states an issue moves through and exactly one of them is ever set
-    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     state.md). `agents_paused` is NOT one of them: it is the human-only full stop, lives on the
     tracking epic, and `move` never adds or removes it."""
 
@@ -266,7 +266,7 @@ class LabelVocabulary(Strict):
     # NOT a state: a marker a human puts on a FEATURE (never a task/bug) to say its refined
     # children may be promoted to `status:ready` mechanically, without a human looking at each one.
     # `issues.py move` never adds or removes it, the same way it never touches `agents_paused`
-    # (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
     auto_ready: str = "auto-ready"
     # NOT a state either: the human (or the control-plane agent, which authenticates `gh` as the
     # human) puts it on any open issue to wake the planner NOW, and the guard's tick removes it the
@@ -388,7 +388,7 @@ class ProjectConfig(Strict):
     # One template per ntfy page, written in `human_language` above and rendered by
     # `render_human_message` below. Empty by default, and a project that leaves it empty simply
     # cannot page: the renderer refuses an unknown key rather than inventing a wording of its own
-    # (docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md).
+    # (agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md).
     messages: dict[str, str] = {}
     # The project's own module names, one per `docs/modules/*.md`. `issues.py` turns them into the
     # `module:<name>` half of the fixed label set it creates on the tracker; they used to be a list
@@ -397,7 +397,7 @@ class ProjectConfig(Strict):
     modules: list[str] = []
     # The project's own test runner, injected into the worker RULES as __TEST_COMMAND__ rather
     # than a literal `scripts/test.sh` in the mechanism: the one door back to the owner role a
-    # read-only-by-default worker has (docs/adr/2026-09-15-workers-connect-read-only-by-default-
+    # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
     # One host-owned file per role whose text is appended at that role's `__PROJECT_EXTRAS__`
@@ -411,7 +411,7 @@ class ProjectConfig(Strict):
     # Environment exported into every worker's own backend process before it starts (never the
     # mechanism's own process) -- the first host uses this for a read-only database URL so a
     # worker connects to its shared database read-only by default, without a project literal in
-    # worker_task.sh (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
+    # worker_task.sh (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
     # owner-only-through-the-test-runner.md).
     worker_environment: dict[str, str] = {}
     # The HOST PROJECT's protected paths: what an agent must never write in this project, as glob
@@ -427,7 +427,7 @@ class ProjectConfig(Strict):
     # (`MechanismConfig.own_paths` below), where the brief is what authorizes the edit. Empty by
     # default: a project that protects nothing forbids nothing, and no mechanism script carries a
     # path of its own
-    # (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    # (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
     forbidden_paths: list[str] = []
     # The subset of `forbidden_paths` that is a DELIVERY DIRECTORY rather than live configuration
     # -- a place a PR is expected to add a file to, whose diff changes nothing any stamp or freeze
@@ -473,7 +473,7 @@ class ProjectConfig(Strict):
     # One GitHub App slug per non-worker role. A role with no entry here signs as `planner_app`:
     # the validator and the refiner do exactly that until they have Apps of their own, which is a
     # browser step for the human, so the day one exists is a line in this file and no code change
-    # (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
+    # (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
     # criteria.md, "Identities").
     role_apps: dict[str, str] = {}
     labels: LabelVocabulary = LabelVocabulary()
@@ -498,7 +498,7 @@ class MechanismConfig(Strict):
     """The mechanism's own configuration, which is NOT the host project's to write: `project:`
     above holds what one project supplies, this holds what the mechanism is made of, so a second
     project adopts the drivers and copies this section with them instead of inventing it
-    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md)."""
+    (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md)."""
 
     # The mechanism's own files -- the drivers, the shared library, the role prompts -- as globs
     # relative to the repository root, matched with the same fnmatch semantics as
@@ -510,7 +510,7 @@ class MechanismConfig(Strict):
     # Writing them in the main checkout stays forbidden by the rule that forbids writing there at
     # all -- and that is also why editing them from a worktree cannot break the run: a stage runs
     # the main checkout's copy of the driver
-    # (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+    # (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
     # Empty by default, like every list in this config: a mechanism that names none of its own
     # files audits none, and the paragraph a driver renders from an empty list is absent rather
     # than empty.
@@ -526,14 +526,14 @@ class MechanismConfig(Strict):
 
 
 class PlannerConfig(Strict):
-    """How often the planner may be woken (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-
+    """How often the planner may be woken (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-
     and-an-idle-wake-is-rate-limited.md)."""
 
     idle_wake_minutes: int = 120
     max_runs_per_day: int = 12
     # Stays false until the human has reviewed the refiner's dry run on three real issues (#349
     # criterion 3). Flipping it is a human decision, never something a checkpoint does on its own
-    # (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
     refiner_unattended: bool = False
     # `WIP: cut by guard` commits since a branch's fork point at or above which `worker_task.sh
     # resume` refuses to relaunch, read via `planner-value` below (#362).
@@ -643,7 +643,7 @@ def load_role_class(
     A worker's class is chosen per issue and there are many of them; the validator, the refiner
     and the planner have exactly one each, so "which model does this role run" is answered by
     `config/agents.yaml` alone and never by a second mapping inside a driver
-    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
     Two classes claiming one role is a configuration error, not something to resolve by picking
     the first."""
     matching = sorted(
@@ -664,7 +664,7 @@ def load_role_class(
 def role_app_slug(role: str, project: ProjectConfig | None = None) -> str:
     """The GitHub App a role signs as. `project.role_apps` names it; a role with no entry falls
     back to the planner's App, which is what the validator and the refiner do until Apps of their
-    own exist (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-
+    own exist (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-
     acceptance-criteria.md)."""
     project = project or load_project()
     return project.role_apps.get(role) or project.planner_app
@@ -676,7 +676,7 @@ def human_message_rules(project: ProjectConfig | None = None) -> str:
     into every role's RULES block (the validator's and the refiner's in `agent_task.sh`, the
     planner's in `planner_task.sh`, the worker's in `worker_task.sh`) so none of them carries its
     own copy of the wording
-    (docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
+    (agent_os/docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
     terms.md)."""
     language = (project or load_project()).human_language
     return f"""WRITING TO THE HUMAN
@@ -839,7 +839,7 @@ def mechanism_paths_regex(mechanism: MechanismConfig | None = None) -> str:
     empty-means-no-audit reading -- because what separates the two lists is the RULE, not the
     matching: a path in this one is a violation only when the issue body does not name it, which is
     the caller's decision to make and not this function's
-    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md)."""
+    (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md)."""
     return _anchored_ere((mechanism or load_mechanism()).own_paths)
 
 
@@ -848,14 +848,14 @@ def forbidden_paths_rules(project: ProjectConfig | None = None) -> str:
     `project.forbidden_paths` `forbidden_paths_regex` is built from and injected via the
     `__FORBIDDEN_PATHS_RULES__` placeholder -- the list the worker is told about and the list its
     run is audited against are one list, so neither can drift
-    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 
     The FIRST of the two paragraphs the ownership rule is told in, and it points at the second
     (`mechanism_paths_rules` below): "no brief can authorize one of these" is worth saying because
     a brief CAN authorize one of the mechanism's own files, and one paragraph without the other
     leaves the worker guessing which side of that line its brief fell on. The driver injects the
     pair together or not at all
-    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+    (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
 
     Empty when the project forbids nothing, which is why the driver deletes the placeholder's own
     line instead of substituting an empty string into it: a heading with nothing under it would
@@ -891,7 +891,7 @@ def mechanism_paths_rules(mechanism: MechanismConfig | None = None) -> str:
     the target of the work whenever the issue body says it is, which is what lets the mechanism be
     developed by the same machinery that protects everything else. It points back at the first
     paragraph (`forbidden_paths_rules` above), so the driver injects the pair together or not at all
-    (docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
+    (agent_os/docs/adr/2026-09-16-the-mechanisms-own-files-are-not-the-host-projects-protected-paths.md).
 
     Empty when the mechanism names none of its own files, and then the driver takes the host
     paragraph down with it rather than render half the contrast."""
@@ -1178,7 +1178,7 @@ def blocking_issue_numbers(body: str) -> list[int]:
 
 
 # The shape of a task or bug body, in the order the sections must appear
-# (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+# (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
 # state.md). `.github/ISSUE_TEMPLATE/task.md` and `bug.md` scaffold exactly these, followed by the
 # `<!-- budget: <class> -->` line -- the eighth section, checked separately because it also has
 # to resolve against `config/agents.yaml`.
@@ -1250,7 +1250,7 @@ def section_failures(body: str) -> list[str]:
 def stages_completed(commit_subjects: list[str]) -> int:
     """The highest stage N a `stage N/M: <title>` commit subject claims done, 0 if none of them
     match. Progress is read off the branch's own commits, never written by an agent
-    (docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md) --
+    (agent_os/docs/adr/2026-09-14-driver-writes-mechanical-state-agent-writes-cooperative-state.md) --
     `stage_total_from_subjects` is not needed alongside this because the total is `len(
     parse_stages(body))`, already known from the issue body without touching git."""
     completed = 0
@@ -1311,7 +1311,7 @@ def validate_issue_body(
     line, empty when it is one. THE single implementation: `issues.py validate` prints these lines
     and `is_dispatchable` below asks only whether the list is empty, so "Ready for AI" and "the
     validator passes" can never drift apart
-    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     state.md).
 
     "Closed" for a blocker is read as "not in the set of open issue numbers", so one listing
@@ -1336,11 +1336,11 @@ def is_dispatchable(
 ) -> bool:
     """Pure: does this issue, as `gh issue list --json number,state,labels,body` describes it,
     meet every mechanical condition for a worker to be started on it right now
-    (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md)?
+    (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md)?
 
     Open, labeled `status:ready`, not `status:blocked-on-human`, and `validate_issue_body` above
     finding nothing wrong with the body -- which is what "Ready for AI" is defined as
-    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     state.md): the same function `issues.py validate N` runs, never a second copy of the rules.
 
     Note this says nothing about whether a *slot* is free -- one running issue per `module:`
@@ -1371,7 +1371,7 @@ def needs_refinement(
     `status:refine`, not waiting on a human, and its body has a STRUCTURAL defect the refiner can
     actually fix -- a missing/misordered section or an unresolvable budget line
     (`section_failures` + `budget_failures`, never the full `validate_issue_body`)
-    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+    (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
 
     `open_issue_numbers` is accepted only for call-site compatibility with `is_dispatchable` and
     `promotable_to_ready`, which do need it -- an issue an open `Blocked by #N` line makes
@@ -1404,7 +1404,7 @@ def promotable_to_ready(
     with NO failures, AND its parent carrying `auto-ready`. An issue with no parent is never
     promotable this way -- a raw issue the refiner split by hand has no feature above it to have
     opted in, so the human promotes it
-    (docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)."""
+    (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)."""
     labels = labels or LabelVocabulary()
     if (issue.get("state") or "OPEN").upper() != "OPEN":
         return False
@@ -1515,7 +1515,7 @@ def quota_exhausted(events: list[dict]) -> str | None:
 def quota_status(events: list[dict]) -> Literal["allowed", "exhausted"]:
     """The same verdict as `quota_exhausted` above, as the word the guard's tick compares between
     ticks and the driver's stage gate reads off a finished stage's log (#375). Claude-only, per
-    docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md --
+    agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md --
     Qwen's stream carries no comparable signal, so its runs always read `allowed`."""
     return "exhausted" if quota_exhausted(events) else "allowed"
 
@@ -1523,7 +1523,7 @@ def quota_status(events: list[dict]) -> Literal["allowed", "exhausted"]:
 # -------------------------------------------------------------------------------------------------
 # Which backend a role's launch gets (#425). The verdict is the guard's own persisted one, read off
 # disk, and never an agent's claim about its own quota
-# (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md): the
+# (agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md): the
 # role has not run yet when this is decided, so there is no stream of its own to read, and the one
 # authority on Claude's window that exists at that moment is what the guard last saw in the stream
 # of the last Claude run it watched.
@@ -1736,7 +1736,7 @@ def last_result_event(log_text: str) -> dict | None:
 
 def planner_run_row(log_text: str, *, ts: str, context: str, model: str) -> str:
     """One `.cache/planner/runs.tsv` line per planner run: what it was woken for and what it cost
-    (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
+    (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
     A run whose log has no terminal `result` (killed, crashed, a stub backend) still gets its
     line, with empty cost fields -- a missing row would read as "the run never happened"."""
     result = last_result_event(log_text) or {}
@@ -1805,7 +1805,7 @@ def _print_usage_report(events_path: str, body: str | None) -> None:
 
 def _resolve_budget(body: str, field: str = "name") -> int:
     """Used by `worker_task.sh start` to refuse a dispatch whose issue has no resolvable budget
-    (docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md). Same
+    (agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md). Same
     `budget_failures` the validator runs, so the driver and `issues.py validate` cannot disagree
     about what a resolvable budget is. `--field` prints one field of the resolved class instead of
     its name -- the driver's stage gate asks for `max_cost_usd` and for `max_total_tokens`, the
@@ -1857,7 +1857,7 @@ def _print_role_backend(role: str, *, cache_dir: str | None) -> int:
 def _print_worker_environment() -> None:
     """One `KEY<TAB>VALUE` line per `project.worker_environment` entry, for `worker_task.sh` to
     `export` before it launches the backend CLI -- never a literal environment variable name or
-    value in the mechanism itself (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
+    value in the mechanism itself (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-
     and-configured-not-coded.md). `worker_environment_rules` renders the paragraph the worker reads
     about this same list, names and no values, so the export and the prose cannot drift."""
     for key, value in load_project().worker_environment.items():
@@ -1867,7 +1867,7 @@ def _print_worker_environment() -> None:
 def _print_worktree_backends() -> None:
     """One backend name per line, from `project.worktrees` -- so `worker_task.sh start` can
     count alive workers across every configured backend without a hardcoded `qwen`/`claude` pair
-    (docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md)."""
+    (agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md)."""
     for name in load_project().worktrees:
         print(name)
 

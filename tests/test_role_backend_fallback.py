@@ -2,7 +2,7 @@
 
 The guard still cuts a Claude run whose own stream says the quota is rejected -- that is unchanged,
 and it is the backend's signal, never an agent's claim
-(docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md). What
+(agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md). What
 changed is the page that follows the cut: `quota_exhausted_no_fallback` exists for the case where
 nothing can proceed without a human, and a class that declares a way round the exhausted window --
 `qwen_fallback_eligible`, the planner's redispatch of a worker, or `fallback:`, a role's own launch
@@ -91,7 +91,7 @@ def _rate_limit_event(status: str) -> dict:
 def _claude_worker_class(**overrides) -> TaskClass:
     """A Claude worker class, the only kind the guard's quota cut can reach: the tick cuts
     `reason=quota` for `backend == "claude"` alone, and no worker class in the real config is on
-    Claude today (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md)."""
+    Claude today (agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md)."""
     fields: dict = {
         "backend": "claude",
         "model": "claude-opus-5",

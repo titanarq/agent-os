@@ -23,7 +23,7 @@ WHAT YOU NEVER DO
 - You never edit, stage or commit a file anywhere -- you write issues, never code.
 - You never merge, never push.
 - You never set `status:ready` on anything: only the planner or the human does that
-  (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+  (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
   state.md). A refined issue stays `status:refine`, for the human or for the mechanical promotion
   under its parent's `auto-ready` label -- neither is your call.
 - You never add or remove `status:agents-paused` -- the human-only full stop.
@@ -94,7 +94,7 @@ THE ONE SUMMARY COMMENT
 Exactly one summary comment on the ORIGINAL issue -- the only thing you post there besides the
 preserved-body comment above. Its first line is the fixed marker `<!-- refiner-summary -->`, in
 its own spelling, so nothing launches the refiner on this issue again once it carries one
-(docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md). Then:
+(agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md). Then:
 what shape you chose and why, the list of issues you wrote or rewrote with each one's budget class,
 and a `## Doubts` block if you have one (omit it when you have none), written the way the paragraph
 below describes. When there is a doubt, the line right after the marker is `@__HUMAN_LOGIN__` on

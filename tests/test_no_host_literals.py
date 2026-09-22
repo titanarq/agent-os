@@ -1,5 +1,5 @@
 """`agent_os/` carries no literal of any host project (agent_os/docs/AGENT_OS.md's own agnosticism claim,
-`docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md`).
+`agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md`).
 
 A blunt substring walk over every file under `agent_os/`, excluding `docs/` (history and the
 module doc are allowed to name the projects they were written about), `tests/golden/` (fixture

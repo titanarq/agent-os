@@ -55,7 +55,7 @@ ROEDOR_WORKER_EXTRAS = """RUNNING PYTHON AND TESTS
 ROEDOR_REFINER_EXTRAS = """   EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
    small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
    whose `backend:` is `claude`
-   (docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
+   (agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
 """
 
 

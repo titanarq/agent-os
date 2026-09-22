@@ -9,7 +9,7 @@
 # the interpreter inside the HOST project's own root virtualenv, so the mechanism only ran inside a
 # host that happened to have one, carrying `pyyaml` and `pydantic` -- true of the first host, false
 # of a second one with no root virtualenv at all. The mechanism carries its own interpreter now
-# (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
+# (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
 
 # The directory this file's own `bin/` lives in, i.e. the package root.
 agent_os_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

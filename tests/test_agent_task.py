@@ -3,7 +3,7 @@ and the environment it hands the backend when it does.
 
 Most of these tests go through `--dry-run`, which prints the resolved model, identity and prompt
 and exits before minting a token or calling the backend
-(docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
+(agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
 criteria.md). The last section runs the launch path itself against a stub backend -- see
 `launch_environment` for how that stays offline, off the tracker and out of the real `.cache`.
 Since #400 that launch is DETACHED, so nothing in that section can assert on a run it has not
@@ -231,7 +231,7 @@ def test_the_refiners_rules_carry_the_split_vs_rewrite_contract():
     assert "<!-- refiner-summary -->" in rules
     assert '"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human' in rules
     # It never sets status:ready itself -- only the planner or the human does
-    # (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    # (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     # state.md).
     assert "You never set `status:ready`" in rules
     assert "--body-file" in rules
@@ -322,7 +322,7 @@ def test_the_resolved_rules_tell_every_role_to_mention_the_human_by_name():
 
 def test_the_resolved_rules_carry_the_writing_to_the_human_paragraph_in_the_configured_language():
     """A doubt reaches the human in their own language and in functional terms
-    (docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
+    (agent_os/docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
     terms.md). The wording lives once, in `agent_lib.human_message_rules`, and every role's RULES
     injects it through the `__HUMAN_MESSAGE_RULES__` placeholder -- this asserts the substitution
     landed and left no placeholder behind, not the literal wording (that is
@@ -401,7 +401,7 @@ def test_a_project_that_forbids_no_command_gets_no_paragraph_in_either_role(tmp_
 # legitimately carries this project's verbs and its frozen stamp, because it is rendered from that
 # project's config -- so these render it empty and assert on what is left, which is the mechanism's
 # own contract and nothing else (#363,
-# docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+# agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 # ---------------------------------------------------------------------------------------------
 
 # What the refiner's collision bullet cites now: the SHAPE of a project rule, where it used to name
@@ -818,7 +818,7 @@ def _prompt(environment) -> str:
 def _the_projects_package() -> str:
     """This repository's one importable top-level package, found rather than named: the driver
     exports PYTHONPATH at a tree and knows no package name, and neither does this test
-    (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+    (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
     `glob` and not `iterdir` plus a stat: the repository root holds a directory this process has no
     read access to, and finding the package does not need one."""
     found = sorted(path.parent.name for path in ROOT.glob("*/__init__.py"))
@@ -1206,7 +1206,7 @@ def test_a_run_whose_backend_leaves_no_result_event_still_gets_its_row_and_finis
 # -------------------------------------------------------------------------------------------------
 # THE LAUNCH GATE (#425). Which backend a role runs on is decided before a turn is spent, from the
 # guard's OWN persisted verdict on Claude's quota -- never from an agent's claim about its own
-# (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md). On
+# (agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md). On
 # 2026-09-18 the planner's 08:48:46Z run was rejected by Claude's five-hour rate limit in 497 ms,
 # and the role that would have redispatched everything else on Qwen was that same rejected Claude
 # run, so seven `status:ready` issues sat with a free Qwen allowance unused until 2026-09-20.

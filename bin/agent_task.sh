@@ -3,22 +3,22 @@
 # worktree. Today that is the VALIDATOR (reviews a pull request against its issue's acceptance
 # criteria) and the REFINER (turns a raw issue into template-conformant sub-issues with a budget
 # class, or rewrites a small task/bug's body in place;
-# docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
+# agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
 #
 #   agent_os/bin/agent_task.sh <role> <issue|pr> [context...] [--dry-run] [--no-wake]
 #
 # `<role>` is resolved against `config/agents.yaml`: the one class carrying `role: <role>` names
 # the model and the ceiling, and `project.role_apps` (falling back to `project.planner_app`) names
 # the GitHub App it signs as -- the validator must not be the PR's own author
-# (docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
+# (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-validator-agent-against-the-issues-acceptance-
 # criteria.md). Nothing here is a literal of one project
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+# (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 #
 # WHICH BACKEND RUNS IT is a second decision, made after that one and by the launch gate (#425):
 # the class names the backend, and a class that also declares a `fallback:` runs on it when the
 # guard's own persisted verdict says the class's backend is out of quota. The verdict is read off
 # `.cache/agent_guard_<backend>.json` and never claimed by an agent
-# (docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md), and
+# (agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md), and
 # one older than `mechanism.quota_verdict_ttl_minutes` reads as unknown, which launches the class's
 # own backend. A substituted run names itself everywhere the mechanism reads: the identity lines
 # below and in the log header, the `runs.tsv` row's model, the `<role>_finished` event, and -- for
@@ -347,7 +347,7 @@ agent_detached_run() {
     echo "no-wake: not writing ${AGENT_RUN_ROLE}_finished, not calling agent_guard.py wake"
   else
     # The role's own end is an edge the planner acts on, exactly like a worker's: write the event,
-    # then knock on the one door (docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-
+    # then knock on the one door (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-
     # wake-is-rate-limited.md). This is the step that never ran for PR #399's validator.
     # `${VAR-}` and not `$VAR`: this is the announcement PR #399's run never made, and a suffix
     # the launching half did not export must not be what stops it.

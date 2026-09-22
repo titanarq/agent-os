@@ -1,8 +1,8 @@
 # The one file a host project writes to adopt the mechanism. Copy it to `config/agents.yaml` at
 # the host's root and fill it in: every value below belongs to ONE project, and nothing under
 # `agent_os/` reads a project literal from anywhere else
-# (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md,
-# docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
+# (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md,
+# agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
 #
 # `AGENTS_CONFIG_PATH` overrides the location; otherwise the mechanism reads `config/agents.yaml`
 # under the HOST's root (`$AGENT_OS_HOST_ROOT`, else the git checkout the cwd belongs to), never

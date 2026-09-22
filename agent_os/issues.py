@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GitHub Issues as the tracker, over `gh` (shell out, JSON in and out). Nothing here names a
 project: the repository and the module vocabulary come from `config/agents.yaml`'s `project:`
-section (docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
+section (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 
 No third-party GitHub library and no new dependency: every call is `gh api` / `gh issue` /
 `gh label` under `subprocess`.
@@ -97,7 +97,7 @@ from agent_os.lib import (
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
 # `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
 # it is derived from this package's own location, which is what made the mechanism able to run
-# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# exactly one project (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
 TEMPLATE_DIR = HOST_ROOT / ".github" / "ISSUE_TEMPLATE"
@@ -525,7 +525,7 @@ def save_keys(keys: dict[str, int]) -> None:
 # --------------------------------------------------------------------------------------------
 # Paging the human (ntfy)
 # --------------------------------------------------------------------------------------------
-# docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
+# agent_os/docs/adr/2026-09-14-ntfy-pages-only-when-nothing-can-proceed-without-a-human.md
 
 
 def page_human(message: str) -> bool:
@@ -585,7 +585,7 @@ def page_review_ready(number: int, issue: dict) -> str:
 # --------------------------------------------------------------------------------------------
 # Templates, validation, mechanical state
 # --------------------------------------------------------------------------------------------
-# docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
+# agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
 
 FRONT_MATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
 
@@ -719,7 +719,7 @@ def mirror_board_column(repo: str, number: int, column: str, board: int) -> str:
 def compose_brief(issue: dict, parent: dict | None, supplement: str | None) -> str:
     """Issue body, then parent body, then the optional supplement — the whole of what a worker
     reads after `AGENTS.md`
-    (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
+    (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
     state.md). The parent section is always emitted, saying so when there is no parent: a missing
     section would read as "the assembly failed" exactly like "there is nothing above this".
     """

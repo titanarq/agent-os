@@ -38,7 +38,7 @@ stay in the repository's language (English).
 - Budget class: every worker task goes to a Qwen class — `mechanical-qwen` for a small, fully
   specified change (a handful of files, a known test shape), `complex-qwen` in every other case.
   Never assign a worker task to a Claude backend
-  (`docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md`). One `module:` label per
+  (`agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md`). One `module:` label per
   issue.
 - Run `issues.py validate N` and fix until `ok`. Do not add any `status:*` label unless the human
   asked for the issue to enter the funnel; then `move N refine` (or `ready` only if it validates
@@ -158,7 +158,7 @@ each with your recommendation. Numbers in the table, not in the prose.
 
 ## Waking the planner early
 
-`docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`: the
+`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`: the
 `wake:planner` label (`project.labels.wake_planner`) is the one sanctioned lever you have to bring
 the planner back before the next tick's rate-limited idle wake.
 

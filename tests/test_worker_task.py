@@ -1,6 +1,6 @@
 """`agent_os/bin/worker_task.sh start` refuses an issue that is not a brief.
 
-The issue is the unit of work (docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-
+The issue is the unit of work (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-
 labels-are-the-mechanical-state.md): `start` takes an issue number, not a file, and an issue whose
 body does not validate is not dispatchable. These tests run the real driver with a stub `gh` first
 on `PATH` and a throwaway git worktree, and stop at the refusal -- they never reach the backend
@@ -294,7 +294,7 @@ def test_the_resolved_rules_name_the_test_command_by_substitution_not_a_literal(
     """#350: the worker's own connection is read-only by default, and the rules point it back to
     the owner role through `project.test_command` -- injected the same way as __HUMAN_LOGIN__ and
     __MAIN_CHECKOUT__, so the mechanism itself carries no `scripts/test.sh` literal
-    (docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-owner-only-through-
+    (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-owner-only-through-
     the-test-runner.md)."""
     test_command = load_project().test_command
     result = subprocess.run(
@@ -313,7 +313,7 @@ def test_the_resolved_rules_name_the_test_command_by_substitution_not_a_literal(
 def test_the_resolved_rules_carry_the_writing_to_the_human_paragraph_in_the_configured_language():
     """Same substitution as __HUMAN_LOGIN__ and __MAIN_CHECKOUT__ above, for the shared
     WRITING TO THE HUMAN wording (`agent_lib.human_message_rules`,
-    docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
+    agent_os/docs/adr/2026-09-15-a-question-for-the-human-is-written-in-their-language-and-in-functional-
     terms.md): the worker's BLOCKED question comment is written in `project.human_language`, and
     the placeholder that injects the rule leaves nothing behind."""
     language = load_project().human_language
@@ -1181,7 +1181,7 @@ def test_the_pr_exists_before_the_worker_finished_event_is_written():
 
 # ---------------------------------------------------------------------------------------------
 # `resume`: the relaunch cap the driver enforces itself, not the planner counting commits (#362,
-# docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md). Both
+# agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md). Both
 # `claude` and `qwen` fakes sit first on PATH regardless of which backend the test drives, on
 # purpose: a real backend must never be reachable from these tests even by accident.
 # ---------------------------------------------------------------------------------------------
@@ -1341,7 +1341,7 @@ def test_a_branch_whose_only_freeze_is_the_pre_merge_one_still_resumes(tmp_path)
 
 # ---------------------------------------------------------------------------------------------
 # `start`: the parallelism cap and the module exclusion, both enforced by the driver itself,
-# before it writes anything (#374, docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-
+# before it writes anything (#374, agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-
 # by-the-driver.md). `claude` and `qwen` fakes sit first on PATH regardless of which backend the
 # test drives, same as the relaunch-cap tests above -- a real backend must never be reachable
 # even by accident.

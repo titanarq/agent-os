@@ -52,7 +52,7 @@ from agent_os.lib import load_project
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
 # `.cache/`, `.secrets/`, `.github/ISSUE_TEMPLATE/`, the `project.worktrees` entries -- and none of
 # it is derived from this package's own location, which is what made the mechanism able to run
-# exactly one project (docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
+# exactly one project (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-
 # never-modified.md).
 HOST_ROOT = host_root()
 # `project.secrets_dir` through the same config loader `agent_task.sh` reads it with
