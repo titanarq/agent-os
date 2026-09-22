@@ -53,10 +53,13 @@ from collections.abc import Iterator
 import pytest
 from conftest import EXAMPLE_CONFIG
 
-from agent_os.cli import AGENT_OS_DIR
+from agent_os.cli import AGENT_OS_DIR, host_root
 
-# The HOST project this suite runs inside: the directory the package sits in (#508).
-ROOT = AGENT_OS_DIR.parent
+# The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
+# breaks the moment a copy IS the mechanism's own top directory, as the out-of-tree proof
+# makes it -- #512), but whatever `host_root()` itself resolves: the git checkout's toplevel,
+# same as every real driver run.
+ROOT = host_root()
 
 # The validator is the role under test because it is the only one that runs anything, and so the
 # only one the driver prepares a worktree for (`runs_tests=yes`): the worktree is one of the things

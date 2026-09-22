@@ -32,7 +32,7 @@ import time
 import pytest
 from conftest import EXAMPLE_CONFIG, config_with_never_run, config_with_no_host_text
 
-from agent_os.cli import AGENT_OS_DIR
+from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.lib import (
     PROMPTS_DIR,
     load_mechanism,
@@ -42,10 +42,11 @@ from agent_os.lib import (
     role_app_slug,
 )
 
-# The HOST project this suite runs inside: the directory the package sits in. The mechanism's
-# own files are under AGENT_OS_DIR; `config/agents.yaml`, the issue templates and the module
-# docs are the host's, under ROOT (#508).
-ROOT = AGENT_OS_DIR.parent
+# The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
+# breaks the moment a copy IS the mechanism's own top directory, as the out-of-tree proof
+# makes it -- #512), but whatever `host_root()` itself resolves: the git checkout's toplevel,
+# same as every real driver run.
+ROOT = host_root()
 DRIVER = AGENT_OS_DIR / "bin" / "agent_task.sh"
 
 ONE_SHOT_ROLES = ("validator", "refiner")

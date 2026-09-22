@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-from agent_os.cli import AGENT_OS_DIR
+from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.install import (
     Action,
     InstallError,
@@ -26,7 +26,11 @@ from agent_os.install import (
 )
 from agent_os.lib import ProjectConfig
 
-ROOT = AGENT_OS_DIR.parent
+# The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
+# breaks the moment a copy IS the mechanism's own top directory, as the out-of-tree proof
+# makes it -- #512), but whatever `host_root()` itself resolves: the git checkout's toplevel,
+# same as every real driver run.
+ROOT = host_root()
 
 
 def _project(**overrides) -> ProjectConfig:

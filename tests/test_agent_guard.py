@@ -22,7 +22,7 @@ import pytest
 
 from agent_os import guard as agent_guard
 from agent_os import lib as agent_lib
-from agent_os.cli import AGENT_OS_DIR
+from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.guard import (
     DEFAULT_LIVENESS_CUTOFF,
     StallBookkeeping,
@@ -51,10 +51,11 @@ from agent_os.lib import (
     render_human_message,
 )
 
-# The HOST project this suite runs inside: the directory the package sits in. The mechanism's
-# own files are under AGENT_OS_DIR; `config/agents.yaml`, the issue templates and the module
-# docs are the host's, under ROOT (#508).
-ROOT = AGENT_OS_DIR.parent
+# The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
+# breaks the moment a copy IS the mechanism's own top directory, as the out-of-tree proof
+# makes it -- #512), but whatever `host_root()` itself resolves: the git checkout's toplevel,
+# same as every real driver run.
+ROOT = host_root()
 
 # A body the validator accepts: the dispatchable predicate is "this issue validates AND it is
 # labeled ready", so every fixture below starts from a valid body and breaks exactly one thing.

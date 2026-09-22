@@ -17,7 +17,12 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 bin=$here/../bin
-root=$(cd "$here/../.." && pwd)
+# The git checkout this script itself lives in -- NOT `$AGENT_OS_HOST_ROOT` (a caller, e.g. this
+# suite's `captured` fixture, may point that at a throwaway host with no `.git` of its own, built
+# only to carry `config.example.yaml`): `git rev-parse --show-toplevel` from here, falling back to
+# the same two-levels-up guess `host_root()` uses when there is no git repository at all (#512 --
+# out-of-tree, `agent_os/` IS the checkout, not nested one level inside a bigger one).
+root=$(cd "$here" && git rev-parse --show-toplevel 2>/dev/null) || root=$(cd "$here/../.." && pwd)
 out=${1:-$here/golden}
 mkdir -p "$out"
 

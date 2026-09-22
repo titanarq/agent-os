@@ -20,7 +20,7 @@ from conftest import EXAMPLE_CONFIG
 from pydantic import ValidationError
 
 from agent_os import lib as agent_lib
-from agent_os.cli import AGENT_OS_DIR
+from agent_os.cli import host_root
 from agent_os.lib import (
     REQUIRED_SECTIONS,
     STATES,
@@ -69,10 +69,11 @@ from agent_os.lib import (
     worktree_path,
 )
 
-# The HOST project this suite runs inside: the directory the package sits in. The mechanism's
-# own files are under AGENT_OS_DIR; `config/agents.yaml` and the module docs are the host's,
-# under ROOT (#508).
-ROOT = AGENT_OS_DIR.parent
+# The HOST project this suite runs inside: not a fixed nesting under AGENT_OS_DIR (that
+# breaks the moment a copy IS the mechanism's own top directory, as the out-of-tree proof
+# makes it -- #512), but whatever `host_root()` itself resolves: the git checkout's toplevel,
+# same as every real driver run.
+ROOT = host_root()
 
 
 def _write(path: pathlib.Path, text: str) -> pathlib.Path:
