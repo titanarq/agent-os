@@ -659,7 +659,12 @@ class ProjectConfig(Strict):
         absolute_commands = {
             name: b.command for name, b in self.backends.items() if os.path.isabs(b.command)
         }
-        self.executables = {**self.executables, **absolute_commands}
+        # Backends FIRST: `executables_path_prefix()` walks this dict in declaration order to
+        # build the generated unit's `Environment=PATH=`, and a backend CLI (often under a version
+        # manager's own directory, e.g. nvm) is what the two dispatch paths most need to agree on
+        # (#380) -- putting the plain tracker entries (`gh`) ahead of it would silently reorder the
+        # generated PATH against the one armed by hand.
+        self.executables = {**absolute_commands, **self.executables}
         return self
 
     @field_validator("messages")

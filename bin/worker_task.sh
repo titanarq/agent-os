@@ -1081,7 +1081,7 @@ stage-exit)
     write_state "FAILED_LAUNCH command=$backend_bin status=$backend_status"
     echo "stage-exit: $backend_bin never started: $why"
     echo "  a failed launch, not a cut: nothing was tried, so it costs no relaunch attempt"
-    echo "  fix the binary (project.executables.$backend in config/agents.yaml) -- not a relaunch"
+    echo "  fix the binary (project.backends.$backend.command, or project.executables.$backend, in config/agents.yaml) -- not a relaunch"
     exit 1
   fi
 
@@ -1461,7 +1461,8 @@ status)
   case "$(head -n1 "$statefile" 2>/dev/null || true)" in
     FAILED_LAUNCH*)
       echo "           that command was never found, so this run never started: it cost no"
-      echo "           relaunch attempt, and the fix is project.executables in config/agents.yaml"
+      echo "           relaunch attempt, and the fix is project.backends.$backend.command (or its"
+      echo "           fallback, project.executables.$backend) in config/agents.yaml"
       ;;
   esac
   [ -s "$issuefile" ] && echo "issue:     #$(cat "$issuefile")"

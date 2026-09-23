@@ -3723,6 +3723,7 @@ def test_the_role_drivers_resolve_their_binary_before_they_write_anything(tmp_pa
         assert 'agent_executable "$launch_backend" "${' in text, script
         assert ") || exit 1" in text, script
         assert "-$(agent_executable claude)}" not in text, script
+        assert '-$(agent_executable "$launch_backend")}' not in text, script
 
 
 def test_a_backend_that_is_not_executable_is_a_failed_launch_too(tmp_path):
