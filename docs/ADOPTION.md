@@ -5,7 +5,8 @@ directory (§4.1) and running it against a new project. Nothing here is edited i
 every step either writes a file outside it or fills in `config/agents.yaml`
 (`agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md`).
 Placeholders: `<host>` is the new project's checkout root, `<org>/<repo>` its GitHub repository,
-`<remote>` the git remote the split mechanism repository is added as, `<agent>` a backend or role
+`<remote>` the git remote the mechanism's own repository is added as
+(`git remote add agent-os https://github.com/titanarq/agent-os.git`), `<agent>` a backend or role
 identity (`qwen`, `claude`, `planner`, `validator`, `refiner`).
 
 ## 1. Knowledge-layer prerequisites
@@ -39,8 +40,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 ## 2. Bring the mechanism in and configure it
 
 7. **Copy `agent_os/` as a unit** into `<host>/agent_os/` —
-   `git subtree add --prefix=agent_os <remote> main --squash` once the split repository exists
-   (§4.1's own ADR), or a plain `cp -r` for a first look before that. Nothing under it is edited;
+   `git subtree add --prefix=agent_os <remote> main --squash` from `titanarq/agent-os`
+   (§4.1's own ADR), or a plain `cp -r` for a first look. Nothing under it is edited;
    a host extends it only through `config/agents.yaml`, host-owned files that config names, and
    hook commands.
 8. **Write `<host>/config/agents.yaml`** from `agent_os/config.example.yaml`, which carries every
