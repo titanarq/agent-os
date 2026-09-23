@@ -62,7 +62,9 @@ EXCLUDED_PATHS = {
 
 
 def _is_excluded_by_location(relative_parts: tuple[str, ...]) -> bool:
-    if relative_parts[0] in (".venv", "__pycache__"):
+    # `.git` sits under `AGENT_OS_DIR` only once the mechanism is its own repository's root, and
+    # carries that repository's own URL: git's metadata, not a file of the mechanism.
+    if relative_parts[0] in (".git", ".venv", "__pycache__"):
         return True
     if relative_parts[0] == "docs":
         return True
@@ -116,3 +118,7 @@ def test_every_exclusion_still_applies():
     assert not stale, f"exclusion(s) no longer needed, remove from EXCLUDED_PATHS: {stale}"
     missing = [relative for relative in EXCLUDED_PATHS if relative not in by_relative]
     assert not missing, f"exclusion(s) naming a file that no longer exists: {missing}"
+
+
+def test_git_metadata_is_excluded_by_location():
+    assert _is_excluded_by_location((".git", "config"))
