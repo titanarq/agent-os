@@ -32,8 +32,9 @@ DEFAULT_STREAM_PARSER = ClaudeJsonlStreamParser.name
 # stream parser's own `quota_verdict`, recorded for every backend alike, because the launch gate of
 # a role reads it back whatever the backend is (#425); what differs per backend is only whether the
 # guard acts on it. `claude_rate_limit` is the one detector that exists today -- a stream that
-# carries `rate_limit_event`s and a refused `result` with `api_error_status` (the 2026-09-14 quota
-# ADR) -- and `none` is a backend whose stream carries no quota signal the guard should cut on.
+# carries a rejected `rate_limit_event`, or a refused `result` with `api_error_status == 429` (the
+# 2026-09-14 quota ADR, narrowed to the 429 shape by #530) -- and `none` is a backend whose stream
+# carries no quota signal the guard should cut on.
 QUOTA_DETECTOR_NONE = "none"
 QUOTA_DETECTORS: tuple[str, ...] = ("claude_rate_limit", QUOTA_DETECTOR_NONE)
 

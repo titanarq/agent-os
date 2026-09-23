@@ -570,6 +570,58 @@ def test_quota_exhausted_falls_back_to_result_api_error_status(tmp_path):
     assert "429" in reason
 
 
+@pytest.mark.parametrize("api_error_status", [500, 529])
+def test_quota_exhausted_none_on_a_non_429_result_error(tmp_path, api_error_status):
+    # A transport or server failure (5xx, 529 overloaded) is not a spent quota: no rate_limit_event
+    # rejected the run, and the terminal result's api_error_status is not 429 (#530).
+    path = _write(
+        tmp_path / "events.jsonl",
+        "\n".join(
+            [
+                _assistant_turn("s1", 100),
+                _result_line("s1", is_error=True, api_error_status=api_error_status),
+            ]
+        ),
+    )
+    assert quota_exhausted(read_events(path)) is None
+
+
+def test_quota_exhausted_reads_the_2026_09_18_shape(tmp_path):
+    # A rejected rate_limit_event plus a terminal result carrying api_error_status=429 -- the exact
+    # shape .cache/planner/20260918T084846Z.log carried (#530).
+    path = _write(
+        tmp_path / "events.jsonl",
+        "\n".join(
+            [
+                _assistant_turn("s1", 100),
+                _rate_limit_line("s1", "rejected", window="five_hour"),
+                _result_line("s1", is_error=True, api_error_status=429),
+            ]
+        ),
+    )
+    reason = quota_exhausted(read_events(path))
+    assert reason is not None
+    assert "rejected" in reason
+
+
+def test_quota_exhausted_reads_a_rejected_rate_limit_event_whatever_the_result_says(tmp_path):
+    # The rate_limit_event branch is authoritative and runs first: even a result carrying a
+    # non-429 status (or none at all) does not override a rejected rate limit (#530).
+    path = _write(
+        tmp_path / "events.jsonl",
+        "\n".join(
+            [
+                _assistant_turn("s1", 100),
+                _rate_limit_line("s1", "rejected", window="five_hour"),
+                _result_line("s1", is_error=True, api_error_status=500),
+            ]
+        ),
+    )
+    reason = quota_exhausted(read_events(path))
+    assert reason is not None
+    assert "rejected" in reason
+
+
 def test_quota_exhausted_none_on_a_clean_run(tmp_path):
     path = _write(
         tmp_path / "events.jsonl",

@@ -173,6 +173,18 @@ def test_a_rejection_carried_only_by_the_result_is_also_exhausted(tmp_path):
     assert _verdict(tmp_path, now).status == "exhausted"
 
 
+@pytest.mark.parametrize("api_error_status", [500, 529])
+def test_a_result_only_non_429_error_is_not_exhausted(tmp_path, api_error_status):
+    # The 429/rejected pair above reads exhausted; a 5xx or 529 overload on the same result-only
+    # shape is a transport or server failure, not a spent quota, and folds nothing (#530).
+    now = datetime.now(UTC)
+    events = [_assistant("", tokens=0), _result(is_error=True, api_error_status=api_error_status)]
+    path = _role_log(tmp_path, "20260918T090000Z", events, age_seconds=60, now=now)
+    assert agent_guard.role_run_quota_status(path) is None
+    assert agent_guard.fold_role_quota_observations(main=tmp_path, now=now) == []
+    assert _verdict(tmp_path, now).status == "unknown"
+
+
 def test_the_backend_is_the_one_the_log_header_says_ran(tmp_path):
     now = datetime.now(UTC)
     _role_log(
@@ -232,6 +244,12 @@ def test_a_claim_in_a_run_that_never_reached_its_result_writes_nothing(tmp_path)
         ),
         pytest.param([_assistant("half a turn")], id="crash-without-result"),
         pytest.param([], id="empty-log"),
+        pytest.param(
+            [_result(is_error=True, num_turns=0, api_error_status=500)], id="api-error-500"
+        ),
+        pytest.param(
+            [_result(is_error=True, num_turns=0, api_error_status=529)], id="api-error-529"
+        ),
     ],
 )
 def test_a_non_quota_termination_leaves_the_verdict_unchanged(tmp_path, events):
@@ -256,6 +274,12 @@ def test_a_non_quota_termination_leaves_the_verdict_unchanged(tmp_path, events):
         pytest.param([_result(is_error=True, num_turns=0)], id="transport-error"),
         pytest.param([_assistant("half a turn")], id="crash-without-result"),
         pytest.param([], id="empty-log"),
+        pytest.param(
+            [_result(is_error=True, num_turns=0, api_error_status=500)], id="api-error-500"
+        ),
+        pytest.param(
+            [_result(is_error=True, num_turns=0, api_error_status=529)], id="api-error-529"
+        ),
     ],
 )
 def test_a_non_quota_termination_says_nothing_about_the_quota(tmp_path, events):

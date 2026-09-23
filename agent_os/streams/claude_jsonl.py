@@ -61,8 +61,10 @@ class ClaudeJsonlStreamParser:
 
     def quota_verdict(self, events: list[dict]) -> StreamQuotaVerdict:
         """Authority order per the ADR: `rate_limit_event` first (it is the backend saying so on
-        every turn), the terminal `result`'s `api_error_status`/`is_error` as a fallback for a run
-        that ended before a `rate_limit_event` could report the rejection."""
+        every turn), the terminal `result`'s `api_error_status == 429` as a fallback for a run that
+        ended before a `rate_limit_event` could report the rejection. 429 is the rate-limit wall;
+        any other refused status (5xx, other 4xx) is a transport or server failure, not a spent
+        quota, and reads `allowed` here -- `usage_failed` still counts that run as failed."""
         for event in events:
             if event.get("type") == "rate_limit_event":
                 info = event.get("rate_limit_info") or {}
@@ -76,9 +78,7 @@ class ClaudeJsonlStreamParser:
         if (
             summary.result
             and summary.result.get("is_error")
-            and summary.result.get("api_error_status")
+            and summary.result.get("api_error_status") == 429
         ):
-            return StreamQuotaVerdict(
-                "exhausted", f"result api_error_status={summary.result['api_error_status']}"
-            )
+            return StreamQuotaVerdict("exhausted", "result api_error_status=429")
         return StreamQuotaVerdict("allowed", None)
