@@ -1436,26 +1436,91 @@ open-pr)
   # about to be created -- it is what produces the `refs/pull/N/merge` ref CI needs (#389). A push
   # of a branch the remote already has is a no-op, so this costs nothing on the common path.
   push_failed=no
-  git -C "$worktree" push -u origin "$branch" || push_failed=yes
+  push_output=$(git -C "$worktree" push -u origin "$branch" 2>&1) || push_failed=yes
+  [ -z "$push_output" ] || printf '%s\n' "$push_output"
+  # A REJECTED PUSH IS CLASSIFIED BEFORE IT IS ACTED ON (#61). GitHub refuses a ref a GitHub App
+  # creates or updates when its tree differs from the default branch in `.github/workflows/` and
+  # the App has no `workflows` permission -- and a branch forked before `main` changed a workflow
+  # differs in exactly that way without touching one, which is the stale branch the conflict path
+  # above pushes unmerged. That is not a diverged remote: no fetch or fast-forward can fix it.
+  push_rejection=""
   if [ "$push_failed" = yes ]; then
-    # A REJECTED PUSH MEANS THE REMOTE BRANCH HAS COMMITS THIS WORKTREE DOES NOT -- a human
-    # updated it while the run was going. Fast-forward onto them if that is all it is; anything
-    # else stops the run, because moving the issue on would declare finished a pull request whose
-    # head is not what this run produced, and the two tips would diverge permanently.
+    if printf '%s\n' "$push_output" | grep -q 'refusing to allow a GitHub App to create or update workflow'; then
+      push_rejection=workflows_permission
+    else
+      push_rejection=push_rejected
+    fi
+  fi
+  if [ "$push_rejection" = push_rejected ]; then
+    # AN UNCLASSIFIED REJECTION IS FIRST READ AS A REMOTE BRANCH WITH COMMITS THIS WORKTREE DOES
+    # NOT HAVE -- a human updated it while the run was going. Fast-forward onto them if that is all
+    # it is; anything else stops the run, because moving the issue on would declare finished a
+    # pull request whose head is not what this run produced, and the two tips would diverge.
     if git -C "$worktree" fetch -q origin "$branch" 2>/dev/null \
        && git -C "$worktree" merge --ff-only FETCH_HEAD >/dev/null 2>&1 \
        && git -C "$worktree" push -u origin "$branch" >/dev/null 2>&1; then
       push_failed=no
+      push_rejection=""
       echo "open-pr: the remote $branch was ahead -- fast-forwarded onto it and pushed"
     fi
   fi
   if [ "$push_failed" = yes ]; then
-    write_state "BLOCKED reason=push_rejected branch=$branch"
-    echo "open-pr: could not push $branch, and fast-forwarding onto the remote was not possible."
-    echo "  The issue is left where it is: moving it on would call finished a pull request whose"
-    echo "  head is not what this run produced, and the two tips would diverge for good."
+    # EVERY REJECTED PUSH ENDS VISIBLE: a `BLOCKED` line in `.state` alone left finished work in
+    # `doing` with no pull request, no comment and nothing for a human to see (#61). The issue
+    # says why in a comment quoting GitHub's own words, and carries the label that stops the
+    # planner from relaunching anything -- the same ending the conflict path below uses.
+    rejection_lines=$(printf '%s\n' "$push_output" | grep -E '^ ! |^remote: |^error: |^fatal: ' || true)
+    [ -n "$rejection_lines" ] || rejection_lines=$push_output
+    write_state "BLOCKED reason=$push_rejection branch=$branch"
+    if [ "$push_rejection" = workflows_permission ]; then
+      echo "open-pr: GitHub refused $branch because the App pushing it has no \`workflows\` permission"
+      echo "  and the branch's tree differs from the default branch under .github/workflows/."
+      # TODO(#366): render from project.messages.
+      rejection_note="The work of this issue is committed on \`$branch\`, but GitHub refused to create or
+update that branch: the worker's GitHub App has no \`workflows\` permission, and the branch's tree
+differs from the default branch in \`.github/workflows/\` -- which a branch forked before a workflow
+changed on the base does even when none of its own commits touch one.
+
+\`\`\`
+$rejection_lines
+\`\`\`
+
+What unblocks it: merge \`origin/$base\` into \`$branch\` in the worker's worktree, resolve any
+conflict, push, and run \`open-pr\` again -- the branch then carries the base's workflow files and
+the push is accepted. Alternatively, grant the worker's App \`workflows: write\`."
+      [ -z "$conflicting_paths" ] || rejection_note="$rejection_note
+
+Merging \`$base\` into \`$branch\` before pushing conflicted on:
+$(printf '%s\n' "$conflicting_paths" | sed 's/^/- `/;s/$/`/')
+
+The merge was aborted and the worktree left exactly as it was."
+    else
+      echo "open-pr: could not push $branch, and fast-forwarding onto the remote was not possible."
+      echo "  The issue is not moved on: that would call finished a pull request whose head is not"
+      echo "  what this run produced. It goes to blocked-on-human with the rejection quoted."
+      rejection_note="The work of this issue is committed on \`$branch\`, but pushing it was rejected and
+fast-forwarding onto the remote branch was not possible, so no pull request was opened:
+
+\`\`\`
+$rejection_lines
+\`\`\`
+
+A human decides how the two tips are reconciled; then run \`open-pr\` again."
+    fi
+    "$agent_python" -m agent_os.issues update "$issue" --comment "$rejection_note" \
+      || echo "WARNING: could not comment the rejected push on #$issue"
+    if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
+      write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
+    else
+      echo "WARNING: could not move #$issue to blocked-on-human"
+    fi
     exit 1
   fi
+
+  # A SUCCESSFUL `open-pr` AFTER A BLOCKED ONE is how a human's fix is confirmed (#61): the
+  # previous attempt's `BLOCKED` line would otherwise outlive the pull request it was about, and
+  # `write_state_marker` below preserves line 1 as it is.
+  case "$(sed -n '1p' "$statefile" 2>/dev/null)" in BLOCKED*) write_state DONE ;; esac
 
   existing=$(gh pr list --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)
   if [ -n "$existing" ]; then

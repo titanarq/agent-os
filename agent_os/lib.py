@@ -1468,6 +1468,35 @@ def blocking_issue_numbers(body: str) -> list[int]:
     return [int(n) for n in BLOCKED_BY_RE.findall(body or "")]
 
 
+def replace_blocker(body: str, original: int, replacements: list[int]) -> str | None:
+    """`body` with every `Blocked by #<original>` line replaced by one `Blocked by #<n>` line per
+    number in `replacements`, in the same indentation, skipping a number the body already lists as
+    a blocker so a line is never duplicated; None when the body names no such blocker. Each line is
+    matched against the same `BLOCKED_BY_RE` `blocking_issue_numbers` reads, so the writer never
+    rewrites a line the reader would not have taken for a blocker (#39)."""
+    body = body or ""
+    if original not in blocking_issue_numbers(body):
+        return None
+    already_listed = set(blocking_issue_numbers(body)) - {original}
+    new_numbers = [n for n in dict.fromkeys(replacements) if n not in already_listed]
+    lines: list[str] = []
+    written = False
+    for line in body.splitlines(keepends=True):
+        text = line.rstrip("\r\n")
+        match = BLOCKED_BY_RE.fullmatch(text)
+        if not match or int(match.group(1)) != original:
+            lines.append(line)
+            continue
+        if written:
+            continue  # the same blocker named twice: one set of replacement lines is enough
+        written = True
+        indent = text[: len(text) - len(text.lstrip())]
+        ending = line[len(text) :] or "\n"
+        lines += [f"{indent}Blocked by #{n}{ending}" for n in new_numbers]
+    rewritten = "".join(lines)
+    return rewritten if body.endswith(("\n", "\r")) else rewritten.rstrip("\r\n")
+
+
 # The shape of a task or bug body, in the order the sections must appear
 # (agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-
 # state.md). `.github/ISSUE_TEMPLATE/task.md` and `bug.md` scaffold exactly these, followed by the
