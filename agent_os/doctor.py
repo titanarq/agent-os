@@ -24,14 +24,22 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from agent_os.cli import host_root
 from agent_os.issues import board_owner, gh_json, repo_name
-from agent_os.lib import ProjectConfig, load_project
+from agent_os.lib import (
+    CONFIG_LOAD_ERRORS,
+    DEFAULT_AGENTS_CONFIG,
+    ProjectConfig,
+    config_load_failure,
+    load_project,
+)
 
 REQUIRED_GH_SCOPES = ("repo", "project")
 BOARD_STATUS_FIELD = "Status"
+CONFIG_CHECK = "config/agents.yaml loads"
 
 
 @dataclass
@@ -134,13 +142,10 @@ def linked_boards(repo: str) -> set[tuple[int, str]]:
 
 def check_board(project: ProjectConfig, repo: str) -> Check:
     owner = board_owner(repo)
-    try:
-        linked = linked_boards(repo)
-        response = gh_json(
-            "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
-        )
-    except SystemExit as failure:
-        return Check("Project v2 Status field", False, str(failure))
+    linked = linked_boards(repo)
+    response = gh_json(
+        "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
+    )
     # A `board_number` copied from the example names SOME Project of the owner, possibly another
     # repository's with every column in place; only a board linked to `repo` is this one's
     # (agent-os#5).
@@ -261,17 +266,34 @@ def check_guard_timer(project: ProjectConfig) -> Check:
     return Check("guard timer active", ok, detail)
 
 
+def _guarded(name: str, check: Callable[..., Check], *args) -> Check:
+    """`check(*args)`, or a [FAIL] under `name` carrying the error when the check cannot finish:
+    `gh_json` answers a failed `gh` call with `sys.exit(message)`, and a binary that is not
+    installed raises `FileNotFoundError` out of `subprocess.run`. Either one used to end the whole
+    run after one line; a checklist has to report every check (agent-os#4)."""
+    try:
+        return check(*args)
+    except SystemExit as failure:
+        return Check(name, False, _one_line(failure.code))
+    except OSError as failure:
+        return Check(name, False, _one_line(failure))
+
+
+def _one_line(message: object) -> str:
+    return " ".join(str(message).split())
+
+
 def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Check]:
     return [
         check_python_version(),
-        check_gh_auth(),
-        check_labels(project, repo),
-        check_board(project, repo),
+        _guarded("gh auth status", check_gh_auth),
+        _guarded("labels that do not autocreate", check_labels, project, repo),
+        _guarded("Project v2 Status field", check_board, project, repo),
         check_app_secrets(project, root),
         check_executables(project),
         check_worktrees(project, root),
         check_notify_topic(project, root),
-        check_guard_timer(project),
+        _guarded("guard timer active", check_guard_timer, project),
     ]
 
 
@@ -280,10 +302,21 @@ def main() -> None:
     parser.parse_args()
 
     root = host_root()
-    project = load_project()
-    repo = repo_name()
-
-    checks = run_checks(project, root, repo)
+    try:
+        project = load_project()
+    except CONFIG_LOAD_ERRORS as error:
+        # Every other check reads `project:`, so only the ones that need no config still run --
+        # a first-time adopter learns about gh and python in the same pass (agent-os#3).
+        checks = [
+            Check(CONFIG_CHECK, False, config_load_failure(error)),
+            check_python_version(),
+            _guarded("gh auth status", check_gh_auth),
+        ]
+    else:
+        checks = [
+            Check(CONFIG_CHECK, True, str(DEFAULT_AGENTS_CONFIG)),
+            *run_checks(project, root, repo_name()),
+        ]
     for check in checks:
         print(check.line())
 

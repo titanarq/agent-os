@@ -407,3 +407,118 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
         "notify topic file",
         "guard timer active",
     }
+
+
+# --------------------------------------------------------------------------------------------
+# A `gh` failure inside one check (agent-os#4): that check turns into a [FAIL] carrying the error
+# and every other check still runs -- `gh_json` answers a failure with `sys.exit`, which used to
+# end the whole run after one line.
+# --------------------------------------------------------------------------------------------
+
+
+def test_run_checks_turns_a_gh_failure_into_a_failed_check_and_keeps_going(tmp_path):
+    missing_repo = "GraphQL: Could not resolve to a Repository with the name 'owner/name'."
+
+    def dispatch(args, **kwargs):
+        if args[:2] == ["gh", "auth"]:
+            return _completed(stdout="  - Token scopes: 'repo', 'project'")
+        if args[:1] == ["gh"]:
+            return _completed(returncode=1, stderr=missing_repo)
+        if args[:1] == ["systemctl"]:
+            return _completed(stdout="inactive\n")
+        raise AssertionError(f"unexpected call: {args}")
+
+    with patch("subprocess.run", side_effect=lambda args, **kw: dispatch(args, **kw)):
+        checks = doctor.run_checks(_project(), tmp_path, "owner/name")
+
+    by_name = {check.name: check for check in checks}
+    assert len(checks) == 9, [c.line() for c in checks]
+    labels = by_name["labels that do not autocreate"]
+    assert not labels.ok
+    assert "Could not resolve to a Repository" in labels.detail
+    assert "\n" not in labels.line()
+    assert not by_name["Project v2 Status field"].ok
+    assert "guard timer active" in by_name
+
+
+def test_run_checks_reports_a_missing_binary_as_a_failed_check(tmp_path):
+    def missing(args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", args[0])
+
+    with patch("subprocess.run", side_effect=missing):
+        checks = doctor.run_checks(_project(), tmp_path, "owner/name")
+
+    by_name = {check.name: check for check in checks}
+    assert len(checks) == 9, [c.line() for c in checks]
+    for name in (
+        "gh auth status",
+        "labels that do not autocreate",
+        "Project v2 Status field",
+        "guard timer active",
+    ):
+        assert not by_name[name].ok
+        assert "No such file or directory" in by_name[name].detail
+
+
+# `main()` on a `config/agents.yaml` that is absent or broken (agent-os#3): a [FAIL] line, not a
+# traceback. Run as a subprocess over a fake `gh`/`systemctl` on PATH, so nothing real is called.
+# --------------------------------------------------------------------------------------------
+
+
+def _run_doctor(tmp_path, config_path):
+    import os
+    import sys
+
+    from agent_os.cli import AGENT_OS_DIR
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "gh").write_text("#!/bin/sh\necho \"  - Token scopes: 'repo', 'project'\"\n")
+    (fake_bin / "systemctl").write_text("#!/bin/sh\necho inactive\n")
+    for script in fake_bin.iterdir():
+        script.chmod(0o755)
+    host = tmp_path / "host"
+    host.mkdir()
+    environment = dict(os.environ)
+    environment.update(
+        AGENT_OS_HOST_ROOT=str(host),
+        AGENTS_CONFIG_PATH=str(config_path),
+        AGENT_OS_GH_REPO="owner/name",
+        PATH=f"{fake_bin}:{environment.get('PATH', '')}",
+        PYTHONPATH=str(AGENT_OS_DIR),
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "agent_os.doctor"],
+        cwd=host,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_main_reports_a_missing_config_as_a_failed_check(tmp_path):
+    config_path = tmp_path / "absent.yaml"
+    result = _run_doctor(tmp_path, config_path)
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    config_lines = [line for line in result.stdout.splitlines() if "config/agents.yaml" in line]
+    assert len(config_lines) == 1, result.stdout
+    assert config_lines[0].startswith("[FAIL]")
+    assert str(config_path) in config_lines[0]
+    assert "ADOPTION.md step 8" in config_lines[0]
+    # The checks that need no config still run and report.
+    assert "[ok  ] python3 >= 3.12" in result.stdout
+    assert "[ok  ] gh auth status" in result.stdout
+
+
+def test_main_reports_an_invalid_config_as_a_failed_check(tmp_path):
+    config_path = tmp_path / "agents.yaml"
+    config_path.write_text("project:\n  repo: owner/name\n  no_such_key: 1\n")
+    result = _run_doctor(tmp_path, config_path)
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert any(
+        line.startswith("[FAIL] config/agents.yaml") and "does not load" in line
+        for line in result.stdout.splitlines()
+    ), result.stdout

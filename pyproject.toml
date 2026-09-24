@@ -11,7 +11,9 @@ requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
-    "PyJWT>=2.8",
+    # `[crypto]` brings `cryptography`, without which PyJWT has no RS256 signer and the GitHub App
+    # JWT (`gh_app_token.build_app_jwt`) fails with `KeyError: 'RS256'` (#6).
+    "PyJWT[crypto]>=2.8",
 ]
 
 # For a host that prefers a name on PATH over `python -m agent_os.<module>`; the drivers use the
