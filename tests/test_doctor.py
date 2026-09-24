@@ -406,3 +406,67 @@ def test_run_checks_reports_a_missing_binary_as_a_failed_check(tmp_path):
     ):
         assert not by_name[name].ok
         assert "No such file or directory" in by_name[name].detail
+
+
+# `main()` on a `config/agents.yaml` that is absent or broken (agent-os#3): a [FAIL] line, not a
+# traceback. Run as a subprocess over a fake `gh`/`systemctl` on PATH, so nothing real is called.
+# --------------------------------------------------------------------------------------------
+
+
+def _run_doctor(tmp_path, config_path):
+    import os
+    import sys
+
+    from agent_os.cli import AGENT_OS_DIR
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "gh").write_text("#!/bin/sh\necho \"  - Token scopes: 'repo', 'project'\"\n")
+    (fake_bin / "systemctl").write_text("#!/bin/sh\necho inactive\n")
+    for script in fake_bin.iterdir():
+        script.chmod(0o755)
+    host = tmp_path / "host"
+    host.mkdir()
+    environment = dict(os.environ)
+    environment.update(
+        AGENT_OS_HOST_ROOT=str(host),
+        AGENTS_CONFIG_PATH=str(config_path),
+        AGENT_OS_GH_REPO="owner/name",
+        PATH=f"{fake_bin}:{environment.get('PATH', '')}",
+        PYTHONPATH=str(AGENT_OS_DIR),
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "agent_os.doctor"],
+        cwd=host,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_main_reports_a_missing_config_as_a_failed_check(tmp_path):
+    config_path = tmp_path / "absent.yaml"
+    result = _run_doctor(tmp_path, config_path)
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    config_lines = [line for line in result.stdout.splitlines() if "config/agents.yaml" in line]
+    assert len(config_lines) == 1, result.stdout
+    assert config_lines[0].startswith("[FAIL]")
+    assert str(config_path) in config_lines[0]
+    assert "ADOPTION.md step 8" in config_lines[0]
+    # The checks that need no config still run and report.
+    assert "[ok  ] python3 >= 3.12" in result.stdout
+    assert "[ok  ] gh auth status" in result.stdout
+
+
+def test_main_reports_an_invalid_config_as_a_failed_check(tmp_path):
+    config_path = tmp_path / "agents.yaml"
+    config_path.write_text("project:\n  repo: owner/name\n  no_such_key: 1\n")
+    result = _run_doctor(tmp_path, config_path)
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert any(
+        line.startswith("[FAIL] config/agents.yaml") and "does not load" in line
+        for line in result.stdout.splitlines()
+    ), result.stdout

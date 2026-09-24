@@ -878,15 +878,73 @@ def test_mirror_board_column_edits_the_status_option_of_that_item():
     assert line == "board:    Review"
 
 
-def test_board_item_id_matches_the_issue_number_in_this_repository():
-    listing = {
-        "items": [
-            {"id": "OTHER", "content": {"number": 7, "repository": "someone/else"}},
-            {"id": "MINE", "content": {"number": 7, "repository": "owner/name"}},
-        ]
+def _project_items(*nodes: tuple[str, int, str]) -> dict:
+    """What `gh api graphql` answers for an issue's `projectItems`: (item id, board, owner)."""
+    return {
+        "data": {
+            "repository": {
+                "issue": {
+                    "projectItems": {
+                        "nodes": [
+                            {"id": item, "project": {"number": board, "owner": {"login": login}}}
+                            for item, board, login in nodes
+                        ]
+                    }
+                }
+            }
+        }
     }
-    with patch.object(issues, "gh_json", return_value=listing):
-        assert issues.board_item_id("owner", 1, "owner/name", 7) == "MINE"
+
+
+def _board_gh(issue_side: dict, listing: dict | None = None):
+    """A `gh_json` that answers the issue-side query and, if anything asks, the board listing --
+    empty by default, which is what an org Project v2 returned in #14 for items it did hold."""
+
+    def fake(*args, **_kwargs):
+        if args[:2] == ("api", "graphql"):
+            return issue_side
+        if args[:2] == ("project", "item-list"):
+            return listing if listing is not None else {"items": [], "totalCount": 0}
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    return fake
+
+
+def test_board_item_id_finds_the_item_the_board_listing_leaves_out():
+    """#14: `gh project item-list` on an org Project v2 came back with zero items while every
+    issue's `projectItems` named its item on that board, so every `move` skipped the mirror."""
+    fake = _board_gh(_project_items(("PVTI_mine", 2, "owner")))
+    with patch.object(issues, "gh_json", side_effect=fake):
+        assert issues.board_item_id("owner", 2, "owner/name", 37) == "PVTI_mine"
+
+
+def test_board_item_id_picks_the_item_on_this_board_of_this_owner():
+    fake = _board_gh(
+        _project_items(
+            ("OTHER_BOARD", 3, "owner"), ("OTHER_OWNER", 2, "else"), ("MINE", 2, "owner")
+        )
+    )
+    with patch.object(issues, "gh_json", side_effect=fake):
+        assert issues.board_item_id("owner", 2, "owner/name", 7) == "MINE"
+
+
+def test_board_item_id_is_none_when_the_issue_is_on_no_board():
+    with patch.object(issues, "gh_json", side_effect=_board_gh(_project_items())):
+        assert issues.board_item_id("owner", 2, "owner/name", 7) is None
+
+
+def test_board_item_id_asks_for_that_issue_of_that_repository():
+    seen = []
+
+    def fake(*args, **kwargs):
+        seen.append(args)
+        return _project_items(("MINE", 2, "owner"))
+
+    with patch.object(issues, "gh_json", side_effect=fake):
+        issues.board_item_id("owner", 2, "owner/name", 7)
+    (args,) = seen
+    assert args[:2] == ("api", "graphql")
+    assert "owner=owner" in args and "name=name" in args and "number=7" in args
 
 
 # ---- the brief a worker starts from ----------------------------------------------------------

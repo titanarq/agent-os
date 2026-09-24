@@ -29,10 +29,17 @@ from dataclasses import dataclass
 
 from agent_os.cli import host_root
 from agent_os.issues import board_owner, gh_json, repo_name
-from agent_os.lib import ProjectConfig, load_project
+from agent_os.lib import (
+    CONFIG_LOAD_ERRORS,
+    DEFAULT_AGENTS_CONFIG,
+    ProjectConfig,
+    config_load_failure,
+    load_project,
+)
 
 REQUIRED_GH_SCOPES = ("repo", "project")
 BOARD_STATUS_FIELD = "Status"
+CONFIG_CHECK = "config/agents.yaml loads"
 
 
 @dataclass
@@ -246,10 +253,21 @@ def main() -> None:
     parser.parse_args()
 
     root = host_root()
-    project = load_project()
-    repo = repo_name()
-
-    checks = run_checks(project, root, repo)
+    try:
+        project = load_project()
+    except CONFIG_LOAD_ERRORS as error:
+        # Every other check reads `project:`, so only the ones that need no config still run --
+        # a first-time adopter learns about gh and python in the same pass (agent-os#3).
+        checks = [
+            Check(CONFIG_CHECK, False, config_load_failure(error)),
+            check_python_version(),
+            _guarded("gh auth status", check_gh_auth),
+        ]
+    else:
+        checks = [
+            Check(CONFIG_CHECK, True, str(DEFAULT_AGENTS_CONFIG)),
+            *run_checks(project, root, repo_name()),
+        ]
     for check in checks:
         print(check.line())
 
