@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
 - agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
   each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
   and the checkout, which the driver removes when the run ends; the three prompts name it and
