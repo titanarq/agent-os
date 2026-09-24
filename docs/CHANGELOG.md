@@ -8,6 +8,10 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#4 — `agent-os-doctor` reports every check even when `gh` fails inside one of them:
+  a failed `gh` call (a `project.repo` that does not exist, say) or a `gh`/`systemctl` that is
+  not installed turns that check into a `[FAIL]` carrying the error on one line, and the run
+  continues instead of exiting after the labels check.
 - agent-os#22 — `worker_task.sh resume` no longer refuses to relaunch a run the guard cut over
   that run's own diary: when `.state` line 1 records `CUT_BY_GUARD` and nothing is alive, the
   dirty check leaves out `scratchpad/progress.log` (` M` when tracked, `??` when untracked, and
