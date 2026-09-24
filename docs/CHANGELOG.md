@@ -8,6 +8,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#66 — the suite no longer registers worktrees in the repository that runs it. The
+  launch-path tests of `tests/test_agent_task.py` ran the real driver with the checkout under test
+  as its host, so every `git worktree add` wrote a registration into the real repository's gitdir,
+  and a run that never reached its own removal left `/tmp/pytest-of-*/…/worktree-pr352-*` entries
+  in `git worktree list` for every checkout. `launch_environment` now runs the driver out of a
+  disposable git copy of the host (`AGENT_OS_HOST_ROOT` named outright), and the stand-in host of
+  `tests/test_role_run_environment_isolation.py` is a repository of its own instead of a `.git`
+  file naming the real gitdir; its heads are committed there too. Both files assert where the
+  worktree was registered. Tests only; no driver behaviour changed.
 - agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
   App without the Workflows permission create or update a ref whose tree differs from the
   default branch under `.github/workflows/` -- which a stale branch hits without touching a
