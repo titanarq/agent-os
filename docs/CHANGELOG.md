@@ -8,6 +8,17 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#27 — `issues.py move` no longer spends the user's shared GraphQL quota in
+  proportion to the board. The board's `Status` field came from `gh project view` + `gh project
+  field-list` on every move (~106 points on a 91-item board; one no-op move measured ~224), so a
+  70-issue batch exhausted the 5000-points-an-hour quota every host shares. It is one bounded
+  `gh api graphql` query now, answered once per process; the issue is read with a REST `GET`
+  instead of `gh issue view`, and its one target label is checked with a REST `GET
+  repos/{o}/{r}/labels/{name}` (created only on a 404) instead of `gh label list` —
+  `ensure_fixed_labels` lists labels over REST too. A move costs three GraphQL requests of ~1
+  point, independent of the board's size. New bulk form, backward compatible:
+  `issues.py move 2 3 4 refine` resolves the label and the board field once, goes on past an
+  issue that fails and exits non-zero naming it; one number prints exactly what it printed before.
 - agent-os#54 — `agent-os-doctor`'s "labels that do not autocreate" check no longer requires
   `status:ai-completed`: it is a state label that `issues.py move` creates on first use, so a
   fresh host that has not yet completed a task passes. The check requires `status:agents-paused`,

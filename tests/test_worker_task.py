@@ -55,8 +55,9 @@ VALID_BODY = (
 )
 
 GH_STUB = """#!/usr/bin/env python3
-# Stands in for `gh`: answers `issue view --json body` with $GH_STUB_BODY, plus the three calls
-# `issues.py move` makes -- `resume` re-asserts `status:doing` since #385, and a driver test about
+# Stands in for `gh`: answers `issue view --json body` with $GH_STUB_BODY, plus the calls
+# `issues.py move` makes, every one a `gh api` since #27 (the issue and its label over REST, the
+# board item over GraphQL) -- `resume` re-asserts `status:doing` since #385, and a driver test about
 # something else must not turn that into a cascade of refusals. Any other call is a test failure,
 # not a silent success: the driver must not reach the network.
 import json
@@ -153,20 +154,20 @@ def test_start_refuses_a_supplement_that_does_not_exist(driver_environment):
 
 GH_STUB_MOVE_FAILS = """#!/usr/bin/env python3
 # Answers `issue view --json body...` (validate, brief -- which also needs `number` in the
-# response, unlike GH_STUB above) with $GH_STUB_BODY. The `--json labels,state` call
-# `issues.py move` makes to read the current labels fails deterministically, so `move doing`
-# itself fails -- simulating a transient gh/API hiccup, which is the case this test is about: the
-# marker must be dropped whatever the reason the move failed.
+# response, unlike GH_STUB above) with $GH_STUB_BODY. Every `gh api` call fails
+# deterministically -- `issues.py move` reads the current labels with a REST `GET` (#27), and the
+# label check before it is REST too -- so `move doing` itself fails, simulating a transient gh/API
+# hiccup, which is the case this test is about: the marker must be dropped whatever the reason
+# the move failed.
 import json
 import os
 import sys
 
 args = sys.argv[1:]
+if args[:1] == ["api"]:
+    print("simulated gh failure", file=sys.stderr)
+    sys.exit(7)
 if args[:2] == ["issue", "view"] and "--json" in args:
-    json_arg = args[args.index("--json") + 1]
-    if json_arg == "labels,state":
-        print("simulated gh failure", file=sys.stderr)
-        sys.exit(7)
     number = int(args[2])
     if "-q" in args:
         print(os.environ["GH_STUB_BODY"])
@@ -1407,7 +1408,7 @@ if args[:1] == ["api"]:
 
 if args[:2] == ["project", "item-list"]:
     # No board item for this issue: `mirror_board_column` stops right there, needing no further
-    # `project view`/`field-list`/`item-edit` stub.
+    # board-field or `item-edit` stub.
     out(json.dumps({"items": []}))
 
 print("unexpected gh call: " + " ".join(args), file=sys.stderr)
@@ -1944,6 +1945,13 @@ if args[:2] == ["label", "list"]:
         {"name": "status:ai-completed"},
         {"name": "status:blocked-on-human"},
     ]))
+if args[:2] == ["api", "graphql"] and "projectV2(" in " ".join(args):
+    # The board's single-select fields, one bounded query (#27).
+    fields = [{"id": "FIELD1", "name": "Status", "options": [
+        {"id": "OPT_DOING", "name": "In progress"},
+    ]}]
+    project = {"id": "PROJECT1", "fields": {"nodes": fields}}
+    out(json.dumps({"data": {"repositoryOwner": {"projectV2": project}}}))
 if args[:2] == ["api", "graphql"]:
     # The issue's own `projectItems` (#14). $GH_STUB_BOARD_ITEM is the issue number that has an
     # item on board 1 of `owner`; unset, no issue has one and `mirror_board_column` says so
@@ -1953,12 +1961,6 @@ if args[:2] == ["api", "graphql"]:
     if on_board and f"number={on_board}" in args:
         nodes = [{"id": "ITEM1", "project": {"number": 1, "owner": {"login": "owner"}}}]
     out(json.dumps({"data": {"repository": {"issue": {"projectItems": {"nodes": nodes}}}}}))
-if args[:2] == ["project", "view"]:
-    out(json.dumps({"id": "PROJECT1"}))
-if args[:2] == ["project", "field-list"]:
-    out(json.dumps({"fields": [{"id": "FIELD1", "name": "Status", "options": [
-        {"id": "OPT_DOING", "name": "In progress"},
-    ]}]}))
 if args[:2] == ["project", "item-edit"]:
     out("")
 if args[:2] == ["pr", "list"]:
