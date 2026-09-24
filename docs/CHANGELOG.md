@@ -25,6 +25,10 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   package the host's venv installs (of zero, one or several), and is skipped with its reason when
   the host has none, as a non-Python host does; only the mechanism's own repository still requires
   one. A host's `--deselect` workaround for the two tests can go after its next `subtree pull`.
+- agent-os#9 — `agent-os-install` no longer prints "would create" for a file it actually
+  creates. Only `--dry-run` speaks in the conditional ("would create", "would overwrite
+  (--force)"); a real run reports "created" and "overwritten (--force)", printed after the write.
+  "up to date -- skipped" and "refusing without --force" are true in both modes and unchanged.
 - #513 (this task) — the mechanism's own docs move under `agent_os/docs/`: `AGENT_OS.md` (from
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)
@@ -32,6 +36,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 Wave 3's other two tasks, #429 (which backend fallback rule to write down as an ADR) and #514
 (optional), add their own entries here once their pull requests merge.
+
+- agent-os#16 — `worker_task.sh start`'s base-branch gate accepts any lowercase `<word>` before
+  `/<issue>-<slug>`, hyphens and digits included: `agent-os/37-gradle-skeleton` passes for #37,
+  where `[a-z]+` refused it. The anchoring on the number is unchanged, so
+  `task/387-close-the-390-gap` still fails for #390, and the refusal now names the accepted shape
+  (`<word>/<issue>-<slug>`) instead of "a branch naming #N".
 
 ## 2026-09-22
 

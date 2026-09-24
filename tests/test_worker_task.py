@@ -3154,6 +3154,34 @@ def test_start_accepts_a_branch_whose_name_carries_this_issues_number(tmp_path):
         _stop(environment)
 
 
+def test_start_accepts_a_hyphenated_prefix_and_its_refusal_names_the_shape(tmp_path):
+    """agent-os#16: the planner branched `agent-os/37-gradle-skeleton` and `start 37` refused it
+    while telling it to use "a branch naming #37" -- which it was. The anchoring that stops a wrong
+    branch is on the number (`/<issue>` then `-`, `/` or the end), not on the prefix being letters
+    only; so a hyphenated prefix passes, a hyphenated prefix does NOT let `…/387-close-the-390-gap`
+    through for #390, and the refusal spells out the shape it accepts instead of paraphrasing it."""
+    (tmp_path / "accepted").mkdir()
+    environment, _cache, _worktree = _base_check_environment(
+        tmp_path / "accepted", branch="agent-os/347-the-work"
+    )
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "started pid" in result.stdout
+    finally:
+        _stop(environment)
+
+    (tmp_path / "refused").mkdir()
+    environment, cache, _worktree = _base_check_environment(
+        tmp_path / "refused", branch="agent-os/387-close-the-390-gap"
+    )
+    refused = _start(environment, "390")
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert "refusing to dispatch" in refused.stdout
+    assert "<word>/390-<slug>" in refused.stdout, refused.stdout
+    assert list(cache.iterdir()) == []
+
+
 def test_start_accepts_the_worktree_sitting_on_the_base_the_issue_names(tmp_path):
     # `Base: feature/340-parent` -- a stacked issue, whose work does not belong on the trunk. The
     # same resolution `open-pr` uses, so the gate and the pull request cannot disagree.
