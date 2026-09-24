@@ -8,6 +8,16 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#35 — in a host that vendors the mechanism under `agent_os/`, a role's worktree now runs
+  the worktree's copy of the mechanism, not the main checkout's. `PYTHONPATH=<worktree>` alone
+  left `<worktree>/agent_os/` as a namespace portion (it has no `__init__.py`), so the regular
+  package the mechanism venv's editable `.pth` puts on `sys.path` won, and a validator testing a
+  `subtree pull` certified code it never ran. The drivers now export
+  `PYTHONPATH=<worktree>:<worktree>/agent_os` there (unchanged where the mechanism is the
+  repository root) and link `agent_os/.venv` into the worktree beside the root `.venv` and `.env`;
+  a worker's persistent worktree gets the link only where git ignores it. The mechanism's
+  `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
+  isolation test measures the mechanism's own package in such a host instead of skipping.
 - agent-os#32 — `refine_pending` names the head of a ranked refine queue instead of the ten
   newest refine-needing issues: `guard.refinable_issues()` sorts by `lib.refine_queue_rank` —
   parent carries `labels.auto_ready` first, then the issue's best label in `labels.priorities`
