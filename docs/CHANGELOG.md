@@ -8,6 +8,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
+  (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
+  the column `project.board_columns` maps that state to on the item it just added. Before, a later
+  `move` found no item to mirror onto unless the board auto-added issues. A board that refuses
+  either step never fails the `create`: it prints one `board:` line saying why. `create` with
+  `board_number: 0` makes no board call.
 - agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
   `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
   with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports

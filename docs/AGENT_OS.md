@@ -428,7 +428,8 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 ### 4.3 Things to create in GitHub
 
 - **Repo** with `gh auth` scopes covering `repo` (issues, labels, PRs, comments) and `project`
-  (read/write on the Project v2 board via `gh project item-list/item-edit/field-list/view`).
+  (read/write on the Project v2 board via `gh project item-add/item-edit/field-list/view`;
+  `issues.py create` adds every new issue to `project.board_number`, #23).
 - **Labels**: `type:epic`, `type:feature`, `type:task`, `type:bug`; `status:refine`, `status:ready`,
   `status:doing`, `status:blocked-on-human`, `status:review` self-create on first `issues.py move`;
   **`status:ai-completed`, `status:agents-paused` and `auto-ready` do not autocreate** — the first
