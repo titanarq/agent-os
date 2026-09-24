@@ -8,6 +8,10 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#53 — `tests/test_no_host_literals.py` scans the files git knows (tracked, plus
+  untracked-but-not-ignored) instead of walking the filesystem, and fails loudly when the root has
+  no `.git` or `git ls-files` fails. Nested agent worktrees under `.claude/worktrees/` and ignored
+  caches are no longer read; `.claude/worktrees/` and `.cache/` are now in `.gitignore`.
 - agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
   App without the Workflows permission create or update a ref whose tree differs from the
   default branch under `.github/workflows/` -- which a stale branch hits without touching a
