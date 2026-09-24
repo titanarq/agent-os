@@ -15,6 +15,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   something other than an object. One refused command used to stall every tick -- no promotion,
   no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
   around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
+- agent-os#10 — the guard-timer failure `agent-os-doctor` prints no longer sends a host to
+  `docs/runbooks/agent_monitor.md`, a runbook only the first host ever had. It now says what to
+  run (`systemctl --user enable --now <guard_unit>.timer`, once `agent-os-install` has written the
+  unit) and names `agent_os/docs/ADOPTION.md` steps 20 and 22. The same dead reference is gone
+  from the rendered `override.conf`'s comment and from the `doctor`/`install` docstrings. This
+  also closes the second point of agent-os#5.
 - agent-os#5 — `agent-os-doctor`'s board check no longer passes on a Project that is not the
   repository's: besides the `Status` field and its options, it reads the Projects linked to
   `project.repo` (`repository.projectsV2`) and fails when `project.board_number` is not one of
