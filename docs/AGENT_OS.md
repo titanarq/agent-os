@@ -450,10 +450,11 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   (read/write on the Project v2 board via `gh project item-add/item-edit/field-list/view`;
   `issues.py create` adds every new issue to `project.board_number`, #23).
 - **Labels**: `type:epic`, `type:feature`, `type:task`, `type:bug`; `status:refine`, `status:ready`,
-  `status:doing`, `status:blocked-on-human`, `status:review` self-create on first `issues.py move`;
-  **`status:ai-completed`, `status:agents-paused` and `auto-ready` do not autocreate** — the first
-  two are missing today (`status:ai-completed` would autocreate on the first real `open-pr`;
-  `status:agents-paused` and `auto-ready` are never touched by `move` and must be created by hand);
+  `status:doing`, `status:blocked-on-human`, `status:ai-completed`, `status:review` self-create on
+  first `issues.py move` (`status:ai-completed` on the first real `open-pr`);
+  **`status:agents-paused`, `auto-ready` and `wake:planner` do not autocreate** — `move` never
+  touches them, so they must be created by hand, and `agent-os-doctor` checks exactly these three
+  (#54);
   `p1`..`p4`; one `module:<name>` per name in `project.modules` (§4.2).
 - **Project v2** with a single-select field named exactly `Status` (a different name falls back
   silently to the first single-select the code finds) and six options matching
@@ -602,9 +603,9 @@ UI steps of §4.3 were all actually done. None of the three arms anything — th
 `systemctl --user enable --now` is still the one command in this section that stays a human's own
 call (#511, was gaps §7h and §7r).
 
-Before moving any issue to `status:ready` for the first time: create the three missing labels
-(`status:ai-completed`, `status:agents-paused`, `auto-ready` — none autocreate except the first, on
-its first real use); make sure every issue meant for the trial is actually a Project item with a
+Before moving any issue to `status:ready` for the first time: create the three labels that
+never autocreate (`status:agents-paused`, `auto-ready`, `wake:planner` — `status:ai-completed`, like
+every state label, autocreates on its first real use); make sure every issue meant for the trial is actually a Project item with a
 `Status` value set (an item can exist with no Status, or not exist on the board at all); make sure
 each worker's worktree is on a fresh branch, not a stale one left over from a previous batch of
 work; and decide by hand what to do with any issue stuck in `status:refine` whose parent carries no

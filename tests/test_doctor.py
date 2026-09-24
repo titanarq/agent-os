@@ -99,7 +99,6 @@ def test_check_gh_auth_passes_with_both_required_scopes():
 def test_check_labels_fails_when_one_is_missing():
     project = _project()
     existing = [
-        {"name": project.labels.ai_completed},
         {"name": project.labels.agents_paused},
         # auto-ready and wake:planner both missing
     ]
@@ -113,10 +112,12 @@ def test_check_labels_fails_when_one_is_missing():
     assert project.labels.wake_planner in check.detail
 
 
-def test_check_labels_passes_when_all_four_exist():
+def test_check_labels_passes_without_the_ai_completed_state_label():
+    # `status:ai-completed` is a state label: `issues.py move N ai-completed` creates it on first
+    # use, like every other state label, so a host that has not yet completed a task lacks it and
+    # is healthy (#54). Only the labels `move` never writes are required.
     project = _project()
     existing = [
-        {"name": project.labels.ai_completed},
         {"name": project.labels.agents_paused},
         {"name": project.labels.auto_ready},
         {"name": project.labels.wake_planner},

@@ -8,6 +8,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#54 — `agent-os-doctor`'s "labels that do not autocreate" check no longer requires
+  `status:ai-completed`: it is a state label that `issues.py move` creates on first use, so a
+  fresh host that has not yet completed a task passes. The check requires `status:agents-paused`,
+  `auto-ready` and `wake:planner`, and `AGENT_OS.md` §4.3/§6 and `ADOPTION.md` steps 12 and 23
+  list only those three as labels to create by hand.
 - agent-os#50 — a PR whose head SHA reports zero checks now explicitly fails the control plane's
   merge condition 1 (`agents/control-plane.md` duty 4, `docs/AGENT_OS.md` §2.4): it hands the PR
   back to the human instead of merging. So that no PR lacks a check, `agent-os-install` also
