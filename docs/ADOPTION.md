@@ -107,7 +107,14 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     create each App on `<org>/<repo>`'s GitHub settings, with permissions matched to what that
     role calls — workers need Issues (read/write), Contents (push), Pull requests (create); the
     planner needs Issues, Pull requests (read), Projects; the validator additionally needs "Pull
-    request reviews" — install it on the repo, and download its private key.
+    request reviews" — install it on the repo, and download its private key. A worker App
+    without the Workflows permission cannot push a **stale** branch: GitHub refuses to create a
+    ref whose tree differs from the default branch under `.github/workflows/`, even when none of
+    the branch's own commits touch a workflow — which is exactly the branch `open-pr` pushes
+    unmerged after a conflict with its base (agent-os#61). `open-pr` then writes
+    `BLOCKED reason=workflows_permission`, comments the refusal on the issue and moves it to
+    `status:blocked-on-human`; resolving the conflict (merge `origin/<base>` into the branch,
+    push, `open-pr` again) unblocks it. Granting the worker App Workflows (read/write) avoids it.
 15. **`<slug>.json` + `<slug>.pem` per identity**, under `project.secrets_dir` (`.secrets/gh_apps`
     by default): the `.pem` is the App's downloaded private key; the `.json` is
     `{"app_id": <id>, "installation_id": <id-or-omitted>, "private_key_path": ".secrets/gh_apps/<slug>.pem"}`
