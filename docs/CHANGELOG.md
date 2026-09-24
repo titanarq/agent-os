@@ -8,6 +8,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#10 — the guard-timer failure `agent-os-doctor` prints no longer sends a host to
+  `docs/runbooks/agent_monitor.md`, a runbook only the first host ever had. It now says what to
+  run (`systemctl --user enable --now <guard_unit>.timer`, once `agent-os-install` has written the
+  unit) and names `agent_os/docs/ADOPTION.md` steps 20 and 22. The same dead reference is gone
+  from the rendered `override.conf`'s comment and from the `doctor`/`install` docstrings. This
+  also closes the second point of agent-os#5.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the

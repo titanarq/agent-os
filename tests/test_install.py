@@ -372,3 +372,15 @@ def test_main_refuses_without_a_configured_guard_unit(tmp_path):
     result = _run_install(environment, "--dry-run")
     assert result.returncode != 0
     assert "guard_unit" in (result.stdout + result.stderr)
+
+
+@pytest.mark.parametrize("name", ["guard.service", "guard.timer", "override.conf"])
+def test_rendered_units_name_only_docs_the_mechanism_ships(tmp_path, name):
+    # agent-os#10: a rendered unit lands on a host that has only `agent_os/`; a comment pointing at
+    # a host's own runbook is a dead reference there.
+    import re
+
+    rendered = render_systemd_unit(name, _project(), tmp_path)
+    named = re.findall(r"(?:agent_os/)?docs/[\w./-]+\.md", rendered)
+    missing = [p for p in named if not (AGENT_OS_DIR / p.removeprefix("agent_os/")).is_file()]
+    assert missing == [], rendered
