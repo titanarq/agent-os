@@ -824,15 +824,27 @@ def _prompt(environment) -> str:
     return path.read_text()
 
 
-def _the_projects_package() -> str:
-    """This repository's one importable top-level package, found rather than named: the driver
-    exports PYTHONPATH at a tree and knows no package name, and neither does this test
+def _the_projects_package() -> str | None:
+    """A top-level package of the HOST's that the driver's export has to resolve from the worktree,
+    found rather than named: the driver exports PYTHONPATH at a tree and knows no package name,
+    and neither does this test
     (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
     `glob` and not `iterdir` plus a stat: the repository root holds a directory this process has no
-    read access to, and finding the package does not need one."""
+    read access to, and finding the package does not need one.
+
+    None when there is nothing to measure (agent-os#17): a host with no top-level package of its
+    own -- one that vendors the mechanism through `git subtree` keeps the mechanism's package at
+    `agent_os/agent_os/`, which is no package of the host's -- or with no `.venv` at its root for
+    the driver to link. Of several, the first sorted one the venv's editable install carries,
+    because that install's copy is what the control half of the measurement compares against; the
+    export is one path, so one package measures it."""
     found = sorted(path.parent.name for path in ROOT.glob("*/__init__.py"))
-    assert len(found) == 1, f"exactly one top-level package expected under {ROOT}: {found}"
-    return found[0]
+    if not found or not (ROOT / ".venv").is_dir():
+        return None
+    installed = _the_venvs_editable_root()
+    carried = [name for name in found if (installed / name / "__init__.py").is_file()]
+    assert carried, f"the editable install at {installed} carries none of {ROOT}'s {found}"
+    return carried[0]
 
 
 def _the_venvs_editable_root() -> pathlib.Path:
@@ -846,6 +858,51 @@ def _the_venvs_editable_root() -> pathlib.Path:
     root = pathlib.Path(editable[0].read_text().strip())
     assert root.is_dir(), f"{root}: the editable install points at nothing"
     return root
+
+
+def _a_venv_whose_editable_install_names(venv: pathlib.Path, root: pathlib.Path) -> None:
+    """A `.venv` carrying the one `.pth` line an editable install writes, pointing at `root`."""
+    site_packages = venv / "lib" / "python3.12" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "_editable_impl_host.pth").write_text(f"{root}\n")
+
+
+def _a_package(directory: pathlib.Path) -> None:
+    directory.mkdir(parents=True)
+    (directory / "__init__.py").write_text("")
+
+
+def test_a_host_that_vendors_the_mechanism_and_has_no_package_of_its_own_has_none_to_resolve(
+    tmp_path, monkeypatch
+):
+    """agent-os#17: the documented install is `git subtree add --prefix agent_os`, which puts the
+    mechanism's package two levels down, and a host whose own code is not Python has no top-level
+    package at all -- only plain scripts. That is a host this suite has to run in, not a broken
+    one: the driver's export has nothing of the host's to resolve there."""
+    _a_package(tmp_path / "agent_os" / "agent_os")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "tool.py").write_text("")
+    _a_venv_whose_editable_install_names(tmp_path / "agent_os" / ".venv", tmp_path / "agent_os")
+    monkeypatch.setitem(globals(), "ROOT", tmp_path)
+
+    assert _the_projects_package() is None
+
+
+def test_of_several_top_level_packages_the_one_measured_is_one_the_venv_installs(
+    tmp_path, monkeypatch
+):
+    """Several packages is a host layout too (agent-os#17). Which one is measured is not
+    arbitrary: the control half of the isolation test compares against the copy the venv's
+    editable install resolves, so it has to be a package that install actually carries."""
+    for name in ("alpha", "beta", "gamma"):
+        _a_package(tmp_path / name)
+    installed = tmp_path / "installed-checkout"
+    _a_package(installed / "beta")
+    _a_package(installed / "gamma")
+    _a_venv_whose_editable_install_names(tmp_path / ".venv", installed)
+    monkeypatch.setitem(globals(), "ROOT", tmp_path)
+
+    assert _the_projects_package() == "beta"
 
 
 def test_run_is_alive_reads_a_pid_that_exits_between_the_kill_check_and_the_stat_read_as_dead(
@@ -878,9 +935,12 @@ def test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it(
     # A real checkout, populated with the two gitignored things `git worktree add` never brings:
     # the venv is the one whose absence made the 2026-09-16 run symlink the main checkout's in and
     # then measure the main checkout's code while reporting on the branch. `.env` is linked when
-    # this checkout has one; not having one is not a defect in the driver.
+    # this checkout has one; not having one is not a defect in the driver. Nor is a host with no
+    # `.venv` at its root (agent-os#17): one that vendors the mechanism keeps the mechanism's own
+    # at `agent_os/.venv`, and a host whose own code is not Python has none of its own.
     assert seen["WORKTREE_GIT"] == "yes"
-    assert seen["WORKTREE_PYTEST"] == "yes"
+    host_has_pytest = (ROOT / ".venv" / "bin" / "pytest").exists()
+    assert seen["WORKTREE_PYTEST"] == ("yes" if host_has_pytest else "no")
     assert seen["WORKTREE_ENV_FILE"] == ("yes" if (ROOT / ".env").exists() else "no")
 
     # The backend itself still runs from the main checkout: the worktree is where the commands it
@@ -986,6 +1046,13 @@ def test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_
     PYTHONPATH taken away, which is the tree the 2026-09-16 validator's suite actually ran on while
     its review talked about the branch."""
     package = _the_projects_package()
+    if package is None:
+        # Only a host that vendors the mechanism may lack one: in the mechanism's own repository
+        # the package this measures is right there, and not finding it is the failure.
+        assert ROOT != AGENT_OS_DIR, f"no package found under the mechanism's own root {ROOT}"
+        pytest.skip(
+            f"{ROOT} has no top-level package and .venv of its own for the export to resolve"
+        )
     resolver = tmp_path / "resolve_package.py"
     resolver.write_text(PACKAGE_RESOLVER)
     launch_environment["STUB_RESOLVE_PACKAGE"] = package

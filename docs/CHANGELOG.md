@@ -15,6 +15,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   never recorded an end, any other leftover, and `resume` still refuse as before. A host's
   `info/exclude` entry or cleanup script for the file is no longer needed.
 
+- agent-os#17 — the mechanism's own suite passes in a host that vendors it through `git subtree`
+  whatever that host's layout: `test_agent_task.py` no longer asserts the host root holds exactly
+  one top-level package and its own `.venv`. The worktree isolation test measures the first
+  package the host's venv installs (of zero, one or several), and is skipped with its reason when
+  the host has none, as a non-Python host does; only the mechanism's own repository still requires
+  one. A host's `--deselect` workaround for the two tests can go after its next `subtree pull`.
+
 - #513 (this task) — the mechanism's own docs move under `agent_os/docs/`: `AGENT_OS.md` (from
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)
