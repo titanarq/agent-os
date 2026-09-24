@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#39 — a split no longer strands the original's dependents. `issues.py supersede N
+  --by A --by B [--route D=A]` rewrites every open issue's `Blocked by #N` line to the children
+  (all of them unless a route narrows one dependent), comments on each dependent, then comments
+  `Superseded by #A, #B` on N and closes it as `not planned`; it refuses a feature (its children
+  are its parts), a child that is not open, and is idempotent. The refiner prompt calls it after
+  splitting a task or bug. Before, the original stayed open and its dependents blocked forever, or
+  unblocked too early when a human closed it; a host rewriting dependents by hand can stop.
 - agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
   each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
   and the checkout, which the driver removes when the run ends; the three prompts name it and
