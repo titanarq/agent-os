@@ -69,7 +69,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -380,6 +380,24 @@ class StallBookkeeping:
     # `None` before the first tick has ever observed this backend, so that first observation is
     # never itself reported as a change.
     last_quota_status: str | None = None
+    # Which worker process the three stall fields above were counted in (#52): `_run_identity`'s
+    # issue, start ref and PID. The fields are per-run -- Qwen's `turns` restarts at 0 with every
+    # stage process and the commit count is `<startref>..HEAD` -- but the file outlives every run
+    # because `last_quota_status` must. `None` (a file written before this field existed) never
+    # matches a live run, so such a file is re-scoped on its first tick.
+    run_identity: str | None = None
+
+
+def scoped_to_run(bookkeeping: StallBookkeeping, run_identity: str) -> StallBookkeeping:
+    """The bookkeeping as the run `run_identity` names should see it: unchanged when it was
+    counted in that run, otherwise with the stall fields back to a fresh run's and only the quota
+    memory kept -- a previous run's commit count and turn anchor mean nothing against this run's
+    stream (#52)."""
+    if bookkeeping.run_identity == run_identity:
+        return bookkeeping
+    return StallBookkeeping(
+        last_quota_status=bookkeeping.last_quota_status, run_identity=run_identity
+    )
 
 
 def turns_since_commit(
@@ -402,8 +420,15 @@ def turns_since_commit(
         return since, bookkeeping
 
     commit_count = len(commit_timestamps)
-    if commit_count > bookkeeping.commit_count:
-        bookkeeping = StallBookkeeping(commit_count=commit_count, turn_count_at_commit=turns)
+    if bookkeeping.turn_count_at_commit > turns:
+        # An anchor this process has not reached: it was counted in another process (#52). The
+        # caller scopes the bookkeeping to the run first; this is the backstop that keeps a stale
+        # file from ever yielding a negative count, anchored at the one point this process's
+        # stream can vouch for, its own start.
+        bookkeeping = replace(bookkeeping, commit_count=commit_count, turn_count_at_commit=0)
+    elif commit_count > bookkeeping.commit_count:
+        # `replace`, not a fresh instance: the quota memory and the warning marker survive a commit.
+        bookkeeping = replace(bookkeeping, commit_count=commit_count, turn_count_at_commit=turns)
     return turns - bookkeeping.turn_count_at_commit, bookkeeping
 
 
@@ -636,6 +661,17 @@ def _commit_timestamps(worktree: Path, startref: Path) -> list[datetime]:
         check=False,
     )
     return [datetime.fromisoformat(line) for line in out.stdout.splitlines() if line.strip()]
+
+
+def _run_identity(paths: WorkerPaths, issue: str) -> str:
+    """What tells one worker process from the next (#52): the issue, the start ref `start` writes
+    for it, and the PID every stage process writes for itself -- so a new dispatch and a resume
+    of the same issue are both a new run."""
+
+    def contents(path: Path) -> str:
+        return path.read_text().strip() if path.is_file() else ""
+
+    return f"issue={issue} startref={contents(paths.startref)} pid={contents(paths.pidfile)}"
 
 
 def _load_bookkeeping(path: Path) -> StallBookkeeping:
@@ -1085,7 +1121,7 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
     for warning in unparsable_cutoff_lines(progress_text):
         print(f"{backend}: {progress_log} {warning}")
     commit_ts = _commit_timestamps(paths.worktree, paths.startref)
-    bookkeeping = _load_bookkeeping(paths.bookkeeping)
+    bookkeeping = scoped_to_run(_load_bookkeeping(paths.bookkeeping), _run_identity(paths, issue))
     tier, since_commit, bookkeeping = stall_detected(
         events, commit_ts, task_class, summary.turns, bookkeeping
     )

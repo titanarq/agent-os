@@ -36,6 +36,7 @@ from agent_os.guard import (
     read_state_marker,
     repeated_tool_calls,
     stall_detected,
+    turns_since_commit,
     unparsable_cutoff_lines,
     write_state_line1,
 )
@@ -559,6 +560,159 @@ def test_stall_detected_qwen_path_resets_the_counter_on_a_new_commit():
     assert tier is None
     assert updated.commit_count == 2
     assert updated.turn_count_at_commit == 10
+
+
+def test_turns_since_commit_qwen_path_never_goes_negative_on_another_processs_anchor():
+    """#52's unit-level repro: a previous run's anchor (turn 12, 5 commits) against a new
+    process at turn 3 with no commit yet. It returned -9."""
+    since, updated = turns_since_commit(
+        [], [], 3, StallBookkeeping(commit_count=5, turn_count_at_commit=12)
+    )
+    assert since == 3
+    assert (updated.commit_count, updated.turn_count_at_commit) == (0, 0)
+
+
+def test_turns_since_commit_qwen_path_keeps_the_quota_memory_across_a_commit():
+    """A commit re-anchors the counter and nothing else: the quota memory the same tick compares
+    against must not be dropped by it, nor the warning marker."""
+    bookkeeping = StallBookkeeping(
+        commit_count=1, turn_count_at_commit=2, warned_at_turn_count=7, last_quota_status="allowed"
+    )
+    _, updated = turns_since_commit([], [_naive(2026, 9, 14), _naive(2026, 9, 15)], 10, bookkeeping)
+    assert (updated.commit_count, updated.turn_count_at_commit) == (2, 10)
+    assert updated.last_quota_status == "allowed"
+    assert updated.warned_at_turn_count == 7
+
+
+def test_scoped_to_run_resets_the_stall_fields_of_another_run_and_keeps_the_quota():
+    previous = StallBookkeeping(
+        commit_count=5,
+        turn_count_at_commit=12,
+        warned_at_turn_count=9,
+        last_quota_status="exhausted",
+        run_identity="issue=14 startref=aaa pid=100",
+    )
+    scoped = agent_guard.scoped_to_run(previous, "issue=19 startref=bbb pid=200")
+    assert scoped == StallBookkeeping(
+        last_quota_status="exhausted", run_identity="issue=19 startref=bbb pid=200"
+    )
+    assert agent_guard.scoped_to_run(previous, previous.run_identity) is previous
+
+
+def _stall_tick_fixture(tmp_path: Path, monkeypatch, *, turns: int, commits: int) -> Path:
+    """A live Qwen run of issue #19 at `turns` turns with `commits` commits since its start ref,
+    no progress.log declaration past its grace, and a guard that records instead of cutting."""
+    cache = tmp_path / ".cache"
+    worktree = tmp_path / "example-qwen"
+    worktree.mkdir()
+    cache.mkdir()
+    monkeypatch.setenv("WORKER_CACHE_DIR", str(cache))
+    monkeypatch.setenv("WORKER_WORKTREE", str(worktree))
+    (cache / "worker_qwen.state").write_text("STARTED\n")
+    (cache / "worker_qwen.issue").write_text("19\n")
+    (cache / "worker_qwen.startref").write_text("bbb\n")
+    (cache / "worker_qwen.pid").write_text("200\n")
+    (cache / "worker_qwen.jsonl").write_text(
+        "".join(json.dumps(_assistant_event()) + "\n" for _ in range(turns))
+    )
+    body = f"{VALID_BODY}\n\n<!-- budget: mechanical-qwen -->"
+    monkeypatch.setattr(
+        agent_guard.subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, stdout=body, stderr=""),
+    )
+    monkeypatch.setattr(agent_guard, "_is_alive", lambda pidfile: True)
+    monkeypatch.setattr(
+        agent_guard,
+        "_commit_timestamps",
+        lambda tree, startref: [_naive(2026, 9, 24, 10, minute) for minute in range(commits)],
+    )
+    monkeypatch.setattr(
+        agent_guard,
+        "load_task_classes",
+        lambda: {"mechanical-qwen": _qwen_task_class(commit_warn_turns=8, commit_cut_turns=15)},
+    )
+    monkeypatch.setattr(agent_guard, "post_stall_warning", lambda *args, **kwargs: None)
+    return cache / "agent_guard_qwen.json"
+
+
+def test_tick_backend_does_not_measure_a_new_run_from_the_previous_runs_anchor(
+    monkeypatch, tmp_path
+):
+    """#52 as observed: #14's run left `commit_count=5, turn_count_at_commit=12` behind, #19 was
+    dispatched with a new start ref, and at its turn 9 with no commit the tick said `-7 turns`."""
+    bookkeeping_file = _stall_tick_fixture(tmp_path, monkeypatch, turns=9, commits=0)
+    bookkeeping_file.write_text(
+        json.dumps(
+            {
+                "commit_count": 5,
+                "turn_count_at_commit": 12,
+                "warned_at_turn_count": 9,
+                "last_quota_status": "allowed",
+            }
+        )
+    )
+
+    result = agent_guard._tick_backend("qwen", main=tmp_path)
+
+    assert result.message == "qwen: alive, 9 turns since last commit (class mechanical-qwen)"
+    saved = json.loads(bookkeeping_file.read_text())
+    assert saved["commit_count"] == 0
+    assert saved["turn_count_at_commit"] == 0
+    # 9 turns is past the warn threshold of 8: this run's warning is its own, not suppressed by
+    # the previous run's marker at the same turn count.
+    assert saved["warned_at_turn_count"] == 9
+    assert saved["last_quota_status"] == "allowed"
+    assert saved["run_identity"] == "issue=19 startref=bbb pid=200"
+
+
+def test_tick_backend_counts_a_new_runs_first_commits_below_the_previous_runs_count(
+    monkeypatch, tmp_path
+):
+    """#52 effect 2: the previous run's `commit_count=5` hid this run's commits 1..5, so a worker
+    that had just committed was measured from turn 12 and cut once `turns - 12` crossed the cut."""
+    bookkeeping_file = _stall_tick_fixture(tmp_path, monkeypatch, turns=30, commits=2)
+    bookkeeping_file.write_text(
+        json.dumps(
+            {
+                "commit_count": 5,
+                "turn_count_at_commit": 12,
+                "warned_at_turn_count": None,
+                "last_quota_status": "allowed",
+                "run_identity": "issue=14 startref=aaa pid=100",
+            }
+        )
+    )
+    cuts: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        agent_guard, "cut_run", lambda backend, reason, **kwargs: cuts.append((backend, reason))
+    )
+
+    result = agent_guard._tick_backend("qwen", main=tmp_path)
+
+    assert cuts == []
+    assert result.message == "qwen: alive, 0 turns since last commit (class mechanical-qwen)"
+    saved = json.loads(bookkeeping_file.read_text())
+    assert (saved["commit_count"], saved["turn_count_at_commit"]) == (2, 30)
+
+
+def test_tick_backend_keeps_the_same_runs_anchor_between_ticks(monkeypatch, tmp_path):
+    bookkeeping_file = _stall_tick_fixture(tmp_path, monkeypatch, turns=6, commits=1)
+    bookkeeping_file.write_text(
+        json.dumps(
+            {
+                "commit_count": 1,
+                "turn_count_at_commit": 4,
+                "warned_at_turn_count": None,
+                "last_quota_status": "allowed",
+                "run_identity": "issue=19 startref=bbb pid=200",
+            }
+        )
+    )
+
+    result = agent_guard._tick_backend("qwen", main=tmp_path)
+
+    assert result.message == "qwen: alive, 2 turns since last commit (class mechanical-qwen)"
 
 
 # ---- repeated_tool_calls ----

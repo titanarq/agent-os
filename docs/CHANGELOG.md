@@ -8,6 +8,17 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
+  the worker process it was counted in. The file now records `run_identity` (issue, start ref and
+  PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and
+  `warned_at_turn_count` and keeps `last_quota_status`, so a new dispatch or a resumed stage is no
+  longer measured from the previous run's anchor -- on Qwen that gave negative turns since commit,
+  a late warn/cut, and a cut of a worker that had just committed. A file without the field counts
+  as another run's. `turns_since_commit` also re-anchors at the process's start instead of going
+  negative when the anchor is past its turn count, and a commit no longer drops the quota memory
+  the same tick compares against. Claude's path counts from the live stream's own timestamps and
+  never had the flaw.
+
 - agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
   App without the Workflows permission create or update a ref whose tree differs from the
   default branch under `.github/workflows/` -- which a stale branch hits without touching a
