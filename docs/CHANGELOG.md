@@ -13,6 +13,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
   `start` refusal tests get a disposable `WORKER_CACHE_DIR`. A conftest guard now fails any test
   that creates `<root>/.cache` when the session started without one.
+- agent-os#12 — `agent-os-install` no longer renders a bare `python3` into the guard unit's
+  `ExecStart=` when the host has a `scripts/agent_guard.py` shim but no root `.venv`: it uses the
+  mechanism's own interpreter as `agent_os_python()` resolves it (`$AGENT_OS_PYTHON`, else the
+  `.venv` `bootstrap.sh` builds), and refuses with a message naming `bootstrap.sh` and
+  `AGENT_OS_PYTHON` when that is not an absolute path to an executable, in the module form too.
+  Nothing is written in that case.
 - agent-os#18 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over the
   previous run's diary: when `.state` records that run's ending (`DONE`, `CUT_BY_GUARD`,
   `FAILED_LAUNCH`, `BLOCKED`), nothing is alive and the untracked `scratchpad/progress.log` is the

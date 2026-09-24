@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import pathlib
 import re
 import sys
@@ -70,17 +71,37 @@ def executables_path_prefix(project: ProjectConfig) -> str:
     return ":".join([*directories, DEFAULT_PATH_TAIL])
 
 
+def unit_python() -> str:
+    """The mechanism's own interpreter as `agent_os_python()` resolves it, required to be an
+    absolute path to an executable file -- because a systemd unit runs it with whatever PATH the
+    `--user` manager has, which nothing guarantees carries a `python3` at all, let alone one with
+    the mechanism's dependencies (#12).
+
+    `agent_os_python()`'s last step, the bare `python3`, is a fallback a shell driver can afford:
+    it fails on the import, in front of whoever ran it. Frozen into a unit it fails five minutes
+    later on a timer nobody is watching, so install refuses it instead."""
+    python = agent_os_python()
+    if not os.path.isabs(python) or not (os.path.isfile(python) and os.access(python, os.X_OK)):
+        raise InstallError(
+            f"no absolute interpreter for the guard unit's ExecStart (resolved {python!r}) -- "
+            "run `bash agent_os/bootstrap.sh` to build the mechanism's own .venv, or set "
+            "AGENT_OS_PYTHON to the absolute path of an interpreter that imports agent_os"
+        )
+    return python
+
+
 def resolve_exec_start(root: pathlib.Path) -> str:
     """The host's own shim (`scripts/agent_guard.py`) run on the host's own interpreter when one
     exists -- reproducing exactly what a hand-armed unit on this machine already does
     (`docs/runbooks/agent_monitor.md`) -- or the package's own console form otherwise, which is
-    what a host with no shims (one that never ran #508's move) gets instead."""
+    what a host with no shims (one that never ran #508's move) gets instead. Every other case
+    runs on `unit_python()`, which refuses rather than render a bare `python3`."""
     shim = root / "scripts" / "agent_guard.py"
     if shim.is_file():
         venv_python = root / ".venv" / "bin" / "python"
-        python = str(venv_python) if venv_python.is_file() else "python3"
+        python = str(venv_python) if venv_python.is_file() else unit_python()
         return f"{python} {shim} tick"
-    return f"{agent_os_python()} -m agent_os.guard tick"
+    return f"{unit_python()} -m agent_os.guard tick"
 
 
 def _refuse_unknown_tokens(rendered: str, *, source: str) -> None:

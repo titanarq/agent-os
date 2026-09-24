@@ -75,6 +75,83 @@ def test_resolve_exec_start_falls_back_to_the_module_form_without_a_shim(tmp_pat
     assert "scripts/agent_guard.py" not in exec_start
 
 
+def _fake_interpreter(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    python = directory / "python"
+    python.write_text("#!/bin/sh\n")
+    python.chmod(0o755)
+    return python
+
+
+def _no_mechanism_interpreter(monkeypatch, tmp_path):
+    """`agent_os_python()` with nothing to find: no `$AGENT_OS_PYTHON` and a package directory
+    with no `.venv` beside it, so its last step is the bare `python3` fallback."""
+    import agent_os.cli
+
+    monkeypatch.delenv("AGENT_OS_PYTHON", raising=False)
+    monkeypatch.setattr(agent_os.cli, "AGENT_OS_DIR", tmp_path / "unbootstrapped")
+
+
+def test_resolve_exec_start_runs_the_shim_on_the_mechanisms_interpreter_without_a_host_venv(
+    tmp_path, monkeypatch
+):
+    """#12: a shim with no host `.venv` used to render a bare `python3`, which only works if the
+    systemd `--user` manager's PATH happens to carry one with the mechanism's dependencies."""
+    (tmp_path / "scripts").mkdir()
+    shim = tmp_path / "scripts" / "agent_guard.py"
+    shim.write_text("# shim\n")
+    mechanism_python = _fake_interpreter(tmp_path / "mechanism" / ".venv" / "bin")
+    monkeypatch.setenv("AGENT_OS_PYTHON", str(mechanism_python))
+
+    exec_start = resolve_exec_start(tmp_path)
+    assert exec_start == f"{mechanism_python} {shim} tick"
+
+
+@pytest.mark.parametrize("with_shim", [True, False], ids=["shim", "module-form"])
+def test_resolve_exec_start_refuses_when_no_absolute_interpreter_resolves(
+    tmp_path, monkeypatch, with_shim
+):
+    if with_shim:
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "agent_guard.py").write_text("# shim\n")
+    _no_mechanism_interpreter(monkeypatch, tmp_path)
+
+    with pytest.raises(InstallError, match="bootstrap.sh"):
+        resolve_exec_start(tmp_path)
+
+
+def test_resolve_exec_start_refuses_a_bare_name_in_agent_os_python(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_OS_PYTHON", "python3")
+    with pytest.raises(InstallError, match="AGENT_OS_PYTHON"):
+        resolve_exec_start(tmp_path)
+
+
+def test_resolve_exec_start_uses_the_venv_bootstrap_builds_beside_the_package(
+    tmp_path, monkeypatch
+):
+    import agent_os.cli
+
+    package_dir = tmp_path / "agent_os_dir"
+    mechanism_python = _fake_interpreter(package_dir / ".venv" / "bin")
+    monkeypatch.delenv("AGENT_OS_PYTHON", raising=False)
+    monkeypatch.setattr(agent_os.cli, "AGENT_OS_DIR", package_dir)
+
+    exec_start = resolve_exec_start(tmp_path)
+    assert exec_start == f"{mechanism_python} -m agent_os.guard tick"
+
+
+def test_install_exits_loudly_when_no_interpreter_resolves(tmp_path):
+    """End to end: the rendered unit is never written with a bare `python3` -- `main()` exits
+    non-zero naming the fix instead, and nothing lands under `~/.config/systemd/user/`."""
+    environment, _host_root, fake_home = _isolated_environment(tmp_path)
+    environment["AGENT_OS_PYTHON"] = "python3"
+
+    result = _run_install(environment)
+    assert result.returncode != 0
+    assert "AGENT_OS_PYTHON" in result.stderr and "bootstrap.sh" in result.stderr, result.stderr
+    assert not (fake_home / ".config" / "systemd").exists()
+
+
 # --------------------------------------------------------------------------------------------
 # Rendering the systemd templates
 # --------------------------------------------------------------------------------------------
