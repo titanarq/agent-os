@@ -27,7 +27,7 @@ import re
 import sys
 
 from agent_os.cli import AGENT_OS_DIR, agent_os_python, host_root
-from agent_os.lib import ProjectConfig, load_project
+from agent_os.lib import CONFIG_LOAD_ERRORS, ProjectConfig, config_load_failure, load_project
 from agent_os.render import render_agent_template
 
 SYSTEMD_TEMPLATES_DIR = AGENT_OS_DIR / "templates" / "systemd"
@@ -233,7 +233,10 @@ def main() -> None:
     args = parser.parse_args()
 
     root = host_root()
-    project = load_project()
+    try:
+        project = load_project()
+    except CONFIG_LOAD_ERRORS as error:
+        sys.exit(config_load_failure(error))
     systemd_user_dir = pathlib.Path.home() / ".config" / "systemd" / "user"
 
     try:
