@@ -8,6 +8,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
+  (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
+  the column `project.board_columns` maps that state to on the item it just added. Before, a later
+  `move` found no item to mirror onto unless the board auto-added issues. A board that refuses
+  either step never fails the `create`: it prints one `board:` line saying why. `create` with
+  `board_number: 0` makes no board call.
 - agent-os#10 — the guard-timer failure `agent-os-doctor` prints no longer sends a host to
   `docs/runbooks/agent_monitor.md`, a runbook only the first host ever had. It now says what to
   run (`systemctl --user enable --now <guard_unit>.timer`, once `agent-os-install` has written the

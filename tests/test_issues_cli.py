@@ -458,6 +458,7 @@ def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_ty
         patch.object(issues, "ensure_fixed_labels", return_value=set()),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "create_issue", return_value=created) as create,
+        patch.object(issues, "add_to_board", return_value=[]),
     ):
         issues.cmd_create(
             argparse.Namespace(
@@ -472,6 +473,116 @@ def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_ty
     _repo, _title, body, labels = create.call_args[0]
     assert labels == ["type:bug"]
     assert "## Definition of done" in body
+
+
+# ---- create puts the new issue on the board (#23) --------------------------------------------
+
+
+def _create_on_board(labels=None, *, board=5, item_add=None, mirror=None):
+    """Runs `cmd_create` with every `gh` call mocked and `project.board_number = board`. Returns
+    `(gh_calls, mirror_calls)`: every `gh_json` call made (the board's `item-add` among them) and
+    the arguments `mirror_board_column` was called with. `item_add` answers the `item-add`, or
+    raises when it is an exception -- `gh_json` exits on a failed `gh`."""
+    project = _project(
+        board_number=board, board_columns={"ready": "Ready for AI", "refine": "Backlog"}
+    )
+    created = {"number": 9, "id": 99, "html_url": "https://github.invalid/owner/name/issues/9"}
+    calls = []
+
+    def fake_gh(*args, **_kwargs):
+        calls.append(args)
+        if args[:2] == ("project", "item-add"):
+            if isinstance(item_add, BaseException):
+                raise item_add
+            return item_add if item_add is not None else {"id": "PVTI_new"}
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    with (
+        patch.object(issues, "repo_name", return_value="owner/name"),
+        patch.object(issues, "load_project", return_value=project),
+        patch.object(issues, "ensure_fixed_labels", return_value=set()),
+        patch.object(issues, "ensure_labels"),
+        patch.object(issues, "create_issue", return_value=created),
+        patch.object(issues, "gh_json", side_effect=fake_gh),
+        patch.object(
+            issues, "mirror_board_column", side_effect=mirror, return_value="board:    mirrored"
+        ) as board_column,
+    ):
+        issues.cmd_create(
+            argparse.Namespace(
+                type="task",
+                title="t",
+                parent=None,
+                body_file=None,
+                template=None,
+                label=labels,
+            )
+        )
+    return calls, board_column.call_args_list
+
+
+def test_create_adds_the_new_issue_to_the_configured_board():
+    calls, _ = _create_on_board()
+    (item_add,) = [args for args in calls if args[:2] == ("project", "item-add")]
+    assert item_add[2] == "5"
+    assert item_add[item_add.index("--owner") + 1] == "owner"
+    assert item_add[item_add.index("--url") + 1] == "https://github.invalid/owner/name/issues/9"
+
+
+def test_create_sets_the_column_of_its_initial_status_label_on_the_new_item(capsys):
+    _, mirrored = _create_on_board(["status:ready"])
+    (call,) = mirrored
+    assert call.args == ("owner/name", 9, "Ready for AI", 5)
+    # The item `item-add` just returned, not a lookup that may not see it yet.
+    assert call.kwargs == {"item": "PVTI_new"}
+    assert "board:    mirrored" in capsys.readouterr().out
+
+
+def test_create_without_a_status_label_adds_the_item_and_leaves_its_column_alone(capsys):
+    calls, mirrored = _create_on_board(["p2"])
+    assert [args[:2] for args in calls] == [("project", "item-add")]
+    assert mirrored == []
+    assert "board:    added #9 to project 5" in capsys.readouterr().out
+
+
+def test_a_board_that_refuses_the_item_never_fails_the_create(capsys):
+    _, mirrored = _create_on_board(
+        ["status:ready"], item_add=SystemExit("gh project item-add failed:\nno such project")
+    )
+    out = capsys.readouterr().out
+    assert "created #9" in out
+    assert "board:    #9 not added to project 5" in out
+    assert mirrored == []
+
+
+def test_a_column_that_cannot_be_set_never_fails_the_create(capsys):
+    _, mirrored = _create_on_board(
+        ["status:ready"], mirror=SystemExit("project owner/5 has no single-select field")
+    )
+    out = capsys.readouterr().out
+    assert len(mirrored) == 1
+    assert "board:    column not mirrored: project owner/5 has no single-select field" in out
+
+
+def test_create_with_no_board_configured_makes_no_board_call():
+    calls, mirrored = _create_on_board(["status:ready"], board=0)
+    assert calls == [] and mirrored == []
+
+
+def test_mirror_board_column_uses_the_item_it_is_given_without_looking_it_up():
+    fields = {
+        "fields": [{"id": "F2", "name": "Status", "options": [{"id": "O1", "name": "Ready"}]}]
+    }
+    with (
+        patch.object(issues, "board_item_id") as lookup,
+        patch.object(issues, "gh_json_dict", side_effect=[{"id": "PVT"}, fields]),
+        patch.object(issues, "gh_json") as edit,
+    ):
+        line = issues.mirror_board_column("owner/name", 9, "Ready", 5, item="PVTI_new")
+    lookup.assert_not_called()
+    args = edit.call_args[0]
+    assert args[args.index("--id") + 1] == "PVTI_new"
+    assert line == "board:    Ready"
 
 
 # ---- update --body-file: the refiner's own way to rewrite a body in place --------------------
