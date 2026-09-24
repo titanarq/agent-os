@@ -568,6 +568,8 @@ worktree=${PYTHONPATH%%:*}
   printf 'WORKTREE_ENV_FILE=%s\\n' "$([ -e "$worktree/.env" ] && echo yes || echo no)"
   printf 'WORKTREE_PROVISIONED=%s\\n' "$(cat "$worktree/provisioned-by-setup" 2>/dev/null || echo no)"
   printf 'WORKTREE_HEAD=%s\\n' "$(git -C "$worktree" rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'WORKTREE_COMMON_DIR=%s\\n' \\
+    "$(git -C "$worktree" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo none)"
   printf 'SCRATCH=%s\\n' "${AGENT_RUN_SCRATCH-}"
   printf 'SCRATCH_IS_EMPTY_DIR=%s\\n' \\
     "$([ -d "${AGENT_RUN_SCRATCH-}" ] && [ -z "$(ls -A "$AGENT_RUN_SCRATCH")" ] && echo yes || echo no)"
@@ -673,12 +675,73 @@ def _config_without_secrets(tmp_path) -> pathlib.Path:
     return path
 
 
+def _disposable_copy_of_the_host(destination: pathlib.Path) -> pathlib.Path:
+    """A git repository of its own holding this checkout's tracked files as they stand -- this
+    change's drivers and package included, not whatever the last commit holds -- laid out exactly
+    as the checkout is, with its gitignored `.venv` and `.env` linked in the way a worktree gets
+    them.
+
+    The launch path makes a worktree with `git -C <host root> worktree add`, which registers it
+    under the gitdir of that host. Run with the checkout under test as its host, every launch here
+    registered a worktree in the REAL repository -- shared with every other checkout of it -- and a
+    run that never reached its own removal (a killed test, a detached run outliving its fixture,
+    pytest pruning an old tmp_path) left it listed there for good (#66). Run out of this copy, it
+    is registered here and goes away with tmp_path."""
+    listed = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    for relative in filter(None, listed):
+        source = ROOT / relative
+        target = destination / relative
+        if source.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(os.readlink(source))
+        elif source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", str(destination)], capture_output=True, check=True
+    )
+    _git(destination, "add", "-A")
+    _git(destination, "commit", "-q", "--no-verify", "-m", "a disposable copy of the host")
+
+    # Linked after the commit, like the gitignored things `git worktree add` never brings: the
+    # host's own venv and `.env`, and in a host that vendors the mechanism, the mechanism's venv.
+    place = _the_mechanisms_place_in_the_host()
+    links = [pathlib.PurePath(".venv"), pathlib.PurePath(".env")]
+    if place is not None:
+        links.append(place / ".venv")
+    for relative in links:
+        if (ROOT / relative).exists():
+            (destination / relative).symlink_to(ROOT / relative)
+    return destination
+
+
+def _host(environment) -> pathlib.Path:
+    """The disposable host a `launch_environment` runs out of."""
+    return pathlib.Path(environment["AGENT_OS_HOST_ROOT"])
+
+
+def _host_script(environment, name: str = "agent_task.sh") -> pathlib.Path:
+    """The host copy's own driver: the mechanism sits at the same place in that copy as in this
+    checkout, so the driver resolves the copy as its host and its package directory inside it."""
+    place = _the_mechanisms_place_in_the_host()
+    mechanism = _host(environment) if place is None else _host(environment) / place
+    return mechanism / "bin" / name
+
+
 @pytest.fixture
 def launch_environment(tmp_path):
-    """The driver's real launch path with every write moved somewhere disposable, and a PYTHONPATH
-    of its own: a sentinel rather than an empty value, because what these tests assert is that the
-    driver REPLACED what it inherited with the worktree -- an inherited PYTHONPATH already pointing
-    at a checkout of this repository would let a driver that exports nothing pass by accident."""
+    """The driver's real launch path with every write moved somewhere disposable -- the worktree's
+    registration included, which is why the driver runs out of a disposable copy of the host
+    (#66) -- and a PYTHONPATH of its own: a sentinel rather than an empty value, because what these
+    tests assert is that the driver REPLACED what it inherited with the worktree -- an inherited
+    PYTHONPATH already pointing at a checkout of this repository would let a driver that exports
+    nothing pass by accident."""
+    host = _disposable_copy_of_the_host(tmp_path / "host")
     cache = tmp_path / "cache"
     cache.mkdir()
     # Where the launch gate looks for the guard's persisted quota verdict (#425): empty, so a
@@ -697,22 +760,16 @@ def launch_environment(tmp_path):
         WORKER_CACHE_DIR=str(guard_state),
         AGENT_CLAUDE_BIN=str(stub),
         AGENT_WORKTREE_REF="HEAD",
+        # Named outright rather than left to the driver to derive, so no launch here can resolve
+        # the checkout under test as its host.
+        AGENT_OS_HOST_ROOT=str(host),
         AGENTS_CONFIG_PATH=str(_config_without_secrets(tmp_path)),
         STUB_RECORD=str(tmp_path / "backend-record.txt"),
         STUB_PROMPT=str(tmp_path / "backend-prompt.txt"),
         STUB_EXIT_CODE="0",
         PYTHONPATH=str(tmp_path / "inherited-sentinel"),
     )
-    yield environment
-
-    # A test that fails on its way must not leave the shared repository with a registration behind.
-    for leftover in cache.glob("worktree-*"):
-        subprocess.run(
-            ["git", "-C", str(ROOT), "worktree", "remove", "--force", str(leftover)],
-            capture_output=True,
-            check=False,
-        )
-    subprocess.run(["git", "-C", str(ROOT), "worktree", "prune"], capture_output=True, check=False)
+    return environment
 
 
 @pytest.fixture
@@ -723,7 +780,7 @@ def stubbed_origin(launch_environment, tmp_path):
     real_git = shutil.which("git")
     assert real_git, "no git on PATH to stand in for"
     head = subprocess.run(
-        [real_git, "-C", str(ROOT), "rev-parse", "HEAD"],
+        [real_git, "-C", str(_host(launch_environment)), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
         check=True,
@@ -751,8 +808,8 @@ RUN_TIMEOUT_SECONDS = 180.0
 def _launch(environment, role, subject=PULL_REQUEST, *, no_wake=True):
     arguments = [role, subject, *(["--no-wake"] if no_wake else [])]
     result = subprocess.run(
-        ["bash", str(DRIVER), *arguments],
-        cwd=ROOT,
+        ["bash", str(_host_script(environment)), *arguments],
+        cwd=_host(environment),
         env=environment,
         capture_output=True,
         text=True,
@@ -1004,7 +1061,44 @@ def test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it(
 
     # The backend itself still runs from the main checkout: the worktree is where the commands it
     # runs resolve, not where it sits.
-    assert seen["PWD"] == str(ROOT)
+    assert seen["PWD"] == str(_host(launch_environment))
+
+
+def _git_common_dir(directory: pathlib.Path) -> pathlib.Path:
+    return pathlib.Path(
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(directory),
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    ).resolve()
+
+
+def test_a_launch_registers_its_worktree_in_a_disposable_host_and_never_in_the_checkout_under_test(
+    launch_environment, tmp_path
+):
+    """agent-os#66: `git worktree add` writes a registration under the gitdir of whatever checkout
+    the driver resolves as its host. Resolved to the checkout running this suite, every launch
+    here registered a worktree in the REAL repository -- shared with every other checkout of it --
+    and any run that did not reach its own removal (a killed test, a detached run outliving its
+    fixture, pytest pruning an old tmp_path) left it listed there. The launch path runs out of a
+    disposable host of its own, and the worktree it makes belongs to that host's repository."""
+    result = _launch(launch_environment, "validator")
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _record(launch_environment)
+    registered_in = pathlib.Path(seen["WORKTREE_COMMON_DIR"]).resolve()
+    assert registered_in != _git_common_dir(ROOT), (
+        f"the run registered its worktree in the checkout under test ({registered_in})"
+    )
+    assert registered_in.is_relative_to(tmp_path.resolve()), registered_in
 
 
 # -------------------------------------------------------------------------------------------------
@@ -1097,7 +1191,7 @@ def test_the_worktree_is_gone_and_unregistered_whatever_the_backend_exited_with(
         result.stdout + result.stderr
     )
     listed = subprocess.run(
-        ["git", "-C", str(ROOT), "worktree", "list", "--porcelain"],
+        ["git", "-C", str(_host(launch_environment)), "worktree", "list", "--porcelain"],
         capture_output=True,
         text=True,
         check=False,
@@ -1118,7 +1212,7 @@ def test_a_role_that_runs_no_tests_gets_no_worktree_and_keeps_the_environment_it
 
 
 def _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
-    seen: dict[str, str], run_dir: pathlib.Path
+    seen: dict[str, str], run_dir: pathlib.Path, host: pathlib.Path | None = None
 ) -> None:
     """agent-os#33: the refiner, told nowhere where scratch files go, wrote them under its own
     `.cache/refiner/` and then `rm -rf`'d that directory -- the driver's run log, the PID file the
@@ -1130,6 +1224,8 @@ def _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
     assert seen["SCRATCH_IS_EMPTY_DIR"] == "yes", "the scratch dir was not an empty directory"
     assert not scratch.is_relative_to(run_dir), f"{scratch} lies inside the run dir {run_dir}"
     assert not scratch.is_relative_to(ROOT), f"{scratch} lies inside the checkout {ROOT}"
+    if host is not None:
+        assert not scratch.is_relative_to(host), f"{scratch} lies inside the host {host}"
     assert not scratch.exists(), f"the run left its scratch dir {scratch} behind"
 
 
@@ -1139,7 +1235,7 @@ def test_a_role_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(role, 
     assert result.returncode == 0, result.stdout + result.stderr
     run_dir = pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
     _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
-        _record(launch_environment), run_dir
+        _record(launch_environment), run_dir, _host(launch_environment)
     )
     # The driver's own bookkeeping is still there to read: the row, and the log it was taken from.
     assert (run_dir / "runs.tsv").is_file()
@@ -1156,8 +1252,8 @@ def test_the_planner_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(
         PLANNER_QWEN_BIN=launch_environment["AGENT_CLAUDE_BIN"],
     )
     result = subprocess.run(
-        ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "run", "a test"],
-        cwd=ROOT,
+        ["bash", str(_host_script(launch_environment, "planner_task.sh")), "run", "a test"],
+        cwd=_host(launch_environment),
         env=launch_environment,
         capture_output=True,
         text=True,
@@ -1165,7 +1261,7 @@ def test_the_planner_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(
     )
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
-        _record(launch_environment), planner_dir
+        _record(launch_environment), planner_dir, _host(launch_environment)
     )
     assert (planner_dir / "runs.tsv").is_file()
 
@@ -1299,7 +1395,9 @@ def test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_
     assert result.returncode == 0, result.stdout + result.stderr
     seen = _record(launch_environment)
     assert seen.get("PACKAGE_PYTHON") == "linked", seen
-    _assert_the_run_resolved_the_worktrees_copy(seen, ROOT, tree, package, venv)
+    _assert_the_run_resolved_the_worktrees_copy(
+        seen, _host(launch_environment), tree, package, venv
+    )
 
 
 def _copy_of_the_mechanism(destination: pathlib.Path) -> None:
@@ -1485,8 +1583,8 @@ def test_the_launch_returns_at_once_with_a_pid_that_is_the_runs_own_session(
     launch_environment["STUB_SESSION_FILE"] = str(tmp_path / "stub-session.txt")
 
     result = subprocess.run(
-        ["bash", str(DRIVER), "validator", PULL_REQUEST, "--no-wake"],
-        cwd=ROOT,
+        ["bash", str(_host_script(launch_environment)), "validator", PULL_REQUEST, "--no-wake"],
+        cwd=_host(launch_environment),
         env=launch_environment,
         capture_output=True,
         text=True,
@@ -1558,11 +1656,11 @@ def test_a_run_finishes_after_the_shell_that_launched_it_is_killed(launch_enviro
                     "-c",
                     'bash "$@"; sleep 60',
                     "planner-shell",
-                    str(DRIVER),
+                    str(_host_script(environment)),
                     "validator",
                     PULL_REQUEST,
                 ],
-                cwd=ROOT,
+                cwd=_host(environment),
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=out,

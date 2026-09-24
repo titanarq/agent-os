@@ -19,6 +19,41 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   the same tick compares against. Claude's path counts from the live stream's own timestamps and
   never had the flaw.
 
+- agent-os#54 — `agent-os-doctor`'s "labels that do not autocreate" check no longer requires
+  `status:ai-completed`: it is a state label that `issues.py move` creates on first use, so a
+  fresh host that has not yet completed a task passes. The check requires `status:agents-paused`,
+  `auto-ready` and `wake:planner`, and `AGENT_OS.md` §4.3/§6 and `ADOPTION.md` steps 12 and 23
+  list only those three as labels to create by hand.
+- agent-os#53 — `tests/test_no_host_literals.py` scans the files git knows (tracked, plus
+  untracked-but-not-ignored) instead of walking the filesystem, and fails loudly when the root has
+  no `.git` or `git ls-files` fails. Nested agent worktrees under `.claude/worktrees/` and ignored
+  caches are no longer read; `.claude/worktrees/` and `.cache/` are now in `.gitignore`.
+- agent-os#66 — the suite no longer registers worktrees in the repository that runs it. The
+  launch-path tests of `tests/test_agent_task.py` ran the real driver with the checkout under test
+  as its host, so every `git worktree add` wrote a registration into the real repository's gitdir,
+  and a run that never reached its own removal left `/tmp/pytest-of-*/…/worktree-pr352-*` entries
+  in `git worktree list` for every checkout. `launch_environment` now runs the driver out of a
+  disposable git copy of the host (`AGENT_OS_HOST_ROOT` named outright), and the stand-in host of
+  `tests/test_role_run_environment_isolation.py` is a repository of its own instead of a `.git`
+  file naming the real gitdir; its heads are committed there too. Both files assert where the
+  worktree was registered. Tests only; no driver behaviour changed.
+- agent-os#50 — a PR whose head SHA reports zero checks now explicitly fails the control plane's
+  merge condition 1 (`agents/control-plane.md` duty 4, `docs/AGENT_OS.md` §2.4): it hands the PR
+  back to the human instead of merging. So that no PR lacks a check, `agent-os-install` also
+  renders `.github/workflows/ci-host.yml`, running `project.test_command` on every pull request
+  with no path filter (new key `project.install_host_ci`, default `true`; written only if absent,
+  `--force` to overwrite), and `agent-os-doctor` fails when no workflow fires on `pull_request`
+  without a path filter. `ADOPTION.md` step 23: land the host's CI before the first product PR,
+  and never make the CI task depend on a skeleton. ADR
+  `2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`.
+- The mechanism is released under the MIT License (`LICENSE`).
+- agent-os#39 — a split no longer strands the original's dependents. `issues.py supersede N
+  --by A --by B [--route D=A]` rewrites every open issue's `Blocked by #N` line to the children
+  (all of them unless a route narrows one dependent), comments on each dependent, then comments
+  `Superseded by #A, #B` on N and closes it as `not planned`; it refuses a feature (its children
+  are its parts), a child that is not open, and is idempotent. The refiner prompt calls it after
+  splitting a task or bug. Before, the original stayed open and its dependents blocked forever, or
+  unblocked too early when a human closed it; a host rewriting dependents by hand can stop.
 - agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
   App without the Workflows permission create or update a ref whose tree differs from the
   default branch under `.github/workflows/` -- which a stale branch hits without touching a

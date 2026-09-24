@@ -53,6 +53,14 @@ def _labels_the_doctor_requires(vocabulary: LabelVocabulary) -> list[str]:
     return [label for label in every_label if not passes_with(sorted(set(every_label) - {label}))]
 
 
+def test_the_doctor_requires_no_state_label():
+    # Every state label is created by `issues.py move` on first use; a doctor that required one
+    # would fail a healthy host that simply has not reached that state yet (#54).
+    vocabulary = LabelVocabulary()
+    autocreated = set(_labels_the_doctor_requires(vocabulary)) & set(vocabulary.state_labels)
+    assert not autocreated, f"agent-os-doctor requires state label(s) {sorted(autocreated)}"
+
+
 def test_step_12_names_every_label_the_doctor_requires():
     required = _labels_the_doctor_requires(LabelVocabulary())
     assert required, "check_labels requires no label at all -- this test checks nothing"
