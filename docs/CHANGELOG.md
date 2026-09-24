@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
+  that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
+  the given title. An issue created through the API skips GitHub's form, which is what adds the
+  prefix to a hand-written one, so the refiner's sub-issues came out without it. A title that
+  already starts with the prefix (case-insensitive, with or without its space) is left alone,
+  so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
+  keeps its title.
 - agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
   is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
   the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
