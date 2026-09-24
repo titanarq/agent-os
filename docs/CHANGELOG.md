@@ -8,14 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
-- agent-os#11 — the role prompts name no script under a host's own `scripts/`. The worker's
-  HOW TO REPORT no longer sends every worker to `scripts/debug.py`, a file one host has: it asks
-  for a breakpoint, a debugger session or a throwaway print, with the project's own debugging tool
-  when the host's `project.prompt_extras` paragraph names one. The validator's evidence example
-  spells the test runner as `__TEST_COMMAND__`, so it renders the host's `project.test_command`
-  (the example config's `scripts/test.sh` renders word for word as before). `tests/golden/worker.md`
-  changes by that one sentence. A test in `tests/test_prompt_templates.py` fails on any
-  `scripts/<path>` in a template.
+- agent-os#22 — `worker_task.sh resume` no longer refuses to relaunch a run the guard cut over
+  that run's own diary: when `.state` line 1 records `CUT_BY_GUARD` and nothing is alive, the
+  dirty check leaves out `scratchpad/progress.log` (` M` when tracked, `??` when untracked, and
+  the collapsed `?? scratchpad/` only while the diary is the one file inside it). The file stays
+  on disk untouched, for the monitor and the resumed run. Any other dirty path, and a diary over
+  any other `.state` (`STARTED`, `RESUMED`, `DONE`, `FAILED_LAUNCH`, `BLOCKED`), still refuse. A
+  cut followed by `resume` no longer needs a host's `info/exclude` entry for the diary.
 - agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
   `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
   with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports
@@ -38,6 +37,14 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   only dirty path, it is archived to `.cache/diaries/` and the dispatch proceeds. A diary whose run
   never recorded an end, any other leftover, and `resume` still refuse as before. A host's
   `info/exclude` entry or cleanup script for the file is no longer needed.
+- agent-os#11 — the role prompts name no script under a host's own `scripts/`. The worker's
+  HOW TO REPORT no longer sends every worker to `scripts/debug.py`, a file one host has: it asks
+  for a breakpoint, a debugger session or a throwaway print, with the project's own debugging tool
+  when the host's `project.prompt_extras` paragraph names one. The validator's evidence example
+  spells the test runner as `__TEST_COMMAND__`, so it renders the host's `project.test_command`
+  (the example config's `scripts/test.sh` renders word for word as before). `tests/golden/worker.md`
+  changes by that one sentence. A test in `tests/test_prompt_templates.py` fails on any
+  `scripts/<path>` in a template.
 - agent-os#17 — the mechanism's own suite passes in a host that vendors it through `git subtree`
   whatever that host's layout: `test_agent_task.py` no longer asserts the host root holds exactly
   one top-level package and its own `.venv`. The worktree isolation test measures the first
