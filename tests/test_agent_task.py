@@ -19,6 +19,7 @@ Pure filesystem and subprocess. This file must not request the `engine` or `db_s
 
 from __future__ import annotations
 
+import atexit
 import fcntl
 import json
 import os
@@ -27,6 +28,7 @@ import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -78,8 +80,10 @@ DROPPED_COMMAND = "census-build"
 # (#425), so every invocation here points `WORKER_CACHE_DIR` at a directory that holds no verdict:
 # what these tests measure is the driver's own resolution, and a live `.cache` saying Claude is
 # exhausted on the day the suite runs must not be what decides which backend it sees resolved.
-# `cache_dir=` names a directory that does hold one.
-NO_VERDICT_CACHE_DIR = str(ROOT / ".cache" / "no-quota-verdict-for-tests")
+# `cache_dir=` names a directory that does hold one. It lives outside the checkout (agent-os#25):
+# it used to sit inside the real `.cache`, which is exactly where it must not write.
+NO_VERDICT_CACHE_DIR = tempfile.mkdtemp(prefix="no-quota-verdict-for-tests-")
+atexit.register(shutil.rmtree, NO_VERDICT_CACHE_DIR, ignore_errors=True)
 
 
 def _write_quota_verdict(directory, status: str, *, age_minutes: float = 0.0) -> pathlib.Path:

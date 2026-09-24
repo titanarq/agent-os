@@ -153,7 +153,9 @@ stagefile=$cache/worker_$backend.stage
 # One finished stage process's event stream, per issue, kept where #367's spend report will read
 # it: .cache/spend/<issue>/<ts>-<backend>-stage<N>.jsonl.
 spenddir=$cache/spend
-mkdir -p "$cache"
+# `rules` only prints, so it creates nothing: before agent-os#25 it made `$cache` too, and every
+# test that rendered a worker's rules left a `.cache/` in the checkout the suite ran from.
+[ "${1:-status}" = rules ] || mkdir -p "$cache"
 
 # The worker's own liveness diary, relative to the worktree root -- the same path the guard reads
 # (`agent_guard.py`'s `worker_paths`) and the one the RULES below tell the worker to append to. It
