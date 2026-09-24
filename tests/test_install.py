@@ -10,6 +10,7 @@ request the `engine` or `db_sandbox` fixture.
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -73,6 +74,83 @@ def test_resolve_exec_start_falls_back_to_the_module_form_without_a_shim(tmp_pat
     exec_start = resolve_exec_start(tmp_path)
     assert exec_start.endswith("-m agent_os.guard tick")
     assert "scripts/agent_guard.py" not in exec_start
+
+
+def _fake_interpreter(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    python = directory / "python"
+    python.write_text("#!/bin/sh\n")
+    python.chmod(0o755)
+    return python
+
+
+def _no_mechanism_interpreter(monkeypatch, tmp_path):
+    """`agent_os_python()` with nothing to find: no `$AGENT_OS_PYTHON` and a package directory
+    with no `.venv` beside it, so its last step is the bare `python3` fallback."""
+    import agent_os.cli
+
+    monkeypatch.delenv("AGENT_OS_PYTHON", raising=False)
+    monkeypatch.setattr(agent_os.cli, "AGENT_OS_DIR", tmp_path / "unbootstrapped")
+
+
+def test_resolve_exec_start_runs_the_shim_on_the_mechanisms_interpreter_without_a_host_venv(
+    tmp_path, monkeypatch
+):
+    """#12: a shim with no host `.venv` used to render a bare `python3`, which only works if the
+    systemd `--user` manager's PATH happens to carry one with the mechanism's dependencies."""
+    (tmp_path / "scripts").mkdir()
+    shim = tmp_path / "scripts" / "agent_guard.py"
+    shim.write_text("# shim\n")
+    mechanism_python = _fake_interpreter(tmp_path / "mechanism" / ".venv" / "bin")
+    monkeypatch.setenv("AGENT_OS_PYTHON", str(mechanism_python))
+
+    exec_start = resolve_exec_start(tmp_path)
+    assert exec_start == f"{mechanism_python} {shim} tick"
+
+
+@pytest.mark.parametrize("with_shim", [True, False], ids=["shim", "module-form"])
+def test_resolve_exec_start_refuses_when_no_absolute_interpreter_resolves(
+    tmp_path, monkeypatch, with_shim
+):
+    if with_shim:
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "agent_guard.py").write_text("# shim\n")
+    _no_mechanism_interpreter(monkeypatch, tmp_path)
+
+    with pytest.raises(InstallError, match="bootstrap.sh"):
+        resolve_exec_start(tmp_path)
+
+
+def test_resolve_exec_start_refuses_a_bare_name_in_agent_os_python(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_OS_PYTHON", "python3")
+    with pytest.raises(InstallError, match="AGENT_OS_PYTHON"):
+        resolve_exec_start(tmp_path)
+
+
+def test_resolve_exec_start_uses_the_venv_bootstrap_builds_beside_the_package(
+    tmp_path, monkeypatch
+):
+    import agent_os.cli
+
+    package_dir = tmp_path / "agent_os_dir"
+    mechanism_python = _fake_interpreter(package_dir / ".venv" / "bin")
+    monkeypatch.delenv("AGENT_OS_PYTHON", raising=False)
+    monkeypatch.setattr(agent_os.cli, "AGENT_OS_DIR", package_dir)
+
+    exec_start = resolve_exec_start(tmp_path)
+    assert exec_start == f"{mechanism_python} -m agent_os.guard tick"
+
+
+def test_install_exits_loudly_when_no_interpreter_resolves(tmp_path):
+    """End to end: the rendered unit is never written with a bare `python3` -- `main()` exits
+    non-zero naming the fix instead, and nothing lands under `~/.config/systemd/user/`."""
+    environment, _host_root, fake_home = _isolated_environment(tmp_path)
+    environment["AGENT_OS_PYTHON"] = "python3"
+
+    result = _run_install(environment)
+    assert result.returncode != 0
+    assert "AGENT_OS_PYTHON" in result.stderr and "bootstrap.sh" in result.stderr, result.stderr
+    assert not (fake_home / ".config" / "systemd").exists()
 
 
 # --------------------------------------------------------------------------------------------
@@ -295,3 +373,32 @@ def test_main_refuses_without_a_configured_guard_unit(tmp_path):
     result = _run_install(environment, "--dry-run")
     assert result.returncode != 0
     assert "guard_unit" in (result.stdout + result.stderr)
+
+
+# `config/agents.yaml` absent or broken (agent-os#3): a one-line refusal naming the file and the
+# adoption step that writes it, never a traceback out of `load_agents_config`.
+
+
+def test_main_reports_a_missing_config_without_a_traceback(tmp_path):
+    environment, _host_root, _fake_home = _isolated_environment(tmp_path)
+    environment["AGENTS_CONFIG_PATH"] = str(tmp_path / "absent.yaml")
+    result = _run_install(environment, "--dry-run")
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert str(tmp_path / "absent.yaml") in result.stderr
+    assert "ADOPTION.md step 8" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["project: [unclosed\n", "project:\n  repo: owner/name\n  no_such_key: 1\n"],
+    ids=["yaml-syntax", "schema"],
+)
+def test_main_reports_an_invalid_config_without_a_traceback(tmp_path, text):
+    environment, _host_root, _fake_home = _isolated_environment(tmp_path)
+    pathlib.Path(environment["AGENTS_CONFIG_PATH"]).write_text(text)
+    result = _run_install(environment, "--dry-run")
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert environment["AGENTS_CONFIG_PATH"] in result.stderr
+    assert "does not load" in result.stderr
