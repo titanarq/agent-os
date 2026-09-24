@@ -27,6 +27,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 Wave 3's other two tasks, #429 (which backend fallback rule to write down as an ADR) and #514
 (optional), add their own entries here once their pull requests merge.
 
+- agent-os#16 — `worker_task.sh start`'s base-branch gate accepts any lowercase `<word>` before
+  `/<issue>-<slug>`, hyphens and digits included: `agent-os/37-gradle-skeleton` passes for #37,
+  where `[a-z]+` refused it. The anchoring on the number is unchanged, so
+  `task/387-close-the-390-gap` still fails for #390, and the refusal now names the accepted shape
+  (`<word>/<issue>-<slug>`) instead of "a branch naming #N".
+
 ## 2026-09-22
 
 - #512 (PR #525) — the mechanism's own suite (`agent_os/tests -q`) now runs from a copy made
