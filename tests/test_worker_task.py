@@ -3621,6 +3621,54 @@ def test_init_links_venv_and_env_from_the_host_root_when_present(tmp_path):
     assert (worktree / ".env").is_symlink()
 
 
+def _with_project_keys(environment, tmp_path, **keys):
+    """`config.example.yaml`, which the suite already loads, with `keys` set under `project:`."""
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+    data["project"].update(keys)
+    config = tmp_path / "agents-provisioned.yaml"
+    config.write_text(yaml.safe_dump(data, sort_keys=False))
+    environment["AGENTS_CONFIG_PATH"] = str(config)
+
+
+def test_init_links_the_configured_paths_and_runs_the_setup_command_in_the_worktree(tmp_path):
+    """agent-os#41: a monorepo keeps its environment under subdirectories, not a root `.venv`."""
+    root = _minimal_host_root(tmp_path)
+    (root / "backend").mkdir()
+    (root / "backend" / ".venv").mkdir()
+    worktree = tmp_path / "worktree"
+    environment = _init_environment(tmp_path, root, worktree)
+    _with_project_keys(
+        environment,
+        tmp_path,
+        worktree_links=["backend/.venv", ".env"],
+        worktree_setup_command='printf "%s" "$PWD" > provisioned-by-setup',
+    )
+
+    result = _init(environment)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (worktree / "backend" / ".venv").is_symlink()
+    assert (worktree / "backend" / ".venv").resolve() == (root / "backend" / ".venv").resolve()
+    assert not (worktree / ".venv").exists(), "a root .venv the host did not list was linked"
+    assert (worktree / "provisioned-by-setup").read_text() == str(worktree)
+
+
+def test_init_refuses_and_removes_the_worktree_when_the_setup_command_fails(tmp_path):
+    root = _minimal_host_root(tmp_path)
+    worktree = tmp_path / "worktree"
+    environment = _init_environment(tmp_path, root, worktree)
+    _with_project_keys(environment, tmp_path, worktree_setup_command="exit 5")
+
+    result = _init(environment)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "project.worktree_setup_command failed" in result.stdout, result.stdout
+    assert not worktree.exists()
+    # A rerun starts from nothing again instead of calling a half-provisioned tree initialized.
+    _with_project_keys(environment, tmp_path, worktree_setup_command="")
+    again = _init(environment)
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert "created" in again.stdout, again.stdout
+
+
 def test_init_refuses_when_the_fetch_fails_and_creates_nothing(tmp_path):
     root = _minimal_host_root(tmp_path)
     _git("remote", "set-url", "origin", "/no/such/path.git", cwd=root)

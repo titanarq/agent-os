@@ -92,6 +92,7 @@ def config_with_no_host_text(tmp_path, name="agents-without-host-text.yaml"):
     data["project"]["merge_audit_exempt_paths"] = []
     data["project"]["worker_environment"] = {}
     data["project"]["prompt_extras"] = {}
+    data["project"]["lint_commands"] = []
     data["mechanism"]["own_paths"] = []
     path = pathlib.Path(tmp_path) / name
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
