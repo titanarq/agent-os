@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#18 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over the
+  previous run's diary: when `.state` records that run's ending (`DONE`, `CUT_BY_GUARD`,
+  `FAILED_LAUNCH`, `BLOCKED`), nothing is alive and the untracked `scratchpad/progress.log` is the
+  only dirty path, it is archived to `.cache/diaries/` and the dispatch proceeds. A diary whose run
+  never recorded an end, any other leftover, and `resume` still refuse as before. A host's
+  `info/exclude` entry or cleanup script for the file is no longer needed.
+
 - #513 (this task) — the mechanism's own docs move under `agent_os/docs/`: `AGENT_OS.md` (from
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)

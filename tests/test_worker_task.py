@@ -1677,6 +1677,109 @@ def test_resume_refuses_a_worktree_whose_tracked_diary_holds_uncommitted_lines(t
 
 
 # ---------------------------------------------------------------------------------------------
+# A FINISHED RUN'S DIARY IS NOT THE NEXT RUN'S DIRT (#18). The signal above holds for a run the
+# driver never saw end; once `.state` line 1 records an ending, the untracked diary is the previous
+# run's leftover, and `start`/`branch` archive it into `$cache/diaries/` instead of refusing the
+# next dispatch over it. Observed on a host with no ignore rule for the file: the first dispatch to
+# a backend after every completed issue was refused.
+# ---------------------------------------------------------------------------------------------
+
+
+def _finished_previous_run(cache, state_line, previous_issue="37"):
+    (cache / "worker_claude.state").write_text(f"{state_line}\nissue={previous_issue} label=done\n")
+    (cache / "worker_claude.issue").write_text(f"{previous_issue}\n")
+
+
+def _archived_diaries(cache):
+    return (
+        sorted((cache / "diaries").glob("*.progress.log")) if (cache / "diaries").is_dir() else []
+    )
+
+
+@pytest.mark.parametrize("ending", ["DONE", "CUT_BY_GUARD reason=stall", "BLOCKED reason=ci"])
+def test_start_archives_a_finished_runs_diary_and_dispatches(tmp_path, ending):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    _finished_previous_run(cache, ending)
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "worktree is dirty" not in result.stdout, result.stdout
+        assert "started pid" in result.stdout, result.stdout
+        # Archived, not deleted, and named after the run that wrote it.
+        [archived] = _archived_diaries(cache)
+        assert archived.name.startswith("worker_claude-issue37-"), archived.name
+        assert "still-working" in archived.read_text()
+    finally:
+        _stop(environment)
+
+
+def test_start_still_refuses_a_diary_whose_run_the_driver_never_saw_end(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    _finished_previous_run(cache, "STARTED")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_start_leaves_a_finished_runs_diary_alone_when_other_work_is_also_left(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    diary = _diary_with_an_uncommitted_line(worktree, tracked=False)
+    (worktree / "scratchpad" / "notes.md").write_text("a draft the worker never committed\n")
+    _finished_previous_run(cache, "DONE")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        # A refusal writes nothing: the diary stays where it was.
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_resume_keeps_the_diary_of_the_run_it_continues(tmp_path):
+    # `resume` continues the same run, so its diary is its own and is never archived -- the
+    # refusal is `test_resume_refuses_a_worktree_whose_untracked_diary_holds_lines`'s, unchanged.
+    environment, cache = _worktree_with_cut_commits(tmp_path, 1)
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    try:
+        result = _resume(environment)
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_branch_archives_a_finished_runs_diary_before_switching(tmp_path):
+    _remote, worktree = _worktree_with_origin(tmp_path)
+    _diary_with_an_uncommitted_line(worktree, tracked=False)
+    environment = _branch_environment(tmp_path, worktree)
+    cache = tmp_path / "cache"
+    _finished_previous_run(cache, "DONE")
+
+    result = _branch(environment, "task/81-next-issue")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "is now on task/81-next-issue" in result.stdout, result.stdout
+    [archived] = _archived_diaries(cache)
+    assert "still-working" in archived.read_text()
+
+
+# ---------------------------------------------------------------------------------------------
 # STAGES (#375): one stage per process, chained by the driver. The fake backend below is the only
 # thing standing in for a model -- `claude` and `qwen` are both stubbed on PATH regardless of
 # which backend a test drives, so a real one can never be reached even by accident.
