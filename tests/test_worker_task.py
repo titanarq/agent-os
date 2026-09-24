@@ -101,6 +101,9 @@ def driver_environment(tmp_path):
     environment.update(
         PATH=f"{binaries}:{environment['PATH']}",
         WORKER_WORKTREE=str(worktree),
+        # `start` creates its cache before it gets to the refusals these tests read, so a
+        # disposable one keeps that out of the checkout's real `.cache` (agent-os#25).
+        WORKER_CACHE_DIR=str(tmp_path / "cache"),
         AGENT_OS_GH_REPO="owner/name",
     )
     return environment
