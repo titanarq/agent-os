@@ -14,8 +14,8 @@ No third-party GitHub library and no new dependency: every call is `gh api` / `g
     python -m agent_os.issues update <N> [--state open|closed] [--comment "..."]
         [--add-label L] [--remove-label L] [--title T] [--body-file F]
     python -m agent_os.issues validate <N>
-    python -m agent_os.issues move <N> refine|ready|doing|blocked-on-human|ai-completed|
-        review|done
+    python -m agent_os.issues move <N> [<N> ...] refine|ready|doing|blocked-on-human|
+        ai-completed|review|done      # several numbers: one invocation, the board resolved once
     python -m agent_os.issues brief <N> [--supplement F]
     python -m agent_os.issues load <backlog.yaml> [--dry-run]
     python -m agent_os.issues supersede <N> --by A [--by B ...] [--route D=A[,B] ...]
@@ -69,6 +69,7 @@ tag from the YAML becomes a label too, created on first use.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import pathlib
@@ -76,6 +77,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import yaml
 
@@ -202,20 +204,26 @@ def _retry_after(message: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def gh_json(*args: str, input_text: str | None = None):
-    """Runs `gh <args>`, parses stdout as JSON (None if empty), retries up to 5 times on a rate
-    limit (honouring `Retry-After` if present, exponential backoff otherwise), and exits on any
-    other failure."""
+def gh_text(*args: str, input_text: str | None = None) -> str:
+    """Runs `gh <args>` and returns its stripped stdout, retrying up to 5 times on a rate limit
+    (honouring `Retry-After` if present, exponential backoff otherwise), and exits on any other
+    failure."""
     attempts = 6
     for attempt in range(attempts):
         result = _gh(*args, input_text=input_text)
         if result.returncode == 0:
-            text = result.stdout.strip()
-            return json.loads(text) if text else None
+            return result.stdout.strip()
         if attempt < attempts - 1 and _is_rate_limited(result.stderr):
             time.sleep(_retry_after(result.stderr) or (2**attempt))
             continue
         sys.exit(f"gh {' '.join(args)} failed:\n{result.stderr}")
+    raise AssertionError("unreachable: the last attempt either returns or exits")
+
+
+def gh_json(*args: str, input_text: str | None = None):
+    """`gh_text`, parsed as JSON (None if empty)."""
+    text = gh_text(*args, input_text=input_text)
+    return json.loads(text) if text else None
 
 
 def gh_json_dict(*args: str, input_text: str | None = None) -> dict:
@@ -255,9 +263,26 @@ def repo_name() -> str:
 # --------------------------------------------------------------------------------------------
 
 
+# Labels are read over REST, never with `gh label list`: that one is GraphQL, and the GraphQL
+# quota is 5000 points an hour shared by every host and tool the human runs, where REST draws on
+# the separate core quota (#27).
+
+
 def existing_labels(repo: str) -> set[str]:
-    rows = gh_json("label", "list", "--repo", repo, "--limit", "200", "--json", "name") or []
-    return {row["name"] for row in rows}
+    """Every label the repository has, over REST, every page of it."""
+    text = gh_text("api", f"repos/{repo}/labels?per_page=100", "--paginate", "--jq", ".[].name")
+    return {line for line in text.splitlines() if line}
+
+
+def label_exists(repo: str, name: str) -> bool:
+    """Whether the repository has label `name`: one REST `GET`, a 404 meaning no. What `move`
+    asks about the one label it writes, instead of listing every label to find it."""
+    result = _gh("api", f"repos/{repo}/labels/{urllib.parse.quote(name, safe='')}")
+    if result.returncode == 0:
+        return True
+    if "404" in result.stderr or "not found" in result.stderr.lower():
+        return False
+    sys.exit(f"gh api repos/{repo}/labels/{name} failed:\n{result.stderr}")
 
 
 def ensure_labels(repo: str, names: list[str], cache: set[str]) -> None:
@@ -671,18 +696,47 @@ def board_owner(repo: str) -> str:
     return repo.split("/", 1)[0]
 
 
+BOARD_FIELDS_QUERY = """
+query($owner: String!, $number: Int!) {
+  repositoryOwner(login: $owner) {
+    ... on ProjectV2Owner {
+      projectV2(number: $number) {
+        id
+        fields(first: 50) {
+          nodes { ... on ProjectV2SingleSelectField { id name options { id name } } }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+@functools.cache
 def board_status_field(owner: str, board: int) -> tuple[str, str, dict[str, str]]:
-    """`(project id, Status field id, {option name: option id})`, queried once per run. The
-    single-select field GitHub creates with every project board is named `Status`; a board whose
-    column field is named something else falls back to its first single-select field."""
-    project = gh_json_dict("project", "view", str(board), "--owner", owner, "--format", "json")
-    fields = (
-        gh_json_dict("project", "field-list", str(board), "--owner", owner, "--format", "json").get(
-            "fields"
-        )
-        or []
+    """`(project id, Status field id, {option name: option id})`, asked once per process and
+    shared by every issue a bulk `move` touches. The single-select field GitHub creates with every
+    project board is named `Status`; a board whose column field is named something else falls
+    back to its first single-select field.
+
+    One bounded GraphQL query (~1 point), not `gh project view` + `gh project field-list`: on a
+    91-item board the field listing alone cost ~103 points of the user's 5000-an-hour GraphQL
+    quota, which every host shares (#27)."""
+    data = gh_json(
+        "api",
+        "graphql",
+        "-f",
+        f"query={BOARD_FIELDS_QUERY}",
+        "-f",
+        f"owner={owner}",
+        "-F",
+        f"number={board}",
     )
-    single_selects = [field for field in fields if field.get("options") is not None]
+    project = (((data or {}).get("data") or {}).get("repositoryOwner") or {}).get("projectV2")
+    if not project:
+        sys.exit(f"no project {owner}/{board} visible to this gh login to mirror the state into")
+    fields = (project.get("fields") or {}).get("nodes") or []
+    single_selects = [field for field in fields if field and field.get("options") is not None]
     status = next(
         (field for field in single_selects if field.get("name") == BOARD_STATUS_FIELD),
         next(iter(single_selects), None),
@@ -1005,39 +1059,78 @@ def cmd_validate(args: argparse.Namespace) -> None:
     print("ok")
 
 
-def cmd_move(args: argparse.Namespace) -> None:
-    repo = repo_name()
-    print(f"repo: {repo}")
-    project = load_project()
+def issue_for_move(repo: str, number: int) -> dict:
+    """What `move` needs of issue #N -- its labels, state, title and web URL -- over REST: `gh
+    issue view` is GraphQL, and that quota is the one a bulk move exhausted (#27)."""
+    data = gh_json_dict("api", f"repos/{repo}/issues/{number}")
+    return {
+        "labels": data.get("labels") or [],
+        "state": data.get("state") or "",
+        "title": data.get("title") or "",
+        "url": data.get("html_url") or "",
+    }
+
+
+def move_issue(repo: str, number: int, state: str, project: ProjectConfig) -> None:
+    """Moves one issue to `state`: its label set, its open/closed state, its board column, and the
+    review page. The target label is already known to exist -- `cmd_move` makes sure of it once
+    for however many issues it moves."""
     vocabulary = project.labels
-    target = vocabulary.label_for_state(args.state)
-    current = gh_json_dict(
-        "issue", "view", str(args.number), "--repo", repo, "--json", "labels,state,title,url"
-    )
+    target = vocabulary.label_for_state(state)
+    current = issue_for_move(repo, number)
     # Exactly one state label at a time: every other one comes off, whatever it was, so an issue
     # can never read as two states at once. `status:agents-paused` is not a state and is never
     # touched here -- it is the human-only full stop on the tracking epic.
-    held = [label["name"] for label in current.get("labels", [])]
+    held = [label["name"] for label in current["labels"]]
     labels = [label for label in held if label not in set(vocabulary.state_labels)]
     if target:
-        ensure_labels(repo, [target], existing_labels(repo))
         labels.append(target)
     fields: dict = {"labels": labels}
-    if args.state == "done" and (current.get("state") or "").upper() == "OPEN":
+    if state == "done" and current["state"].upper() == "OPEN":
         fields["state"] = "closed"
-    update_issue(repo, args.number, fields)
+    update_issue(repo, number, fields)
     print(
         f"labels:   {', '.join(labels) or '(none)'}" + ("  (closed)" if "state" in fields else "")
     )
-    column = project.board_columns.get(args.state)
+    column = project.board_columns.get(state)
     if column:
-        print(mirror_board_column(repo, args.number, column, project.board_number))
+        print(mirror_board_column(repo, number, column, project.board_number))
     else:
-        print(f"board:    {args.state} keeps the item's current column")
+        print(f"board:    {state} keeps the item's current column")
     # Last, and only after the label and the board are written: the page announces a state the
     # tracker already holds, and it can never be the reason a move fails.
-    if args.state == "review":
-        print(page_review_ready(args.number, current))
+    if state == "review":
+        print(page_review_ready(number, current))
+
+
+def cmd_move(args: argparse.Namespace) -> None:
+    """`move N [N ...] STATE`. With several numbers the repository, the config, the target label
+    and the board's Status field are resolved once for all of them (#27); each issue then costs
+    two GraphQL requests (its board item, the column edit) and its REST reads and writes. One
+    issue that fails does not stop the rest: its reason is printed under its number and the
+    command exits non-zero naming every issue that did not move."""
+    repo = repo_name()
+    print(f"repo: {repo}")
+    project = load_project()
+    target = project.labels.label_for_state(args.state)
+    if target and not label_exists(repo, target):
+        ensure_labels(repo, [target], set())
+    if len(args.numbers) == 1:
+        move_issue(repo, args.numbers[0], args.state, project)
+        return
+    failed = []
+    for number in args.numbers:
+        print(f"#{number}")
+        try:
+            move_issue(repo, number, args.state, project)
+        except SystemExit as exc:
+            print(f"failed:   {exc.code}")
+            failed.append(number)
+    if failed:
+        sys.exit(
+            f"move {args.state}: {len(failed)} of {len(args.numbers)} failed: "
+            + ", ".join(f"#{number}" for number in failed)
+        )
 
 
 def cmd_brief(args: argparse.Namespace) -> None:
@@ -1211,7 +1304,7 @@ def main() -> None:
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("move")
-    p.add_argument("number", type=int)
+    p.add_argument("numbers", type=int, nargs="+", metavar="number")
     p.add_argument("state", choices=WORK_STATES)
     p.set_defaults(func=cmd_move)
 

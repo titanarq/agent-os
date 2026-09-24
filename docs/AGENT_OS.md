@@ -113,7 +113,7 @@ caught — it is still LOG ONLY).
 
 | # | Moment | How they learn about it | Where they look | What they do | If they don't |
 |---|---|---|---|---|---|
-| 1 | Backlog issue needs to enter the funnel | nothing tells them | `issues.py list` or the board | `issues.py move N refine` | the issue is simply never touched — nothing else blocks |
+| 1 | Backlog issue needs to enter the funnel | nothing tells them | `issues.py list` or the board | `issues.py move N refine` (a whole batch at once: `issues.py move N M … refine`) | the issue is simply never touched — nothing else blocks |
 | 2 | Approve the refiner's dry run before letting it run unattended | nothing; a decision they make once when reviewing the log by hand | the dry-run log | flip `planner.refiner_unattended: true` (done once, 2026-09-15, `config/agents.yaml:100-105`) | the refiner never runs unattended; `refine_pending` is never written |
 | 3 | Put `auto-ready` on a feature | nothing tells them a feature is missing it | the feature's labels | add the `auto-ready` label | every refined child waits indefinitely in `status:refine` |
 | 4 | Answer a `status:blocked-on-human` doubt | a `@login` mention in a GitHub comment (issue or PR) — GitHub notifications, not ntfy | the comment | reply there | the issue stays parked with no timeout or second nudge; the rest of the backlog is unaffected except for the backend slot it occupied |
@@ -447,7 +447,8 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 ### 4.3 Things to create in GitHub
 
 - **Repo** with `gh auth` scopes covering `repo` (issues, labels, PRs, comments) and `project`
-  (read/write on the Project v2 board via `gh project item-add/item-edit/field-list/view`;
+  (read/write on the Project v2 board via `gh project item-add/item-edit` and two bounded
+  `gh api graphql` queries — the issue's own `projectItems` and the board's single-select fields;
   `issues.py create` adds every new issue to `project.board_number`, #23).
 - **Labels**: `type:epic`, `type:feature`, `type:task`, `type:bug`; `status:refine`, `status:ready`,
   `status:doing`, `status:blocked-on-human`, `status:ai-completed`, `status:review` self-create on
@@ -667,7 +668,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 |---|---|---|
 | `bash agent_os/bootstrap.sh` | human, CI | build `agent_os/.venv` and install the package into it, editable. Idempotent; the one prerequisite of everything below |
 | `agent_os/.venv/bin/pytest agent_os/tests -q` | human, CI | the mechanism's own suite: no database, no network, no real backend. The run a second host can also make |
-| `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column |
+| `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column. `move N [N …] STATE` takes several numbers in one invocation: the target label and the board's `Status` field are resolved once for all of them, an issue that fails is reported under its number without stopping the rest, and the command exits non-zero naming every issue that did not move. A move costs three GraphQL requests of ~1 point each, whatever the board's size (the board field, once per invocation; the issue's item; the column edit) — the issue and its labels are read and written over REST, on the separate core quota (agent-os#27). The GraphQL quota is 5000 points an hour per user, shared by every host and tool the human runs |
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active` — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |

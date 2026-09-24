@@ -5,8 +5,10 @@ fixed labels and the repository, both read from `config/agents.yaml`, the key-li
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
+import urllib.parse
 from unittest.mock import patch
 
 import pytest
@@ -634,12 +636,9 @@ def test_create_with_no_board_configured_makes_no_board_call():
 
 
 def test_mirror_board_column_uses_the_item_it_is_given_without_looking_it_up():
-    fields = {
-        "fields": [{"id": "F2", "name": "Status", "options": [{"id": "O1", "name": "Ready"}]}]
-    }
     with (
         patch.object(issues, "board_item_id") as lookup,
-        patch.object(issues, "gh_json_dict", side_effect=[{"id": "PVT"}, fields]),
+        patch.object(issues, "board_status_field", return_value=("PVT", "F2", {"Ready": "O1"})),
         patch.object(issues, "gh_json") as edit,
     ):
         line = issues.mirror_board_column("owner/name", 9, "Ready", 5, item="PVTI_new")
@@ -831,6 +830,15 @@ def review_pages_in_a_temporary_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(issues, "REVIEW_PAGES_DIR", tmp_path / "paged-review")
 
 
+@pytest.fixture(autouse=True)
+def board_field_asked_afresh():
+    """`board_status_field` answers once per process (#27); a test's board must never be the one
+    a previous test's fake answered."""
+    issues.board_status_field.cache_clear()
+    yield
+    issues.board_status_field.cache_clear()
+
+
 def _move(state, held_labels, *, issue_state="OPEN", pages=None, title="A title"):
     """Runs `cmd_move` with every `gh` call mocked. Returns `(fields, board_line)`: what would
     have been PATCHed onto the issue, and what the board mirror printed. `pages` collects whatever
@@ -840,13 +848,13 @@ def _move(state, held_labels, *, issue_state="OPEN", pages=None, title="A title"
         "labels": [{"name": name} for name in held_labels],
         "state": issue_state,
         "title": title,
-        "url": "https://github.invalid/owner/name/issues/7",
+        "html_url": "https://github.invalid/owner/name/issues/7",
     }
     sent = pages if pages is not None else []
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "existing_labels", return_value=set()),
+        patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels") as ensure,
         patch.object(issues, "update_issue") as update,
         patch.object(issues, "mirror_board_column", return_value="board:    mirrored") as board,
@@ -854,7 +862,7 @@ def _move(state, held_labels, *, issue_state="OPEN", pages=None, title="A title"
             issues, "page_human", side_effect=lambda message: sent.append(message) is None
         ),
     ):
-        issues.cmd_move(argparse.Namespace(number=7, state=state))
+        issues.cmd_move(argparse.Namespace(numbers=[7], state=state))
     return update.call_args[0][2], board.call_args, ensure.call_args
 
 
@@ -944,13 +952,13 @@ def test_a_page_that_fails_neither_fails_the_move_nor_burns_the_once_per_issue_m
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "existing_labels", return_value=set()),
+        patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,
         patch.object(issues, "mirror_board_column", return_value="board:    mirrored"),
         patch.object(issues, "page_human", return_value=False),
     ):
-        issues.cmd_move(argparse.Namespace(number=7, state="review"))
+        issues.cmd_move(argparse.Namespace(numbers=[7], state="review"))
     # The label was written all the same -- that is the move, and it already happened.
     assert update.call_args[0][2]["labels"] == ["status:review"]
     assert "nobody was paged" in capsys.readouterr().out
@@ -965,7 +973,7 @@ def test_a_template_move_cannot_render_is_reported_and_leaves_the_move_standing(
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "existing_labels", return_value=set()),
+        patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,
         patch.object(issues, "mirror_board_column", return_value="board:    mirrored"),
@@ -976,7 +984,7 @@ def test_a_template_move_cannot_render_is_reported_and_leaves_the_move_standing(
         ),
         patch.object(issues, "page_human") as page,
     ):
-        issues.cmd_move(argparse.Namespace(number=7, state="review"))
+        issues.cmd_move(argparse.Namespace(numbers=[7], state="review"))
     assert update.call_args[0][2]["labels"] == ["status:review"]
     page.assert_not_called()
     assert "not sent" in capsys.readouterr().out
@@ -1032,15 +1040,9 @@ def test_mirror_board_column_says_so_instead_of_failing_when_the_issue_is_not_on
 
 
 def test_mirror_board_column_edits_the_status_option_of_that_item():
-    fields = {
-        "fields": [
-            {"id": "F1", "name": "Title", "type": "ProjectV2Field"},
-            {"id": "F2", "name": "Status", "options": [{"id": "O1", "name": "Review"}]},
-        ]
-    }
     with (
         patch.object(issues, "board_item_id", return_value="ITEM"),
-        patch.object(issues, "gh_json_dict", side_effect=[{"id": "PVT"}, fields]),
+        patch.object(issues, "board_status_field", return_value=("PVT", "F2", {"Review": "O1"})),
         patch.object(issues, "gh_json") as edit,
     ):
         line = issues.mirror_board_column("owner/name", 7, "Review", 1)
@@ -1120,6 +1122,266 @@ def test_board_item_id_asks_for_that_issue_of_that_repository():
     (args,) = seen
     assert args[:2] == ("api", "graphql")
     assert "owner=owner" in args and "name=name" in args and "number=7" in args
+
+
+# ---- what a move costs on the GraphQL quota (#27) --------------------------------------------
+# `gh`'s GraphQL quota is 5000 points an hour, per user, shared by every host and every tool the
+# human runs. Before #27 one no-op `move` cost ~224 points on a 91-item board: `project
+# field-list` and `project item-list` page the whole board, so the price grew with it, and 70
+# moves could not fit in an hour. These tests stand a fake `gh` in for the real one and count
+# what reaches GitHub's GraphQL API, whatever the board's size.
+
+BOARD_COLUMNS = {"refine": "Backlog", "ready": "Ready for AI", "review": "Review"}
+
+
+def _board_fields_answer(status_name: str = "Status") -> dict:
+    """What the one board query answers: the project's id and its fields, one single-select."""
+    return {
+        "data": {
+            "repositoryOwner": {
+                "projectV2": {
+                    "id": "PVT_board",
+                    "fields": {
+                        "nodes": [
+                            {"id": "F_title", "name": "Title"},
+                            {
+                                "id": "F_status",
+                                "name": status_name,
+                                "options": [
+                                    {"id": f"O_{column}", "name": column}
+                                    for column in BOARD_COLUMNS.values()
+                                ],
+                            },
+                        ]
+                    },
+                }
+            }
+        }
+    }
+
+
+class CountingGh:
+    """A stand-in for the `gh` binary, at the `_gh` seam: answers every call `move` makes and
+    records it as GraphQL or REST. A call that would page the whole board (`item-list`,
+    `field-list`, `project view`) is refused outright, so a lookup whose cost grows with the board
+    can never pass by accident."""
+
+    BOARD_PAGING = frozenset(
+        {("project", "item-list"), ("project", "field-list"), ("project", "view")}
+    )
+
+    def __init__(self):
+        self.missing_labels: set[str] = set()
+        self.failing_patches: set[int] = set()
+        self.graphql: list[tuple] = []
+        self.rest: list[tuple] = []
+
+    @staticmethod
+    def is_graphql(args: tuple) -> bool:
+        if args[0] == "api":
+            return args[1] == "graphql"
+        # `label create` is REST; every other `gh <noun> <verb>` is GraphQL underneath.
+        return args[:2] != ("label", "create")
+
+    def __call__(self, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess:
+        if args[:2] in self.BOARD_PAGING:
+            raise AssertionError(f"pages the whole board: {args}")
+        (self.graphql if self.is_graphql(args) else self.rest).append(args)
+        if args[:2] == ("api", "graphql"):
+            query = next(arg for arg in args if arg.startswith("query="))
+            if "projectItems" in query:
+                number = int(next(arg for arg in args if arg.startswith("number=")).split("=")[1])
+                return self.json(_project_items((f"PVTI_{number}", 5, "owner")))
+            if "projectV2(" in query:
+                return self.json(_board_fields_answer())
+            raise AssertionError(f"unexpected graphql query: {query}")
+        if args[:2] == ("project", "item-edit"):
+            return self.json({"id": "edited"})
+        if args[:2] == ("label", "create"):
+            return _completed()
+        if args[0] == "api" and "/labels/" in args[1]:
+            name = urllib.parse.unquote(args[1].rsplit("/", 1)[1])
+            if name in self.missing_labels:
+                return _completed(returncode=1, stderr="gh: Not Found (HTTP 404)")
+            return self.json({"name": name})
+        if args[0] == "api" and "/issues/" in args[1]:
+            number = int(args[1].rsplit("/", 1)[1])
+            if "PATCH" in args:
+                if number in self.failing_patches:
+                    return _completed(returncode=1, stderr="gh: Gone (HTTP 410)")
+                return self.json({"number": number})
+            return self.json(
+                {
+                    "number": number,
+                    "labels": [{"name": "type:task"}, {"name": "status:ready"}],
+                    "state": "open",
+                    "title": f"Issue {number}",
+                    "html_url": f"https://github.invalid/owner/name/issues/{number}",
+                    "url": f"https://api.github.invalid/repos/owner/name/issues/{number}",
+                }
+            )
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    @staticmethod
+    def json(data) -> subprocess.CompletedProcess:
+        return _completed(stdout=json.dumps(data))
+
+
+@pytest.fixture
+def counting_gh(monkeypatch):
+    """A fresh `CountingGh` wired in for `gh`, with a board configured and no real sleeps."""
+    fake = CountingGh()
+    monkeypatch.setattr(issues, "_gh", fake)
+    monkeypatch.setattr(issues.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(issues, "repo_name", lambda: "owner/name")
+    monkeypatch.setattr(
+        issues, "load_project", lambda: _project(board_number=5, board_columns=BOARD_COLUMNS)
+    )
+    return fake
+
+
+def _move_many(numbers, state):
+    issues.cmd_move(argparse.Namespace(numbers=list(numbers), state=state))
+
+
+def test_one_move_costs_three_graphql_requests_whatever_the_boards_size(counting_gh, capsys):
+    """The board's field, the issue's item, the edit: nothing else touches GraphQL. The issue and
+    its labels are read and written over REST, which draws on the separate core quota."""
+    _move_many([7], "refine")
+    kinds = [args[:2] for args in counting_gh.graphql]
+    assert kinds == [("api", "graphql"), ("api", "graphql"), ("project", "item-edit")]
+    assert "board:    Backlog" in capsys.readouterr().out
+
+
+def test_move_reads_the_issue_over_rest_not_with_gh_issue_view(counting_gh):
+    _move_many([7], "refine")
+    assert ("api", "repos/owner/name/issues/7") in [args[:2] for args in counting_gh.rest]
+    assert not [args for args in counting_gh.graphql if args[:2] == ("issue", "view")]
+
+
+def test_move_checks_its_one_label_over_rest_not_by_listing_every_label(counting_gh):
+    _move_many([7], "refine")
+    assert not [args for args in counting_gh.graphql if args[:2] == ("label", "list")]
+    assert ("api", "repos/owner/name/labels/status%3Arefine") in [
+        args[:2] for args in counting_gh.rest
+    ]
+    assert not [args for args in counting_gh.rest if args[:2] == ("label", "create")]
+
+
+def test_move_creates_its_label_only_when_github_says_it_is_not_there(counting_gh):
+    counting_gh.missing_labels.add("status:refine")
+    _move_many([7], "refine")
+    (create,) = [args for args in counting_gh.rest if args[:2] == ("label", "create")]
+    assert create[2] == "status:refine"
+
+
+def test_a_bulk_move_resolves_the_board_field_and_the_label_once(counting_gh, capsys):
+    """N issues in one invocation: two GraphQL requests each (the item, the edit) plus one for the
+    board's field, shared by all of them -- never the board's size, never N field lookups."""
+    numbers = list(range(1, 21))
+    _move_many(numbers, "refine")
+    field_lookups = [args for args in counting_gh.graphql if "projectV2(" in " ".join(args)]
+    assert len(field_lookups) == 1
+    assert len(counting_gh.graphql) == 1 + 2 * len(numbers)
+    label_checks = [args for args in counting_gh.rest if "/labels/" in args[1]]
+    assert len(label_checks) == 1
+    patched = [args[1] for args in counting_gh.rest if "PATCH" in args]
+    assert patched == [f"repos/owner/name/issues/{number}" for number in numbers]
+    out = capsys.readouterr().out
+    assert out.count("board:    Backlog") == len(numbers)
+    assert "#1\n" in out and "#20\n" in out
+
+
+def test_a_bulk_move_goes_on_past_an_issue_that_fails_and_exits_non_zero(counting_gh, capsys):
+    counting_gh.failing_patches.add(2)
+    with pytest.raises(SystemExit) as exit_info:
+        _move_many([1, 2, 3], "refine")
+    assert "#2" in str(exit_info.value.code)
+    assert "#1" not in str(exit_info.value.code)
+    patched = [args[1] for args in counting_gh.rest if "PATCH" in args]
+    assert patched[-1] == "repos/owner/name/issues/3"
+    assert "HTTP 410" in capsys.readouterr().out
+
+
+def test_a_single_move_that_fails_still_exits_with_what_gh_said(counting_gh):
+    counting_gh.failing_patches.add(7)
+    with pytest.raises(SystemExit, match="HTTP 410"):
+        _move_many([7], "refine")
+
+
+def test_the_board_field_is_asked_for_in_one_bounded_query(counting_gh):
+    fields = issues.board_status_field("owner", 5)
+    assert fields == (
+        "PVT_board",
+        "F_status",
+        {column: f"O_{column}" for column in BOARD_COLUMNS.values()},
+    )
+    (query,) = counting_gh.graphql
+    assert "number=5" in query and "owner=owner" in query
+
+
+def test_the_board_field_is_asked_for_once_per_process(counting_gh):
+    issues.board_status_field("owner", 5)
+    issues.board_status_field("owner", 5)
+    assert len(counting_gh.graphql) == 1
+
+
+def test_a_board_whose_column_field_has_another_name_falls_back_to_its_first_single_select(
+    monkeypatch,
+):
+    monkeypatch.setattr(issues, "gh_json", lambda *args, **kwargs: _board_fields_answer("Stage"))
+    assert issues.board_status_field("owner", 5)[1] == "F_status"
+
+
+def test_a_board_with_no_single_select_field_exits_with_a_reason(monkeypatch):
+    answer = _board_fields_answer()
+    answer["data"]["repositoryOwner"]["projectV2"]["fields"]["nodes"] = [{"id": "F", "name": "T"}]
+    monkeypatch.setattr(issues, "gh_json", lambda *args, **kwargs: answer)
+    with pytest.raises(SystemExit, match="no single-select field"):
+        issues.board_status_field("owner", 5)
+
+
+def test_a_board_that_does_not_exist_exits_with_a_reason(monkeypatch):
+    missing = {"data": {"repositoryOwner": {"projectV2": None}}}
+    monkeypatch.setattr(issues, "gh_json", lambda *args, **kwargs: missing)
+    with pytest.raises(SystemExit, match="no project owner/5"):
+        issues.board_status_field("owner", 5)
+
+
+def test_the_full_label_listing_create_and_load_use_is_rest_too(monkeypatch):
+    """`ensure_fixed_labels` (create, update, load) lists every label once per invocation: over
+    REST, every page, not `gh label list`, which is GraphQL."""
+    seen = []
+
+    def gh(*args, input_text=None):
+        seen.append(args)
+        return _completed(stdout="type:task\nstatus:doing\n")
+
+    monkeypatch.setattr(issues, "_gh", gh)
+    assert issues.existing_labels("owner/name") == {"type:task", "status:doing"}
+    ((command, path, *rest),) = seen
+    assert (command, path) == ("api", "repos/owner/name/labels?per_page=100")
+    assert "--paginate" in rest
+
+
+def test_a_label_check_that_fails_for_another_reason_than_404_exits(monkeypatch):
+    monkeypatch.setattr(
+        issues, "_gh", lambda *args, **kwargs: _completed(returncode=1, stderr="HTTP 502")
+    )
+    with pytest.raises(SystemExit, match="HTTP 502"):
+        issues.label_exists("owner/name", "status:refine")
+
+
+def test_the_cli_still_takes_one_number_and_now_also_takes_several(monkeypatch):
+    seen = []
+    monkeypatch.setattr(issues, "cmd_move", seen.append)
+    for argv in (["move", "7", "review"], ["move", "2", "3", "4", "refine"]):
+        monkeypatch.setattr(issues.sys, "argv", ["issues", *argv])
+        issues.main()
+    assert [(args.numbers, args.state) for args in seen] == [
+        ([7], "review"),
+        ([2, 3, 4], "refine"),
+    ]
 
 
 # ---- the brief a worker starts from ----------------------------------------------------------
