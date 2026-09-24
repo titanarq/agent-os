@@ -781,6 +781,23 @@ def load_project(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> ProjectCon
     return load_agents_config(path).project
 
 
+# What `load_agents_config` raises for a file that is absent, unreadable, not YAML, or not the
+# schema -- the set every CLI entry point catches to refuse in one line instead of a traceback.
+CONFIG_LOAD_ERRORS = (OSError, yaml.YAMLError, ValidationError)
+
+
+def config_load_failure(error: Exception, path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> str:
+    """One line saying why `path` did not load and where the fix is described (agent-os#3). A
+    missing file is the normal state of a host that has not reached the adoption step writing it
+    yet, so that case names the step; any other failure is the error itself, folded to one line."""
+    if isinstance(error, FileNotFoundError):
+        return (
+            f"{path} does not exist -- write it from agent_os/config.example.yaml "
+            "(agent_os/docs/ADOPTION.md step 8)"
+        )
+    return f"{path} does not load -- {' '.join(str(error).split())}"
+
+
 def load_mechanism(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> MechanismConfig:
     return load_agents_config(path).mechanism
 

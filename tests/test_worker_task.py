@@ -1944,13 +1944,15 @@ if args[:2] == ["label", "list"]:
         {"name": "status:ai-completed"},
         {"name": "status:blocked-on-human"},
     ]))
-if args[:2] == ["project", "item-list"]:
-    # $GH_STUB_BOARD_ITEM is the issue number the board holds an item for; unset, the board holds
-    # none and `mirror_board_column` says so instead of editing anything.
+if args[:2] == ["api", "graphql"]:
+    # The issue's own `projectItems` (#14). $GH_STUB_BOARD_ITEM is the issue number that has an
+    # item on board 1 of `owner`; unset, no issue has one and `mirror_board_column` says so
+    # instead of editing anything.
     on_board = os.environ.get("GH_STUB_BOARD_ITEM")
-    if on_board:
-        out(json.dumps({"items": [{"id": "ITEM1", "content": {"number": int(on_board)}}]}))
-    out(json.dumps({"items": []}))
+    nodes = []
+    if on_board and f"number={on_board}" in args:
+        nodes = [{"id": "ITEM1", "project": {"number": 1, "owner": {"login": "owner"}}}]
+    out(json.dumps({"data": {"repository": {"issue": {"projectItems": {"nodes": nodes}}}}}))
 if args[:2] == ["project", "view"]:
     out(json.dumps({"id": "PROJECT1"}))
 if args[:2] == ["project", "field-list"]:
@@ -3201,6 +3203,34 @@ def test_start_accepts_a_branch_whose_name_carries_this_issues_number(tmp_path):
         assert "started pid" in result.stdout
     finally:
         _stop(environment)
+
+
+def test_start_accepts_a_hyphenated_prefix_and_its_refusal_names_the_shape(tmp_path):
+    """agent-os#16: the planner branched `agent-os/37-gradle-skeleton` and `start 37` refused it
+    while telling it to use "a branch naming #37" -- which it was. The anchoring that stops a wrong
+    branch is on the number (`/<issue>` then `-`, `/` or the end), not on the prefix being letters
+    only; so a hyphenated prefix passes, a hyphenated prefix does NOT let `…/387-close-the-390-gap`
+    through for #390, and the refusal spells out the shape it accepts instead of paraphrasing it."""
+    (tmp_path / "accepted").mkdir()
+    environment, _cache, _worktree = _base_check_environment(
+        tmp_path / "accepted", branch="agent-os/347-the-work"
+    )
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "started pid" in result.stdout
+    finally:
+        _stop(environment)
+
+    (tmp_path / "refused").mkdir()
+    environment, cache, _worktree = _base_check_environment(
+        tmp_path / "refused", branch="agent-os/387-close-the-390-gap"
+    )
+    refused = _start(environment, "390")
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert "refusing to dispatch" in refused.stdout
+    assert "<word>/390-<slug>" in refused.stdout, refused.stdout
+    assert list(cache.iterdir()) == []
 
 
 def test_start_accepts_the_worktree_sitting_on_the_base_the_issue_names(tmp_path):
