@@ -17,6 +17,21 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   without a path filter. `ADOPTION.md` step 23: land the host's CI before the first product PR,
   and never make the CI task depend on a skeleton. ADR
   `2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`.
+- agent-os#41 — a fresh worktree is provisioned the way the host configures it, not by a
+  hard-coded root `.venv`/`.env` link: `project.worktree_links` (default `[.venv, .env]`, the old
+  behaviour) are symlinked from the main checkout, then `project.worktree_setup_command` (default
+  empty) runs inside the worktree, for both the validator's throwaway worktree and
+  `worker_task.sh <backend> init` (one shared helper, `agent_provision_worktree`). A setup that
+  exits non-zero refuses the run -- no validator is launched, `init` removes the half-made tree
+  and its branch -- instead of handing an agent an empty tree. The validator's prompt no longer
+  claims the worktree is "already populated", its lint bullet renders from the new
+  `project.lint_commands` (default empty: no bullet; `config.example.yaml` keeps the two `ruff`
+  commands), and the shared-database pytest warning and the "~50 minutes" suite duration are gone
+  (a host that needs the warning puts it in `never_run` or its validator `prompt_extras`). Closes
+  §7 row (aa). Host follow-up: a monorepo sets `worktree_setup_command` to its own bootstrap
+  (e.g. its `uv sync --frozen` / `npm ci`); a host that relied on the validator's ruff bullet sets
+  `lint_commands`.
+
 - agent-os#35 — in a host that vendors the mechanism under `agent_os/`, a role's worktree now runs
   the worktree's copy of the mechanism, not the main checkout's. `PYTHONPATH=<worktree>` alone
   left `<worktree>/agent_os/` as a namespace portion (it has no `__init__.py`), so the regular
@@ -36,6 +51,7 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   earliest listed issue that passes its summary check. A host that parked refine-needing issues
   to steer the order (studentassistant's `scripts/refine_window.py`) can drop that after the
   subtree pull.
+
 - agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
   that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
   the given title. An issue created through the API skips GitHub's form, which is what adds the
@@ -43,6 +59,7 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   already starts with the prefix (case-insensitive, with or without its space) is left alone,
   so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
   keeps its title.
+
 - agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
   is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
   the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
