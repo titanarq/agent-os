@@ -8,6 +8,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#50 — a PR whose head SHA reports zero checks now explicitly fails the control plane's
+  merge condition 1 (`agents/control-plane.md` duty 4, `docs/AGENT_OS.md` §2.4): it hands the PR
+  back to the human instead of merging. So that no PR lacks a check, `agent-os-install` also
+  renders `.github/workflows/ci-host.yml`, running `project.test_command` on every pull request
+  with no path filter (new key `project.install_host_ci`, default `true`; written only if absent,
+  `--force` to overwrite), and `agent-os-doctor` fails when no workflow fires on `pull_request`
+  without a path filter. `ADOPTION.md` step 23: land the host's CI before the first product PR,
+  and never make the CI task depend on a skeleton. ADR
+  `2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`.
 - agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
   that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
   the given title. An issue created through the API skips GitHub's form, which is what adds the

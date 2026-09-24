@@ -552,6 +552,12 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
+    # Whether `agent_os.install` writes `.github/workflows/ci-host.yml`, a workflow running
+    # `test_command` on every pull request with no path filter. The control plane counts zero
+    # checks on a PR's head SHA as merge condition 1 not met, and `ci-agent-os.yml` only fires on
+    # `agent_os/**`; a host whose own CI already reports on every PR sets this to false
+    # (agent_os/docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md).
+    install_host_ci: bool = True
     # One host-owned file per role whose text is appended at that role's `__PROJECT_EXTRAS__`
     # extension point, as a path relative to the HOST project's root. Every key is optional, and a
     # role with no entry renders nothing there: this is where a sentence only the host can write

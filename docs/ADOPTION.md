@@ -132,13 +132,19 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     when step 16 has not been run and `AGENT_OS_PYTHON` is unset); copies
     `.claude/agents/{control-plane,worker-runner}.md` (rendered from `agent_os/agents/*.md`),
     `.github/ISSUE_TEMPLATE/{task,bug}.md` and `.github/workflows/ci-agent-os.yml`, each only if
-    absent. Never overwrites without `--force`, and never arms, restarts or reloads a unit —
-    `--dry-run` first shows every path it would touch and its diff against what is there.
+    absent — and `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
+    on every pull request with no path filter. Keep it unless your own CI already reports a check
+    on every PR (then set `project.install_host_ci: false`): `ci-agent-os.yml` only fires on
+    `agent_os/**`, and the control plane never merges a PR whose head SHA reports zero checks. The
+    rendered file is a starting point — add the setup your test command needs before its step.
+    Never overwrites without `--force`, and never arms, restarts or reloads a unit — `--dry-run`
+    first shows every path it would touch and its diff against what is there.
 21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: `gh auth status`
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
     each App's secrets, each `project.executables` entry, each worktree, the notify topic file, the
-    guard timer's `is-active` — one line per check, exit 1 on any failure. It never calls
-    `agent_guard.py check` or any other trigger a role reacts to, so running it costs nothing.
+    guard timer's `is-active`, and a workflow that reports a check on a host-only PR — one line per
+    check, exit 1 on any failure. It never calls `agent_guard.py check` or any other trigger a
+    role reacts to, so running it costs nothing.
 
 (`agent-os-guard`, `agent-os-issues`, `agent-os-lib`, `agent-os-install`, `agent-os-doctor` are the
 five console scripts `agent_os/pyproject.toml`'s `[project.scripts]` installs into
@@ -155,7 +161,10 @@ with no console-script equivalent.)
     with a `Status` value set (an item can exist with no Status, or not be on the board at all);
     make sure each worker's worktree is on a fresh branch, not one left over from testing; decide
     by hand what to do with any issue stuck in `status:refine` whose parent carries no
-    `auto-ready` — there is no mechanical way out of that state.
+    `auto-ready` — there is no mechanical way out of that state. **Land the host's CI first**
+    (step 20's `ci-host.yml`, adapted, or your own), merged by hand, before the first product PR:
+    a PR whose head SHA reports no check never meets merge condition 1, so a backlog whose CI task
+    is blocked by a skeleton PR deadlocks — never make the CI task depend on a skeleton.
 24. Watch the first run closely rather than trusting the configuration alone:
     `agent_os/bin/worker_task.sh <backend> watch` (tail the event stream),
     `journalctl --user -u <guard_unit>.service -f` (tick output), and
