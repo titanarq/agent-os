@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
 - agent-os#5 — `agent-os-doctor`'s board check no longer passes on a Project that is not the
   repository's: besides the `Status` field and its options, it reads the Projects linked to
   `project.repo` (`repository.projectsV2`) and fails when `project.board_number` is not one of
