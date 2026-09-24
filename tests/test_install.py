@@ -10,6 +10,7 @@ request the `engine` or `db_sandbox` fixture.
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -372,3 +373,32 @@ def test_main_refuses_without_a_configured_guard_unit(tmp_path):
     result = _run_install(environment, "--dry-run")
     assert result.returncode != 0
     assert "guard_unit" in (result.stdout + result.stderr)
+
+
+# `config/agents.yaml` absent or broken (agent-os#3): a one-line refusal naming the file and the
+# adoption step that writes it, never a traceback out of `load_agents_config`.
+
+
+def test_main_reports_a_missing_config_without_a_traceback(tmp_path):
+    environment, _host_root, _fake_home = _isolated_environment(tmp_path)
+    environment["AGENTS_CONFIG_PATH"] = str(tmp_path / "absent.yaml")
+    result = _run_install(environment, "--dry-run")
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert str(tmp_path / "absent.yaml") in result.stderr
+    assert "ADOPTION.md step 8" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["project: [unclosed\n", "project:\n  repo: owner/name\n  no_such_key: 1\n"],
+    ids=["yaml-syntax", "schema"],
+)
+def test_main_reports_an_invalid_config_without_a_traceback(tmp_path, text):
+    environment, _host_root, _fake_home = _isolated_environment(tmp_path)
+    pathlib.Path(environment["AGENTS_CONFIG_PATH"]).write_text(text)
+    result = _run_install(environment, "--dry-run")
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr, result.stderr
+    assert environment["AGENTS_CONFIG_PATH"] in result.stderr
+    assert "does not load" in result.stderr
