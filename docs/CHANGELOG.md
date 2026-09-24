@@ -8,12 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
-- agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
-  by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
-  exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
-  doctor's label check on its first run. Step 23 now says four labels, not three.
-  `tests/test_adoption_doc.py` asks `doctor.check_labels` which labels it requires and fails when
-  step 12 leaves one out.
+- agent-os#22 — `worker_task.sh resume` no longer refuses to relaunch a run the guard cut over
+  that run's own diary: when `.state` line 1 records `CUT_BY_GUARD` and nothing is alive, the
+  dirty check leaves out `scratchpad/progress.log` (` M` when tracked, `??` when untracked, and
+  the collapsed `?? scratchpad/` only while the diary is the one file inside it). The file stays
+  on disk untouched, for the monitor and the resumed run. Any other dirty path, and a diary over
+  any other `.state` (`STARTED`, `RESUMED`, `DONE`, `FAILED_LAUNCH`, `BLOCKED`), still refuse. A
+  cut followed by `resume` no longer needs a host's `info/exclude` entry for the diary.
 - agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
   `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
   with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports
@@ -30,6 +31,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `.venv` `bootstrap.sh` builds), and refuses with a message naming `bootstrap.sh` and
   `AGENT_OS_PYTHON` when that is not an absolute path to an executable, in the module form too.
   Nothing is written in that case.
+- agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
+  by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
+  exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
+  doctor's label check on its first run. Step 23 now says four labels, not three.
+  `tests/test_adoption_doc.py` asks `doctor.check_labels` which labels it requires and fails when
+  step 12 leaves one out.
 - agent-os#18 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over the
   previous run's diary: when `.state` records that run's ending (`DONE`, `CUT_BY_GUARD`,
   `FAILED_LAUNCH`, `BLOCKED`), nothing is alive and the untracked `scratchpad/progress.log` is the
