@@ -24,6 +24,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from agent_os.cli import host_root
@@ -106,12 +107,9 @@ def check_labels(project: ProjectConfig, repo: str) -> Check:
 
 def check_board(project: ProjectConfig, repo: str) -> Check:
     owner = board_owner(repo)
-    try:
-        response = gh_json(
-            "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
-        )
-    except SystemExit as failure:
-        return Check("Project v2 Status field", False, str(failure))
+    response = gh_json(
+        "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
+    )
     fields = (response or {}).get("fields") or []
     single_selects = [field for field in fields if field.get("options") is not None]
     status = next(
@@ -219,17 +217,34 @@ def check_guard_timer(project: ProjectConfig) -> Check:
     return Check("guard timer active", ok, detail)
 
 
+def _guarded(name: str, check: Callable[..., Check], *args) -> Check:
+    """`check(*args)`, or a [FAIL] under `name` carrying the error when the check cannot finish:
+    `gh_json` answers a failed `gh` call with `sys.exit(message)`, and a binary that is not
+    installed raises `FileNotFoundError` out of `subprocess.run`. Either one used to end the whole
+    run after one line; a checklist has to report every check (agent-os#4)."""
+    try:
+        return check(*args)
+    except SystemExit as failure:
+        return Check(name, False, _one_line(failure.code))
+    except OSError as failure:
+        return Check(name, False, _one_line(failure))
+
+
+def _one_line(message: object) -> str:
+    return " ".join(str(message).split())
+
+
 def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Check]:
     return [
         check_python_version(),
-        check_gh_auth(),
-        check_labels(project, repo),
-        check_board(project, repo),
+        _guarded("gh auth status", check_gh_auth),
+        _guarded("labels that do not autocreate", check_labels, project, repo),
+        _guarded("Project v2 Status field", check_board, project, repo),
         check_app_secrets(project, root),
         check_executables(project),
         check_worktrees(project, root),
         check_notify_topic(project, root),
-        check_guard_timer(project),
+        _guarded("guard timer active", check_guard_timer, project),
     ]
 
 
@@ -246,7 +261,7 @@ def main() -> None:
         checks = [
             Check(CONFIG_CHECK, False, config_load_failure(error)),
             check_python_version(),
-            check_gh_auth(),
+            _guarded("gh auth status", check_gh_auth),
         ]
     else:
         checks = [

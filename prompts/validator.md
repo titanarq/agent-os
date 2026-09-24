@@ -97,7 +97,7 @@ evidence indented under it:
     - [x] <the criterion, quoted from the issue>
           agent_os/bin/agent_task.sh:112 -- the driver resolves the role's class before running
     - [ ] <the criterion, quoted from the issue>
-          `scripts/test.sh tests/test_agent_task.py` -> 3 failed, 4 passed -- <the failing name>
+          `__TEST_COMMAND__ tests/test_agent_task.py` -> 3 failed, 4 passed -- <the failing name>
 
 Then a `## Stages` block in the same shape -- one line per stage naming its own `stage N/M:` commit
 found (or missing) -- a `## Definition of done` block, and last a `## Doubts` block naming anything
