@@ -114,17 +114,25 @@ def test_render_override_conf_sets_killmode_process_and_the_path(tmp_path):
 # --------------------------------------------------------------------------------------------
 
 
-def test_action_reports_would_create_for_an_absent_file(tmp_path):
+def test_action_reports_would_create_for_an_absent_file_only_under_dry_run(tmp_path):
     action = Action(tmp_path / "new.txt", "content\n")
-    assert action.status(force=False) == "would create"
+    assert action.status(force=False, dry_run=True) == "would create"
+    assert action.status(force=False, dry_run=False) == "created"
     assert action.should_write(force=False)
+
+
+def test_action_reports_an_empty_file_in_both_modes(tmp_path):
+    action = Action(tmp_path / "empty.txt", "")
+    assert action.status(force=False, dry_run=True) == "would create (empty)"
+    assert action.status(force=False, dry_run=False) == "created (empty)"
 
 
 def test_action_reports_up_to_date_and_skips_when_content_matches(tmp_path):
     path = tmp_path / "same.txt"
     path.write_text("content\n")
     action = Action(path, "content\n")
-    assert "up to date" in action.status(force=False)
+    for dry_run in (True, False):
+        assert "up to date -- skipped" in action.status(force=False, dry_run=dry_run)
     assert not action.should_write(force=False)
 
 
@@ -132,7 +140,8 @@ def test_action_refuses_to_overwrite_a_differing_file_without_force(tmp_path):
     path = tmp_path / "differs.txt"
     path.write_text("old\n")
     action = Action(path, "new\n")
-    assert "refusing without --force" in action.status(force=False)
+    for dry_run in (True, False):
+        assert "refusing without --force" in action.status(force=False, dry_run=dry_run)
     assert not action.should_write(force=False)
     assert "-old" in action.diff and "+new" in action.diff
 
@@ -141,7 +150,8 @@ def test_action_overwrites_a_differing_file_with_force(tmp_path):
     path = tmp_path / "differs.txt"
     path.write_text("old\n")
     action = Action(path, "new\n")
-    assert "overwriting (--force)" in action.status(force=True)
+    assert "would overwrite (--force)" in action.status(force=True, dry_run=True)
+    assert "overwritten (--force)" in action.status(force=True, dry_run=False)
     assert action.should_write(force=True)
     action.write()
     assert path.read_text() == "new\n"
@@ -219,6 +229,35 @@ def test_main_without_dry_run_writes_the_units(tmp_path):
     assert (systemd_dir / "acme-guard.service").is_file()
     assert (systemd_dir / "acme-guard.timer").is_file()
     assert (systemd_dir / "acme-guard.service.d" / "override.conf").is_file()
+
+
+def test_main_without_dry_run_reports_what_it_wrote_in_the_past_tense(tmp_path):
+    # agent-os#9: a real run printed "would create" for every file it then created, which reads
+    # exactly like a dry run. Only `--dry-run` may speak in the conditional.
+    environment, _host_root, fake_home = _isolated_environment(tmp_path)
+
+    result = _run_install(environment)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "would" not in result.stdout, result.stdout
+    service = fake_home / ".config" / "systemd" / "user" / "acme-guard.service"
+    assert f"{service}: created\n" in result.stdout, result.stdout
+
+
+def test_main_force_reports_the_overwrite_in_the_mode_it_ran_in(tmp_path):
+    environment, _host_root, fake_home = _isolated_environment(tmp_path)
+    assert _run_install(environment).returncode == 0
+    service = fake_home / ".config" / "systemd" / "user" / "acme-guard.service"
+    service.write_text("hand-edited\n")
+
+    dry = _run_install(environment, "--dry-run", "--force")
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    assert f"{service}: exists and differs -- would overwrite (--force)\n" in dry.stdout
+    assert service.read_text() == "hand-edited\n", "a dry run must write nothing"
+
+    real = _run_install(environment, "--force")
+    assert real.returncode == 0, real.stdout + real.stderr
+    assert f"{service}: exists and differs -- overwritten (--force)\n" in real.stdout
+    assert "would" not in real.stdout, real.stdout
 
 
 def test_main_refuses_to_overwrite_a_differing_file_without_force(tmp_path):
