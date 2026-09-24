@@ -43,7 +43,26 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    `git subtree add --prefix=agent_os <remote> main --squash` from `titanarq/agent-os`
    (§4.1's own ADR), or a plain `cp -r` for a first look. Nothing under it is edited;
    a host extends it only through `config/agents.yaml`, host-owned files that config names, and
-   hook commands.
+   hook commands. From the host's root, over HTTPS:
+   ```bash
+   git remote add agent-os https://github.com/titanarq/agent-os.git
+   git subtree add --prefix=agent_os agent-os main --squash
+   ```
+   `titanarq/agent-os` is public, so this fetch — and every later `subtree pull` (step 25) —
+   needs no credential. Two cases do: `subtree push` (step 26) always, and every fetch when the
+   remote is a private fork or mirror. Then **git itself** has to present a GitHub credential for
+   an account that can write the repository (for a push) or read it (for a private fetch), and a
+   `gh` login is not that by itself. A token in `GH_TOKEN`, a non-interactive
+   `gh auth login --with-token`, or a "no" to the interactive login's "authenticate Git" question
+   all leave git with no credential helper for `github.com`, and the `https://` push or fetch
+   stops on an auth prompt. Point git at `gh`'s login once per machine, before the first such
+   command:
+   ```bash
+   gh auth setup-git       # registers gh as git's credential helper for every host gh is logged in to
+   ```
+   The `repo` scope step 17 already asks for covers both reading a private repository and
+   pushing. An SSH remote (`git@github.com:<owner>/<repo>.git`) with a key registered on such an
+   account works instead and needs no credential helper.
 8. **Write `<host>/config/agents.yaml`** from `agent_os/config.example.yaml`, which carries every
    key of §4.2 filled in for an invented project: copy the `project:`/`mechanism:`/`planner:`
    structure and fill in each key against what step 1–6 just wrote (`project.modules` from item 2,
@@ -65,13 +84,16 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 
 12. **Labels** — `type:epic`, `type:feature`, `type:task`, `type:bug`; `p1`..`p4`; one
     `module:<name>` per `project.modules` entry; the six `status:*` labels self-create on the
-    first `agent_os.issues move`, but `status:ai-completed`, `status:agents-paused` and
-    `auto-ready` do not and must be created by hand on `<org>/<repo>` before the first real run.
+    first `agent_os.issues move`, but `status:ai-completed`, `status:agents-paused`,
+    `auto-ready` and `wake:planner` do not and must be created by hand on `<org>/<repo>` before
+    the first real run — they are the four `agent-os-doctor` checks for (step 21), under the
+    names `project.labels.{ai_completed,agents_paused,auto_ready,wake_planner}` give them.
 13. **A Project (v2) board** on `<org>/<repo>` with a single-select field named exactly `Status`
     (any other name falls back silently to the first single-select field found) and six options
     matching `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`,
     `Review`, `Done`.
-14. **One GitHub App per identity** — `project.worker_apps.qwen`, `project.worker_apps.claude`,
+14. **One GitHub App per identity** — `project.backends.<name>.app` for each worker backend
+    (`project.backends.qwen.app`, `project.backends.claude.app` in the example),
     `project.planner_app`, and optionally `project.role_apps.validator`/`.refiner` (falling back to
     `planner_app` when unset, §7 row (p)). This is a browser step with no manifest automation in
     the mechanism (`agent_os.gh_app_token` only mints tokens for an App that already exists):
@@ -95,9 +117,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
     `project.executables` at any of these whose PATH the launching shell (a systemd user unit,
     typically) does not carry.
-18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per entry in
-    `project.worktrees`: idempotent `git worktree add` on a fresh branch from `origin/main` when
-    the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
+18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per
+    `project.backends` entry that sets a `worktree`: idempotent `git worktree add` on a fresh
+    branch from `origin/main` when the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
     either is missing.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App
     `.json`/`.pem` pairs from step 15, if not already placed there; `<host>/.env` at the repo root
@@ -126,7 +148,7 @@ with no console-script equivalent.)
 
 22. Arm the guard timer — the one step nothing above does for you:
     `systemctl --user enable --now <guard_unit>.timer`.
-23. Before moving any issue to `status:ready` for the first time: create the three labels that do
+23. Before moving any issue to `status:ready` for the first time: create the four labels that do
     not autocreate (step 12); make sure every issue meant for the trial is actually a Project item
     with a `Status` value set (an item can exist with no Status, or not be on the board at all);
     make sure each worker's worktree is on a fresh branch, not one left over from testing; decide

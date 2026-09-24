@@ -18,8 +18,8 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Human | Writes/approves issues, flips `auto-ready`, answers `blocked-on-human`, merges PRs | the one collaborator account (e.g. `MatillaM`) | — |
 | Guard | Deterministic tick: budget, liveness, stall, quota, drift-logging, event-writing | acts through whichever identity a driver already minted; posts no comments of its own except the ntfy page | no LLM — pure Python (`agent_os.guard`) |
 | Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, `claude-opus-5`, 40k ctx / $2 |
-| Worker (qwen) | Writes code for one issue, in its own worktree — **every** worker task runs here | its own App (`project.worker_apps.qwen`) | classes `mechanical-qwen` (400k ctx / $5) and `complex-qwen` (400k ctx / $20), both `qwen3.8-max` |
-| Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.worker_apps.claude`) | — (reactivating it is one class in `config/agents.yaml`) |
+| Worker (qwen) | Writes code for one issue, in its own worktree — **every** worker task runs here | its own App (`project.backends.qwen.app`) | classes `mechanical-qwen` (400k ctx / $5) and `complex-qwen` (400k ctx / $20), both `qwen3.8-max` |
+| Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, `claude-opus-5`, 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, `claude-opus-5`, 200k ctx / $5 |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
@@ -441,7 +441,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`, `Review`,
   `Done`.
 - **Issue templates**: `.github/ISSUE_TEMPLATE/task.md`, `bug.md`, copied as-is.
-- **One GitHub App per identity** (`worker_apps.qwen`, `worker_apps.claude`, `planner_app`, and
+- **One GitHub App per identity** (`backends.<name>.app` per worker backend, `planner_app`, and
   optionally `role_apps.validator`/`role_apps.refiner`), permissions deduced from the calls each
   role makes: workers need Issues (read/write), Contents (push), Pull requests (create); the
   planner needs Issues, Pull requests (read), Projects; the validator additionally needs "Pull
