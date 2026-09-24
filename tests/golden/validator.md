@@ -23,6 +23,16 @@ needs one of these, stop and say so rather than working around it.
 it is the interpreter the mechanism itself runs on, and the tracker CLI is a module of that
 package, never a script in this project's own tree.
 
+SCRATCH FILES
+`$AGENT_RUN_SCRATCH` is exported too: an empty directory of this run's own, outside the checkout.
+Every working file you write -- a copy of a body, a draft, a summary -- goes there and nowhere
+else, and you leave it there: the driver removes that directory when the run ends. `.cache/` is
+the drivers' own: this run's log, the PID file the guard reads to tell a live run from a dead one,
+and `runs.tsv`, the cost record of every run, all live under `.cache/<role>/`. You never write,
+move or delete anything under `.cache/`, and you never `rm -rf` a directory to tidy up after
+yourself. The one exception is the worktree named below, which may sit under `.cache/validator/`:
+the commands you run in it write into it, and removing it is the driver's job too.
+
 WHAT YOU READ, IN THIS ORDER
 1. `AGENTS.md` in this checkout -- the project's own rules are the floor under every criterion.
 2. The issue behind the pull request. `gh pr view <pr> --json body,title,headRefName,baseRefName`

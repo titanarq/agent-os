@@ -277,6 +277,13 @@ per-turn sum; the follow-up is §7 row (v).
   `.cache/<role>/runs.tsv` (timestamp, context, model, turns, cost) — `agent_os.lib:1034`
   (`planner_run_row`), `agent_os/bin/agent_task.sh:74-80` (`agent_append_run_row`).
 - A full, never-truncated log per run: `.cache/planner/<ts>.log`, `.cache/<role>/<ts>.log`.
+- Those files are the drivers' own, never a role's (agent-os#33): each planner, validator and
+  refiner run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory under `$TMPDIR`
+  (outside the run dir and the checkout) for its working files, and the driver removes it on every
+  exit path of the run (`agent_make_run_scratch`/`agent_remove_run_scratch` in
+  `agent_os/bin/agent_task.sh`). The role prompts name it and forbid writing, moving or deleting
+  anything under `.cache/` — a refiner that tidied up with `rm -rf .cache/refiner` had taken the
+  run log, the PID file `role_died` reads and every `runs.tsv` row with it.
 - **No comment on the issue or the PR carries the cost** — spend lives only in `.cache/`, which is
   gitignored and invisible from GitHub itself, and in the driver's own cut message: a stage gate
   that refuses to chain on budget prints what it measured, `spent $0.0000 of $5.0 and 80000001 of
@@ -440,7 +447,9 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   silently to the first single-select the code finds) and six options matching
   `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`, `Review`,
   `Done`.
-- **Issue templates**: `.github/ISSUE_TEMPLATE/task.md`, `bug.md`, copied as-is.
+- **Issue templates**: `.github/ISSUE_TEMPLATE/task.md`, `bug.md`, copied as-is. Their front-matter
+  `title:` (`[task] `, `[bug] `) is also what `issues.py create --type task|bug` puts in front of
+  a title that does not already carry it (#15).
 - **One GitHub App per identity** (`backends.<name>.app` per worker backend, `planner_app`, and
   optionally `role_apps.validator`/`role_apps.refiner`), permissions deduced from the calls each
   role makes: workers need Issues (read/write), Contents (push), Pull requests (create); the

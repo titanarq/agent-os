@@ -18,6 +18,27 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   a worker's persistent worktree gets the link only where git ignores it. The mechanism's
   `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
   isolation test measures the mechanism's own package in such a host instead of skipping.
+- agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
+  that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
+  the given title. An issue created through the API skips GitHub's form, which is what adds the
+  prefix to a hand-written one, so the refiner's sub-issues came out without it. A title that
+  already starts with the prefix (case-insensitive, with or without its space) is left alone,
+  so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
+  keeps its title.
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
+- agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
+  each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
+  and the checkout, which the driver removes when the run ends; the three prompts name it and
+  forbid writing, moving or deleting anything under `.cache/`. A refiner had written its drafts
+  into `.cache/refiner/` and then `rm -rf`'d it, deleting the run log, the PID file `role_died`
+  detection reads and every `runs.tsv` row. A host's `prompt_extras` telling a role to use
+  `mktemp -d` is no longer needed.
 - agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
   (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
   the column `project.board_columns` maps that state to on the item it just added. Before, a later

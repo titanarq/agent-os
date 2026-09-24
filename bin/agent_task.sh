@@ -213,6 +213,30 @@ agent_mark_backend_exited() {
     || echo "WARNING: no exit marker for $1 -- the guard will not read this run's quota"
 }
 
+# The run's own scratch directory, exported as AGENT_RUN_SCRATCH and named in every role's RULES
+# (agent-os#33). A role told nowhere where its working copies go wrote them under its own
+# `.cache/<role>/` and then tidied up with `rm -rf .cache/<role>`, taking the run log, the PID file
+# the guard reads for `role_died` and every `runs.tsv` row with it. So the scratch directory lives
+# outside both the run directory and the checkout, is empty when the backend starts, and is removed
+# by the driver -- never by the role -- when the run ends. A run that cannot have one is not run.
+agent_run_scratch=""
+
+agent_make_run_scratch() {
+  local role=$1
+  agent_run_scratch=$(mktemp -d "${TMPDIR:-/tmp}/agent-os-$role-scratch.XXXXXX") || {
+    agent_run_scratch=""
+    echo "no scratch directory for this $role run under ${TMPDIR:-/tmp} -- not running it"
+    return 1
+  }
+  export AGENT_RUN_SCRATCH="$agent_run_scratch"
+}
+
+agent_remove_run_scratch() {
+  [ -n "$agent_run_scratch" ] || return 0
+  rm -rf -- "$agent_run_scratch"
+  agent_run_scratch=""
+}
+
 # Sourced for the helpers above (planner_task.sh) -- everything below is the driver itself.
 [ "${BASH_SOURCE[0]}" != "${0}" ] && return 0
 
@@ -356,9 +380,11 @@ agent_detached_run() {
   agent_worktree=${AGENT_RUN_WORKTREE:-}
   # The two traps the driver installs before the detach, now covering the run that owns the
   # worktree: EXIT for a backend that fails, the signal trap for a run that is killed, which is the
-  # one that would otherwise leave its worktree registered behind it.
-  trap agent_remove_worktree EXIT
-  trap 'agent_remove_worktree; exit 143' INT TERM HUP
+  # one that would otherwise leave its worktree registered behind it. The scratch directory is made
+  # here, in the process that outlives the launch, so its lifetime is exactly the run's.
+  trap 'agent_remove_worktree; agent_remove_run_scratch' EXIT
+  trap 'agent_remove_worktree; agent_remove_run_scratch; exit 143' INT TERM HUP
+  agent_make_run_scratch "$AGENT_RUN_ROLE" || exit 1
 
   # Launched from the MAIN checkout: a one-shot role reads and judges, it never writes code. The
   # worktree above is where the commands it runs resolve, not where the backend itself sits.

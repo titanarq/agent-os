@@ -1572,7 +1572,7 @@ for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():
         event = json.loads(line)
     except ValueError:
         continue
-    for block in ((event.get("message") or {}).get("content") or []):
+    for block in ((event.get("message") if isinstance(event.get("message"), dict) else {}).get("content") or []):
         if block.get("type") == "text" and block.get("text", "").strip():
             texts.append(block["text"].strip())
 print("\n".join(texts[-2:])[-1200:] if texts else "  (nothing yet)")
