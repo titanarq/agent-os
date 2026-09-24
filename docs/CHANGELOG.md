@@ -15,6 +15,20 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   already starts with the prefix (case-insensitive, with or without its space) is left alone,
   so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
   keeps its title.
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
+- agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
+  each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
+  and the checkout, which the driver removes when the run ends; the three prompts name it and
+  forbid writing, moving or deleting anything under `.cache/`. A refiner had written its drafts
+  into `.cache/refiner/` and then `rm -rf`'d it, deleting the run log, the PID file `role_died`
+  detection reads and every `runs.tsv` row. A host's `prompt_extras` telling a role to use
+  `mktemp -d` is no longer needed.
 - agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
   (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
   the column `project.board_columns` maps that state to on the item it just added. Before, a later
@@ -59,6 +73,14 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `.venv` `bootstrap.sh` builds), and refuses with a message naming `bootstrap.sh` and
   `AGENT_OS_PYTHON` when that is not an absolute path to an executable, in the module form too.
   Nothing is written in that case.
+- agent-os#51 — the guard unit's `ExecStart=` no longer prefers a `.venv` at the host root when
+  the host has a `scripts/agent_guard.py` shim: the shim, like the module form, now always runs on
+  the mechanism's own interpreter (`unit_python()`), as AGENT_OS.md §8 already said, so the host's
+  package versions cannot change how the guard behaves. The shim only re-executes
+  `agent_os.guard` on that same interpreter, so nothing it needs came from the host's venv. A host
+  whose unit was rendered with the host's `.venv` keeps it until it re-renders: run
+  `agent-os-install --dry-run` to see the diff, then `agent-os-install --force` (which also
+  rewrites the other installed templates) and `systemctl --user daemon-reload`.
 - agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
   by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
   exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
