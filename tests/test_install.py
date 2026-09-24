@@ -58,18 +58,6 @@ def test_executables_path_prefix_prepends_configured_dirs_without_repeats():
     assert prefix.count("/opt/nvm/bin") == 1, "the same directory twice must collapse to one"
 
 
-def test_resolve_exec_start_uses_the_hosts_shim_when_present(tmp_path):
-    (tmp_path / "scripts").mkdir()
-    shim = tmp_path / "scripts" / "agent_guard.py"
-    shim.write_text("# shim\n")
-    (tmp_path / ".venv" / "bin").mkdir(parents=True)
-    venv_python = tmp_path / ".venv" / "bin" / "python"
-    venv_python.write_text("#!/bin/sh\n")
-
-    exec_start = resolve_exec_start(tmp_path)
-    assert exec_start == f"{venv_python} {shim} tick"
-
-
 def test_resolve_exec_start_falls_back_to_the_module_form_without_a_shim(tmp_path):
     exec_start = resolve_exec_start(tmp_path)
     assert exec_start.endswith("-m agent_os.guard tick")
@@ -93,19 +81,26 @@ def _no_mechanism_interpreter(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_os.cli, "AGENT_OS_DIR", tmp_path / "unbootstrapped")
 
 
-def test_resolve_exec_start_runs_the_shim_on_the_mechanisms_interpreter_without_a_host_venv(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("host_venv", [True, False], ids=["host-venv", "no-host-venv"])
+def test_resolve_exec_start_runs_the_shim_on_the_mechanisms_interpreter(
+    tmp_path, monkeypatch, host_venv
 ):
-    """#12: a shim with no host `.venv` used to render a bare `python3`, which only works if the
-    systemd `--user` manager's PATH happens to carry one with the mechanism's dependencies."""
+    """The shim runs on the mechanism's own interpreter whether or not the host has a root
+    `.venv`. Without one, #12: the unit used to render a bare `python3`, which only works if the
+    systemd `--user` manager's PATH happens to carry one with the mechanism's dependencies. With
+    one, #51: the unit used to prefer it, so the host's package versions decided how the guard
+    behaved -- against AGENT_OS.md §8's "never a host's"."""
     (tmp_path / "scripts").mkdir()
     shim = tmp_path / "scripts" / "agent_guard.py"
     shim.write_text("# shim\n")
+    if host_venv:
+        _fake_interpreter(tmp_path / ".venv" / "bin")
     mechanism_python = _fake_interpreter(tmp_path / "mechanism" / ".venv" / "bin")
     monkeypatch.setenv("AGENT_OS_PYTHON", str(mechanism_python))
 
     exec_start = resolve_exec_start(tmp_path)
     assert exec_start == f"{mechanism_python} {shim} tick"
+    assert str(tmp_path / ".venv") not in exec_start
 
 
 @pytest.mark.parametrize("with_shim", [True, False], ids=["shim", "module-form"])
@@ -373,6 +368,18 @@ def test_main_refuses_without_a_configured_guard_unit(tmp_path):
     result = _run_install(environment, "--dry-run")
     assert result.returncode != 0
     assert "guard_unit" in (result.stdout + result.stderr)
+
+
+@pytest.mark.parametrize("name", ["guard.service", "guard.timer", "override.conf"])
+def test_rendered_units_name_only_docs_the_mechanism_ships(tmp_path, name):
+    # agent-os#10: a rendered unit lands on a host that has only `agent_os/`; a comment pointing at
+    # a host's own runbook is a dead reference there.
+    import re
+
+    rendered = render_systemd_unit(name, _project(), tmp_path)
+    named = re.findall(r"(?:agent_os/)?docs/[\w./-]+\.md", rendered)
+    missing = [p for p in named if not (AGENT_OS_DIR / p.removeprefix("agent_os/")).is_file()]
+    assert missing == [], rendered
 
 
 # `config/agents.yaml` absent or broken (agent-os#3): a one-line refusal naming the file and the

@@ -1715,9 +1715,13 @@ def read_events(path: pathlib.Path | str) -> list[dict]:
     events = []
     for line in pathlib.Path(path).read_text(errors="replace").splitlines():
         try:
-            events.append(json.loads(line))
+            event = json.loads(line)
         except ValueError:
             continue
+        # A line that parses to a string, a number or a list is no event either: every reader
+        # calls `.get` on what this returns, and one such line must not kill the guard's tick.
+        if isinstance(event, dict):
+            events.append(event)
     return events
 
 

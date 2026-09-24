@@ -108,6 +108,7 @@ from agent_os.lib import (
     usage_failed,
     usage_summary,
 )
+from agent_os.streams.interface import event_message
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -432,7 +433,7 @@ def repeated_tool_calls(events: list[dict], streak: int = 3) -> bool:
     for event in events:
         if event.get("type") != "assistant":
             continue
-        for block in (event.get("message") or {}).get("content") or []:
+        for block in event_message(event).get("content") or []:
             if block.get("type") == "tool_use":
                 calls.append((block.get("name"), json.dumps(block.get("input"), sort_keys=True)))
     return any(len(set(calls[i : i + streak])) == 1 for i in range(len(calls) - streak + 1))

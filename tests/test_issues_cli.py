@@ -449,6 +449,69 @@ def test_create_refuses_a_template_and_a_body_file_at_once():
         )
 
 
+def _created_title(title, *, issue_type="task", template=None):
+    """The title `cmd_create` sends to GitHub, every `gh` call mocked."""
+    created = {"number": 9, "id": 99, "html_url": "u"}
+    with (
+        patch.object(issues, "repo_name", return_value="owner/name"),
+        patch.object(issues, "ensure_fixed_labels", return_value=set()),
+        patch.object(issues, "ensure_labels"),
+        patch.object(issues, "create_issue", return_value=created) as create,
+        patch.object(issues, "add_to_board", return_value=[]),
+    ):
+        issues.cmd_create(
+            argparse.Namespace(
+                type=None if template else issue_type,
+                title=title,
+                parent=None,
+                body_file=None,
+                template=template,
+                label=None,
+            )
+        )
+    return create.call_args[0][1]
+
+
+@pytest.mark.parametrize(
+    "issue_type,prefixed", [("task", "[task] Split it"), ("bug", "[bug] Split it")]
+)
+def test_create_prefixes_the_title_the_types_template_declares(
+    shipped_issue_templates, issue_type, prefixed
+):
+    """#15: the refiner's `create --type task --title T` produced `T`, not the `[task] T` the
+    template's front matter declares and every hand-written task carries."""
+    assert _created_title("Split it", issue_type=issue_type) == prefixed
+
+
+def test_create_from_a_template_also_prefixes_the_title(shipped_issue_templates):
+    assert _created_title("Split it", template="task") == "[task] Split it"
+
+
+@pytest.mark.parametrize("title", ["[task] Split it", "[task]Split it", "[Task] Split it"])
+def test_create_never_prefixes_a_title_that_already_carries_the_prefix(
+    shipped_issue_templates, title
+):
+    assert _created_title(title) == title
+
+
+def test_prefixing_twice_is_prefixing_once(shipped_issue_templates):
+    assert _created_title(_created_title("Split it")) == "[task] Split it"
+
+
+def test_the_prefix_comes_from_the_hosts_template_never_from_the_code(shipped_issue_templates):
+    task = shipped_issue_templates / "task.md"
+    task.write_text(task.read_text().replace("title: '[task] '", "title: 'TASK: '"))
+    assert _created_title("Split it") == "TASK: Split it"
+
+
+def test_a_type_with_no_template_or_no_title_in_it_keeps_its_title(shipped_issue_templates):
+    # `epic` and `feature` have no template; a template may declare no `title:` at all.
+    assert _created_title("Group them", issue_type="epic") == "Group them"
+    bug = shipped_issue_templates / "bug.md"
+    bug.write_text(bug.read_text().replace("title: '[bug] '\n", ""))
+    assert _created_title("Split it", issue_type="bug") == "Split it"
+
+
 def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_type(
     shipped_issue_templates,
 ):
@@ -458,6 +521,7 @@ def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_ty
         patch.object(issues, "ensure_fixed_labels", return_value=set()),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "create_issue", return_value=created) as create,
+        patch.object(issues, "add_to_board", return_value=[]),
     ):
         issues.cmd_create(
             argparse.Namespace(
@@ -472,6 +536,116 @@ def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_ty
     _repo, _title, body, labels = create.call_args[0]
     assert labels == ["type:bug"]
     assert "## Definition of done" in body
+
+
+# ---- create puts the new issue on the board (#23) --------------------------------------------
+
+
+def _create_on_board(labels=None, *, board=5, item_add=None, mirror=None):
+    """Runs `cmd_create` with every `gh` call mocked and `project.board_number = board`. Returns
+    `(gh_calls, mirror_calls)`: every `gh_json` call made (the board's `item-add` among them) and
+    the arguments `mirror_board_column` was called with. `item_add` answers the `item-add`, or
+    raises when it is an exception -- `gh_json` exits on a failed `gh`."""
+    project = _project(
+        board_number=board, board_columns={"ready": "Ready for AI", "refine": "Backlog"}
+    )
+    created = {"number": 9, "id": 99, "html_url": "https://github.invalid/owner/name/issues/9"}
+    calls = []
+
+    def fake_gh(*args, **_kwargs):
+        calls.append(args)
+        if args[:2] == ("project", "item-add"):
+            if isinstance(item_add, BaseException):
+                raise item_add
+            return item_add if item_add is not None else {"id": "PVTI_new"}
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    with (
+        patch.object(issues, "repo_name", return_value="owner/name"),
+        patch.object(issues, "load_project", return_value=project),
+        patch.object(issues, "ensure_fixed_labels", return_value=set()),
+        patch.object(issues, "ensure_labels"),
+        patch.object(issues, "create_issue", return_value=created),
+        patch.object(issues, "gh_json", side_effect=fake_gh),
+        patch.object(
+            issues, "mirror_board_column", side_effect=mirror, return_value="board:    mirrored"
+        ) as board_column,
+    ):
+        issues.cmd_create(
+            argparse.Namespace(
+                type="task",
+                title="t",
+                parent=None,
+                body_file=None,
+                template=None,
+                label=labels,
+            )
+        )
+    return calls, board_column.call_args_list
+
+
+def test_create_adds_the_new_issue_to_the_configured_board():
+    calls, _ = _create_on_board()
+    (item_add,) = [args for args in calls if args[:2] == ("project", "item-add")]
+    assert item_add[2] == "5"
+    assert item_add[item_add.index("--owner") + 1] == "owner"
+    assert item_add[item_add.index("--url") + 1] == "https://github.invalid/owner/name/issues/9"
+
+
+def test_create_sets_the_column_of_its_initial_status_label_on_the_new_item(capsys):
+    _, mirrored = _create_on_board(["status:ready"])
+    (call,) = mirrored
+    assert call.args == ("owner/name", 9, "Ready for AI", 5)
+    # The item `item-add` just returned, not a lookup that may not see it yet.
+    assert call.kwargs == {"item": "PVTI_new"}
+    assert "board:    mirrored" in capsys.readouterr().out
+
+
+def test_create_without_a_status_label_adds_the_item_and_leaves_its_column_alone(capsys):
+    calls, mirrored = _create_on_board(["p2"])
+    assert [args[:2] for args in calls] == [("project", "item-add")]
+    assert mirrored == []
+    assert "board:    added #9 to project 5" in capsys.readouterr().out
+
+
+def test_a_board_that_refuses_the_item_never_fails_the_create(capsys):
+    _, mirrored = _create_on_board(
+        ["status:ready"], item_add=SystemExit("gh project item-add failed:\nno such project")
+    )
+    out = capsys.readouterr().out
+    assert "created #9" in out
+    assert "board:    #9 not added to project 5" in out
+    assert mirrored == []
+
+
+def test_a_column_that_cannot_be_set_never_fails_the_create(capsys):
+    _, mirrored = _create_on_board(
+        ["status:ready"], mirror=SystemExit("project owner/5 has no single-select field")
+    )
+    out = capsys.readouterr().out
+    assert len(mirrored) == 1
+    assert "board:    column not mirrored: project owner/5 has no single-select field" in out
+
+
+def test_create_with_no_board_configured_makes_no_board_call():
+    calls, mirrored = _create_on_board(["status:ready"], board=0)
+    assert calls == [] and mirrored == []
+
+
+def test_mirror_board_column_uses_the_item_it_is_given_without_looking_it_up():
+    fields = {
+        "fields": [{"id": "F2", "name": "Status", "options": [{"id": "O1", "name": "Ready"}]}]
+    }
+    with (
+        patch.object(issues, "board_item_id") as lookup,
+        patch.object(issues, "gh_json_dict", side_effect=[{"id": "PVT"}, fields]),
+        patch.object(issues, "gh_json") as edit,
+    ):
+        line = issues.mirror_board_column("owner/name", 9, "Ready", 5, item="PVTI_new")
+    lookup.assert_not_called()
+    args = edit.call_args[0]
+    assert args[args.index("--id") + 1] == "PVTI_new"
+    assert line == "board:    Ready"
 
 
 # ---- update --body-file: the refiner's own way to rewrite a body in place --------------------

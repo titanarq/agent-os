@@ -6,7 +6,7 @@ absent -- the three files `agent_os/docs/AGENT_OS.md` §5 step 7 used to say wer
 but manual regardless" (`agent_os/docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
 (`agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
-`docs/runbooks/agent_monitor.md`).
+`agent_os/docs/ADOPTION.md` step 22).
 
     agent-os-install --dry-run     # print every path this would touch and its diff, write nothing
     agent-os-install               # write what does not already exist
@@ -91,16 +91,17 @@ def unit_python() -> str:
 
 
 def resolve_exec_start(root: pathlib.Path) -> str:
-    """The host's own shim (`scripts/agent_guard.py`) run on the host's own interpreter when one
-    exists -- reproducing exactly what a hand-armed unit on this machine already does
-    (`docs/runbooks/agent_monitor.md`) -- or the package's own console form otherwise, which is
-    what a host with no shims (one that never ran #508's move) gets instead. Every other case
-    runs on `unit_python()`, which refuses rather than render a bare `python3`."""
+    """The host's own shim (`scripts/agent_guard.py`) when one exists -- the path the host's
+    prompts, docs and hand-armed units already name -- or the package's own module form otherwise,
+    which is what a host with no shims (one that never ran #508's move) gets instead.
+
+    Both run on `unit_python()`, the mechanism's own interpreter, and never on a host's: a host
+    root `.venv` carries the host's package versions, which must not decide how the guard behaves
+    (AGENT_OS.md §8, #51). The shim itself only re-executes `agent_os.guard` on that same
+    interpreter, so it needs nothing the host's venv provides."""
     shim = root / "scripts" / "agent_guard.py"
     if shim.is_file():
-        venv_python = root / ".venv" / "bin" / "python"
-        python = str(venv_python) if venv_python.is_file() else unit_python()
-        return f"{python} {shim} tick"
+        return f"{unit_python()} {shim} tick"
     return f"{unit_python()} -m agent_os.guard tick"
 
 
