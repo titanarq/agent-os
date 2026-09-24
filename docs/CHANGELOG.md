@@ -8,6 +8,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#32 — `refine_pending` names the head of a ranked refine queue instead of the ten
+  newest refine-needing issues: `guard.refinable_issues()` sorts by `lib.refine_queue_rank` —
+  parent carries `labels.auto_ready` first, then the issue's best label in `labels.priorities`
+  (none sorts last), then no open `Blocked by #N`, then issue number ascending. The parent's
+  labels are read once per distinct parent, through the same lookup `promote_refined` now
+  shares. The planner prompt says the list is in that order and to launch the refiner on the
+  earliest listed issue that passes its summary check. A host that parked refine-needing issues
+  to steer the order (studentassistant's `scripts/refine_window.py`) can drop that after the
+  subtree pull.
 - agent-os#5 — `agent-os-doctor`'s board check no longer passes on a Project that is not the
   repository's: besides the `Status` field and its options, it reads the Projects linked to
   `project.repo` (`repository.projectsV2`) and fails when `project.board_number` is not one of

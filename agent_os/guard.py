@@ -68,6 +68,7 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -101,6 +102,7 @@ from agent_os.lib import (
     quota_status,
     read_events,
     read_role_run_exit_marker,
+    refine_queue_rank,
     render_human_message,
     role_app_slug,
     usage_failed,
@@ -1574,19 +1576,37 @@ def refinable_issues(*, main: Path = HOST_ROOT) -> list[int]:
     refinable this way: that is not something the refiner wrote or can rewrite away (#356). Same
     two-`gh`-call shape as `dispatchable_issues` above even though `needs_refinement` itself no
     longer reads `open_numbers` -- kept for the call-site's own symmetry with
-    `promotable_to_ready`, which still needs it, below."""
-    refine = _gh_issue_list("number,state,labels,body", main=main, extra=["--label", REFINE_LABEL])
+    `promotable_to_ready`, which still needs it, below.
+
+    Returned in REFINE QUEUE ORDER (`agent_lib.refine_queue_rank`): parent carries `auto-ready`,
+    then priority, then no open blocker, then oldest first -- `refine_pending` names the head of
+    this list and the planner launches the refiner on the earliest of it (#32)."""
+    refine = _gh_issue_list(
+        "number,state,labels,body,parent", main=main, extra=["--label", REFINE_LABEL]
+    )
     if not refine:
         return []
     open_numbers = {int(row["number"]) for row in _gh_issue_list("number", main=main)}
     classes = load_task_classes()
-    return [
-        int(row["number"])
+    needing = [
+        row
         for row in refine
         if needs_refinement(
             row, task_classes=classes, open_issue_numbers=open_numbers, labels=PROJECT.labels
         )
     ]
+    # `gh issue list` answers newest first, which on a large backlog handed the refiner the
+    # lowest-priority, last-milestone issues first (#32): rank by closeness to dispatch instead.
+    parent_labels_of = _parent_labels_lookup(main=main)
+    needing.sort(
+        key=lambda row: refine_queue_rank(
+            row,
+            parent_labels=parent_labels_of(row),
+            open_issue_numbers=open_numbers,
+            labels=PROJECT.labels,
+        )
+    )
+    return [int(row["number"]) for row in needing]
 
 
 def _write_refine_pending_event_if_due(*, main: Path, now: datetime) -> EventOutcome:
@@ -1635,6 +1655,23 @@ def _gh_issue_labels(issue_number: int, *, main: Path) -> set[str] | None:
     except ValueError:
         return None
     return label_names(data)
+
+
+def _parent_labels_lookup(*, main: Path) -> Callable[[dict], set[str] | None]:
+    """A row's parent's labels (`None` for no parent or a failed lookup), one `gh issue view` per
+    distinct parent however many children share it -- the refine queue's order and the auto-ready
+    promotion both ask this of every `status:refine` row."""
+    cache: dict[int, set[str] | None] = {}
+
+    def parent_labels(row: dict) -> set[str] | None:
+        parent_number = (row.get("parent") or {}).get("number")
+        if parent_number is None:
+            return None
+        if parent_number not in cache:
+            cache[parent_number] = _gh_issue_labels(parent_number, main=main)
+        return cache[parent_number]
+
+    return parent_labels
 
 
 def _current_status_label(issue_number: int, *, main: Path) -> str | None:
@@ -1709,19 +1746,12 @@ def promote_refined(*, main: Path = HOST_ROOT) -> list[int]:
         return []
     open_numbers = {int(row["number"]) for row in _gh_issue_list("number", main=main)}
     classes = load_task_classes()
-    parent_labels_cache: dict[int, set[str] | None] = {}
+    parent_labels_of = _parent_labels_lookup(main=main)
     promoted: list[int] = []
     for row in refine:
-        parent = row.get("parent") or {}
-        parent_number = parent.get("number")
-        parent_labels = None
-        if parent_number is not None:
-            if parent_number not in parent_labels_cache:
-                parent_labels_cache[parent_number] = _gh_issue_labels(parent_number, main=main)
-            parent_labels = parent_labels_cache[parent_number]
         if promotable_to_ready(
             row,
-            parent_labels=parent_labels,
+            parent_labels=parent_labels_of(row),
             task_classes=classes,
             open_issue_numbers=open_numbers,
             labels=PROJECT.labels,
