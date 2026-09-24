@@ -1705,13 +1705,52 @@ def promotable_to_ready(
     )
 
 
+def refine_queue_rank(
+    issue: dict,
+    *,
+    parent_labels: set[str] | None,
+    open_issue_numbers: set[int],
+    labels: LabelVocabulary | None = None,
+) -> tuple[int, int, int, int]:
+    """Pure sort key for the refine queue: the issue closest to a worker dispatch sorts first (#32).
+
+    1. Parent carries `auto-ready` -- once refined it is promoted mechanically, anything else
+       waits for a human anyway (`promotable_to_ready` above). A failed parent lookup (`None`)
+       reads as not opted in: this only orders the queue, it never promotes anything.
+    2. Priority -- the position of its best label in `labels.priorities`; no priority label sorts
+       after every priority.
+    3. No open `Blocked by #N` -- a refined issue still waiting on a blocker is not dispatchable.
+    4. Issue number ascending -- the older issue first, the reverse of `gh issue list`'s order.
+    """
+    labels = labels or LabelVocabulary()
+    names = label_names(issue)
+    parent_opted_in = parent_labels is not None and labels.auto_ready in parent_labels
+    priority = min(
+        (index for index, label in enumerate(labels.priorities) if label in names),
+        default=len(labels.priorities),
+    )
+    has_open_blocker = any(
+        blocker in open_issue_numbers for blocker in blocking_issue_numbers(issue.get("body") or "")
+    )
+    return (
+        0 if parent_opted_in else 1,
+        priority,
+        1 if has_open_blocker else 0,
+        int(issue["number"]),
+    )
+
+
 def read_events(path: pathlib.Path | str) -> list[dict]:
     events = []
     for line in pathlib.Path(path).read_text(errors="replace").splitlines():
         try:
-            events.append(json.loads(line))
+            event = json.loads(line)
         except ValueError:
             continue
+        # A line that parses to a string, a number or a list is no event either: every reader
+        # calls `.get` on what this returns, and one such line must not kill the guard's tick.
+        if isinstance(event, dict):
+            events.append(event)
     return events
 
 

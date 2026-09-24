@@ -450,6 +450,69 @@ def test_create_refuses_a_template_and_a_body_file_at_once():
         )
 
 
+def _created_title(title, *, issue_type="task", template=None):
+    """The title `cmd_create` sends to GitHub, every `gh` call mocked."""
+    created = {"number": 9, "id": 99, "html_url": "u"}
+    with (
+        patch.object(issues, "repo_name", return_value="owner/name"),
+        patch.object(issues, "ensure_fixed_labels", return_value=set()),
+        patch.object(issues, "ensure_labels"),
+        patch.object(issues, "create_issue", return_value=created) as create,
+        patch.object(issues, "add_to_board", return_value=[]),
+    ):
+        issues.cmd_create(
+            argparse.Namespace(
+                type=None if template else issue_type,
+                title=title,
+                parent=None,
+                body_file=None,
+                template=template,
+                label=None,
+            )
+        )
+    return create.call_args[0][1]
+
+
+@pytest.mark.parametrize(
+    "issue_type,prefixed", [("task", "[task] Split it"), ("bug", "[bug] Split it")]
+)
+def test_create_prefixes_the_title_the_types_template_declares(
+    shipped_issue_templates, issue_type, prefixed
+):
+    """#15: the refiner's `create --type task --title T` produced `T`, not the `[task] T` the
+    template's front matter declares and every hand-written task carries."""
+    assert _created_title("Split it", issue_type=issue_type) == prefixed
+
+
+def test_create_from_a_template_also_prefixes_the_title(shipped_issue_templates):
+    assert _created_title("Split it", template="task") == "[task] Split it"
+
+
+@pytest.mark.parametrize("title", ["[task] Split it", "[task]Split it", "[Task] Split it"])
+def test_create_never_prefixes_a_title_that_already_carries_the_prefix(
+    shipped_issue_templates, title
+):
+    assert _created_title(title) == title
+
+
+def test_prefixing_twice_is_prefixing_once(shipped_issue_templates):
+    assert _created_title(_created_title("Split it")) == "[task] Split it"
+
+
+def test_the_prefix_comes_from_the_hosts_template_never_from_the_code(shipped_issue_templates):
+    task = shipped_issue_templates / "task.md"
+    task.write_text(task.read_text().replace("title: '[task] '", "title: 'TASK: '"))
+    assert _created_title("Split it") == "TASK: Split it"
+
+
+def test_a_type_with_no_template_or_no_title_in_it_keeps_its_title(shipped_issue_templates):
+    # `epic` and `feature` have no template; a template may declare no `title:` at all.
+    assert _created_title("Group them", issue_type="epic") == "Group them"
+    bug = shipped_issue_templates / "bug.md"
+    bug.write_text(bug.read_text().replace("title: '[bug] '\n", ""))
+    assert _created_title("Split it", issue_type="bug") == "Split it"
+
+
 def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_type(
     shipped_issue_templates,
 ):

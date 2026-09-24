@@ -589,7 +589,7 @@ def page_review_ready(number: int, issue: dict) -> str:
 # --------------------------------------------------------------------------------------------
 # agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-are-the-mechanical-state.md
 
-FRONT_MATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
+FRONT_MATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 
 
 def template_body(name: str) -> str:
@@ -598,6 +598,33 @@ def template_body(name: str) -> str:
     issue" form and would be noise inside a body created through the API."""
     text = (TEMPLATE_DIR / f"{name}.md").read_text()
     return FRONT_MATTER_RE.sub("", text).strip() + "\n"
+
+
+def template_title_prefix(name: str) -> str:
+    """The `title:` GitHub's "new issue" form pre-fills from `.github/ISSUE_TEMPLATE/<name>.md`
+    (`'[task] '` in the shipped task template), or "" when the type has no template or its front
+    matter declares no title. Read from the host's template, so a host that spells its prefix
+    differently is obeyed without a config key."""
+    path = TEMPLATE_DIR / f"{name}.md"
+    if not path.is_file():
+        return ""
+    match = FRONT_MATTER_RE.match(path.read_text())
+    front_matter = yaml.safe_load(match.group(1)) if match else None
+    title = front_matter.get("title") if isinstance(front_matter, dict) else None
+    return title if isinstance(title, str) else ""
+
+
+def prefixed_title(title: str, issue_type: str) -> str:
+    """`title` with its type's template prefix in front, exactly once (#15). An issue created
+    through the API skips GitHub's form, which is what applies the prefix to a hand-written one,
+    so without this every refiner-created task lacked it. A title that already starts with the
+    prefix — compared without its trailing space and ignoring case — is left as it is, so passing
+    an already-prefixed title never yields `[task] [task] `."""
+    prefix = template_title_prefix(issue_type)
+    marker = prefix.strip()
+    if not marker or title.lower().startswith(marker.lower()):
+        return title
+    return prefix + title
 
 
 def open_issue_numbers(repo: str) -> set[int]:
@@ -918,7 +945,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         body = template_body(args.template)
     else:
         body = pathlib.Path(args.body_file).read_text() if args.body_file else ""
-    result = create_issue(repo, args.title, body, labels)
+    result = create_issue(repo, prefixed_title(args.title, issue_type), body, labels)
     number = result["number"]
     print(f"created #{number}  {result.get('html_url', '')}")
     if args.parent:

@@ -49,7 +49,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 |---|---|---|---|---|
 | (creation, no label) → `status:refine` | Human, or refiner (splitting a feature) | Human decision, or the refiner creating children | label + Backlog column | `agent_os.issues:1102-1131` (`cmd_move`); `agent_os/bin/agent_task.sh:239-247` |
 | **gap**: creation → `status:refine` automatic | nobody | — | — | `cmd_create` (`agent_os.issues:1022-1049`) assigns no `status:*` |
-| `status:refine` (structural defect) → refiner runs, stays `status:refine` | Refiner | `refine_pending` event, only if `planner.refiner_unattended: true` | original body posted as a comment, body rewritten, `<!-- refiner-summary -->` comment | `agent_os.guard:947-972`; `agent_os.lib:399-427` (`needs_refinement`); `agent_os/bin/agent_task.sh:234-247` |
+| `status:refine` (structural defect) → refiner runs, stays `status:refine` | Refiner | `refine_pending` event, only if `planner.refiner_unattended: true`; it names the head of the refine queue, closest to dispatch first (`agent_os.lib.refine_queue_rank`: parent carries `labels.auto_ready`, then position in `labels.priorities`, then no open `Blocked by`, then issue number ascending — #32) | original body posted as a comment, body rewritten, `<!-- refiner-summary -->` comment | `agent_os.guard:947-972`; `agent_os.lib:399-427` (`needs_refinement`); `agent_os/bin/agent_task.sh:234-247` |
 | `status:refine` (otherwise conformant, `## Stages` missing or empty) → refiner writes it, stays `status:refine` | Refiner | same `refine_pending` event — a missing/empty `## Stages` is itself the structural defect `needs_refinement` checks for | `## Stages` checklist written into the body, `<!-- refiner-summary -->` comment | `agent_os.lib` `REQUIRED_SECTIONS`, `parse_stages`, `section_failures` (`stages: no checklist line`); `agent_os/bin/agent_task.sh` refiner RULES; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:refine` → split into sub-issues `status:refine`, original loses the label | Refiner | same as above | `issues.py create --parent N` + `move refine` per child | `agent_os/bin/agent_task.sh:239-247` |
 | split task/bug → original closed `not planned`, its dependents repointed | Refiner, through `issues.py supersede N --by <child>...` (#39) | the refiner split a task or bug (never a feature, whose children are its parts) | every open `Blocked by #N` line rewritten to the children (all of them unless `--route D=child` narrows one dependent), a comment on each dependent, a `Superseded by` comment and a `not planned` close on N; dependents first, so a cut run never unblocks early | `agent_os.issues` `supersede`; `agent_os.lib` `replace_blocker`; `agent_os/prompts/refiner.md` DECIDE THE SHAPE |
@@ -448,7 +448,9 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   silently to the first single-select the code finds) and six options matching
   `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`, `Review`,
   `Done`.
-- **Issue templates**: `.github/ISSUE_TEMPLATE/task.md`, `bug.md`, copied as-is.
+- **Issue templates**: `.github/ISSUE_TEMPLATE/task.md`, `bug.md`, copied as-is. Their front-matter
+  `title:` (`[task] `, `[bug] `) is also what `issues.py create --type task|bug` puts in front of
+  a title that does not already carry it (#15).
 - **One GitHub App per identity** (`backends.<name>.app` per worker backend, `planner_app`, and
   optionally `role_apps.validator`/`role_apps.refiner`), permissions deduced from the calls each
   role makes: workers need Issues (read/write), Contents (push), Pull requests (create); the

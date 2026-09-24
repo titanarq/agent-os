@@ -15,6 +15,29 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   are its parts), a child that is not open, and is idempotent. The refiner prompt calls it after
   splitting a task or bug. Before, the original stayed open and its dependents blocked forever, or
   unblocked too early when a human closed it; a host rewriting dependents by hand can stop.
+- agent-os#32 — `refine_pending` names the head of a ranked refine queue instead of the ten
+  newest refine-needing issues: `guard.refinable_issues()` sorts by `lib.refine_queue_rank` —
+  parent carries `labels.auto_ready` first, then the issue's best label in `labels.priorities`
+  (none sorts last), then no open `Blocked by #N`, then issue number ascending. The parent's
+  labels are read once per distinct parent, through the same lookup `promote_refined` now
+  shares. The planner prompt says the list is in that order and to launch the refiner on the
+  earliest listed issue that passes its summary check. A host that parked refine-needing issues
+  to steer the order (studentassistant's `scripts/refine_window.py`) can drop that after the
+  subtree pull.
+- agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
+  that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
+  the given title. An issue created through the API skips GitHub's form, which is what adds the
+  prefix to a hand-written one, so the refiner's sub-issues came out without it. A title that
+  already starts with the prefix (case-insensitive, with or without its space) is left alone,
+  so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
+  keeps its title.
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
 - agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
   each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
   and the checkout, which the driver removes when the run ends; the three prompts name it and
