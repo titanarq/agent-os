@@ -2046,7 +2046,11 @@ def test_the_page_counts_only_the_backends_it_names(monkeypatch, tmp_path):
     line = agent_guard._page_missing_worktree_if_due(scan, main=tmp_path, now=first)
     assert line is not None
     assert len(paged) == 3
-    assert "claude" not in line and "qwen" in line
+    # The line spells qwen's worktree path, and that path says `claude` whenever the checkout sits
+    # under `.claude/worktrees/`. What this measures is which backends the line names, so that
+    # path is taken out first.
+    named = line.replace(agent_guard.BACKEND_WORKTREES["qwen"], "<qwen's worktree>")
+    assert "claude" not in named and "qwen" in named
     assert paged[2] == render_human_message(
         "backend_worktree_missing",
         backend="qwen",
