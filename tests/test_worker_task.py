@@ -1797,13 +1797,15 @@ if args[:2] == ["label", "list"]:
         {"name": "status:ai-completed"},
         {"name": "status:blocked-on-human"},
     ]))
-if args[:2] == ["project", "item-list"]:
-    # $GH_STUB_BOARD_ITEM is the issue number the board holds an item for; unset, the board holds
-    # none and `mirror_board_column` says so instead of editing anything.
+if args[:2] == ["api", "graphql"]:
+    # The issue's own `projectItems` (#14). $GH_STUB_BOARD_ITEM is the issue number that has an
+    # item on board 1 of `owner`; unset, no issue has one and `mirror_board_column` says so
+    # instead of editing anything.
     on_board = os.environ.get("GH_STUB_BOARD_ITEM")
-    if on_board:
-        out(json.dumps({"items": [{"id": "ITEM1", "content": {"number": int(on_board)}}]}))
-    out(json.dumps({"items": []}))
+    nodes = []
+    if on_board and f"number={on_board}" in args:
+        nodes = [{"id": "ITEM1", "project": {"number": 1, "owner": {"login": "owner"}}}]
+    out(json.dumps({"data": {"repository": {"issue": {"projectItems": {"nodes": nodes}}}}}))
 if args[:2] == ["project", "view"]:
     out(json.dumps({"id": "PROJECT1"}))
 if args[:2] == ["project", "field-list"]:

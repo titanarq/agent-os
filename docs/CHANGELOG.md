@@ -12,6 +12,10 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)
   and this file.
+- agent-os#14 — `issues.py move` finds the issue's board item from the issue's own
+  `projectItems` (one GraphQL query matching board number and owner) instead of listing the whole
+  board with `gh project item-list`, which returned zero items for an org Project v2 that held them
+  and so skipped every column mirror in silence.
 
 Wave 3's other two tasks, #429 (which backend fallback rule to write down as an ADR) and #514
 (optional), add their own entries here once their pull requests merge.
