@@ -63,7 +63,7 @@ __LINT_RULES__
   is what makes the environment resolve the worktree's own package instead of this checkout's, so
   a run that loses it still executes, still prints results, and still measures code your review
   is not about. Before you trust any result, check it from inside the worktree: `echo
-  "$PYTHONPATH"` prints that same path.
+  "$PYTHONPATH"` starts with that same path.
 - Never prepare an environment of your own to run in: no new worktree, no checkout of the branch,
   and nothing that links or copies this checkout's own environment -- a virtualenv, a dependency
   directory, a `.env` -- into one. A virtualenv you linked yourself carries an editable install
