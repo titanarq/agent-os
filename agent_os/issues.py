@@ -706,12 +706,17 @@ def board_item_id(owner: str, board: int, repo: str, number: int) -> str | None:
     return None
 
 
-def mirror_board_column(repo: str, number: int, column: str, board: int) -> str:
+def mirror_board_column(
+    repo: str, number: int, column: str, board: int, *, item: str | None = None
+) -> str:
     """Moves issue #N's board item to `column`. Returns the line to print: what it did, or why it
     could not, never an exception — a board that disagrees with the labels is a cosmetic defect,
-    and failing the `move` here would leave the label set and the caller thinking it was not."""
+    and failing the `move` here would leave the label set and the caller thinking it was not.
+
+    `item` is the board item when the caller already holds it (`create`, from the `item-add` it
+    just made); otherwise it is looked up from the issue's side."""
     owner = board_owner(repo)
-    item = board_item_id(owner, board, repo, number)
+    item = item or board_item_id(owner, board, repo, number)
     if not item:
         return f"board:    #{number} is not on project {board}; column not mirrored"
     project_id, field_id, options = board_status_field(owner, board)
@@ -730,6 +735,51 @@ def mirror_board_column(repo: str, number: int, column: str, board: int) -> str:
         options[column],
     )
     return f"board:    {column}"
+
+
+def _exit_reason(exc: SystemExit) -> str:
+    """The first line of what `gh_json` (or `board_status_field`) exited with: enough to say why
+    in one `board:` line without dumping `gh`'s whole stderr into it."""
+    text = str(exc.code) if exc.code is not None else ""
+    return text.strip().splitlines()[0] if text.strip() else "gh failed"
+
+
+def initial_board_column(labels: list[str], project: ProjectConfig) -> str | None:
+    """The column the state label a new issue is created with maps to, or None when it carries
+    no state label or that state keeps whatever column the item has (`blocked-on-human`)."""
+    for state in WORK_STATES:
+        label = project.labels.label_for_state(state)
+        if label and label in labels:
+            return project.board_columns.get(state)
+    return None
+
+
+def add_to_board(repo: str, number: int, url: str, labels: list[str]) -> list[str]:
+    """Puts a just-created issue on `project.board_number` and, when it starts with a `status:*`
+    label, sets the column that state mirrors (#23). Without this a later `move` found no item to
+    mirror onto unless the host's board happened to auto-add issues. Returns the lines to print —
+    never an exception: the issue exists and carries its labels whatever the board answers, and
+    failing the `create` here would make the caller create it a second time."""
+    project = load_project()
+    board = project.board_number
+    if not board:
+        return []
+    owner = board_owner(repo)
+    try:
+        added = gh_json(
+            "project", "item-add", str(board), "--owner", owner, "--url", url, "--format", "json"
+        )
+    except SystemExit as exc:
+        return [f"board:    #{number} not added to project {board}: {_exit_reason(exc)}"]
+    lines = [f"board:    added #{number} to project {board}"]
+    column = initial_board_column(labels, project)
+    if column:
+        item = (added or {}).get("id") if isinstance(added, dict) else None
+        try:
+            lines.append(mirror_board_column(repo, number, column, board, item=item))
+        except SystemExit as exc:
+            lines.append(f"board:    column not mirrored: {_exit_reason(exc)}")
+    return lines
 
 
 # --------------------------------------------------------------------------------------------
@@ -871,6 +921,8 @@ def cmd_create(args: argparse.Namespace) -> None:
     print(f"created #{number}  {result.get('html_url', '')}")
     if args.parent:
         link_parent(repo, args.parent, number, result["id"])
+    for line in add_to_board(repo, number, result.get("html_url", ""), labels):
+        print(line)
 
 
 def cmd_update(args: argparse.Namespace) -> None:
