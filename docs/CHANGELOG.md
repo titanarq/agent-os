@@ -61,6 +61,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   package the host's venv installs (of zero, one or several), and is skipped with its reason when
   the host has none, as a non-Python host does; only the mechanism's own repository still requires
   one. A host's `--deselect` workaround for the two tests can go after its next `subtree pull`.
+- agent-os#8 — `docs/ADOPTION.md` names the live config keys: step 14 puts a worker's App at
+  `project.backends.<name>.app` instead of the deprecated `project.worker_apps.*`, and step 18
+  runs `worker_task.sh <backend> init` once per `project.backends` entry with a `worktree`
+  instead of per `project.worktrees` entry. `docs/AGENT_OS.md`'s actors table and §4.3 say the
+  same. A test in `tests/test_backends_config.py` walks every `project.`/`mechanism.`/`planner.`
+  key ADOPTION.md mentions through the config schema and fails on one the loader does not have
+  or warns about as deprecated.
 - agent-os#9 — `agent-os-install` no longer prints "would create" for a file it actually
   creates. Only `--dry-run` speaks in the conditional ("would create", "would overwrite
   (--force)"); a real run reports "created" and "overwritten (--force)", printed after the write.
