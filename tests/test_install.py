@@ -304,6 +304,28 @@ def test_main_without_dry_run_writes_the_units(tmp_path):
     assert (systemd_dir / "acme-guard.service.d" / "override.conf").is_file()
 
 
+def test_main_writes_a_host_ci_workflow_that_runs_the_configured_test_command(tmp_path):
+    # agent-os#50: with only the path-filtered ci-agent-os.yml, a host-only PR reports no check
+    # at all, and the control plane's merge condition 1 treats that as not met.
+    environment, host_root, _fake_home = _isolated_environment(tmp_path)
+
+    result = _run_install(environment)
+    assert result.returncode == 0, result.stdout + result.stderr
+    workflow = host_root / ".github" / "workflows" / "ci-host.yml"
+    assert "run: scripts/test.sh\n" in workflow.read_text()
+
+
+def test_main_leaves_a_hosts_own_differing_ci_workflow_alone_without_force(tmp_path):
+    environment, host_root, _fake_home = _isolated_environment(tmp_path)
+    workflow = host_root / ".github" / "workflows" / "ci-host.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: the host's own\n")
+
+    result = _run_install(environment)
+    assert result.returncode != 0
+    assert workflow.read_text() == "name: the host's own\n"
+
+
 def test_main_without_dry_run_reports_what_it_wrote_in_the_past_tense(tmp_path):
     # agent-os#9: a real run printed "would create" for every file it then created, which reads
     # exactly like a dry run. Only `--dry-run` may speak in the conditional.

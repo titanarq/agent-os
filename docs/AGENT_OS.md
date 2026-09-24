@@ -180,6 +180,13 @@ GitHub and the diff rather than trusted from the PR text. `.claude/agents/contro
 "Duty 4" is the binding source for them; what follows restates it:
 
 1. CI is green on the PR's HEAD SHA (`gh pr checks N`), and the PR targets the default branch.
+   A head SHA with **zero** checks reported (no check run, no status) fails this condition: the
+   control plane does not merge and hands the PR back to the human with that reason. The
+   mechanism's side of the bargain is that no PR lacks a check: `agent-os-install` writes
+   `.github/workflows/ci-host.yml`, running `project.test_command` on every pull request with no
+   path filter (`project.install_host_ci`), because `ci-agent-os.yml` only fires on `agent_os/**`;
+   `agent-os-doctor` fails when no workflow would report on a host-only PR
+   (`docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`, agent-os#50).
 2. The validator approved it (`gh pr view N --json reviews`) — or no validator review exists and the
    control plane reviewed the diff against the issue's acceptance criteria line by line.
 3. The diff (`gh pr diff N --name-only`) touches only files the issue's scope allows, none of the
@@ -371,6 +378,7 @@ agent_os/
 │                                  [tool.ruff]/[tool.pytest.ini_options]
 └── templates/
     ├── ci-agent-os.yml            CI snippet agent-os-install copies if the host has none yet
+    ├── ci-host.yml                host CI running project.test_command on every PR, rendered if absent
     ├── issue_template/            .github/ISSUE_TEMPLATE/{task,bug}.md, copied if absent
     │   ├── bug.md
     │   └── task.md
@@ -484,11 +492,15 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   same command also copies `.claude/agents/{control-plane,worker-runner}.md` (rendered from
   `agent_os/agents/*.md`, #510, absent until that PR lands — `install` reports "no templates dir,
   skipped" and does nothing else for that step), `.github/ISSUE_TEMPLATE/{task,bug}.md` and
-  `.github/workflows/ci-agent-os.yml`, copied as-is if absent.
+  `.github/workflows/ci-agent-os.yml`, copied as-is if absent, and `.github/workflows/ci-host.yml`,
+  rendered from `agent_os/templates/ci-host.yml` with `project.test_command` if absent and
+  `project.install_host_ci` is true (the default): a workflow with no path filter, so every PR
+  reports at least one check (§2.4 condition 1, agent-os#50).
 - `agent-os-doctor` (#511) reads back the checklist above — `gh auth status` scopes, the labels
   that do not autocreate, the Project v2 `Status` field and its six options, each App's
   `.json`+`.pem`, each `project.executables` entry, each worktree, `project.notify_topic_file` and
-  the guard timer's `systemctl --user is-active` — one line per check, exit 1 on any failure. It
+  the guard timer's `systemctl --user is-active`, and whether any `.github/workflows/*.yml` fires on
+  `pull_request` without a path filter (read from its `on:` block only) — one line per check, exit 1 on any failure. It
   never calls `agent_guard.py check` or any other trigger a role reacts to: a manual check would
   re-announce a run that already finished and wake the planner for free.
 
@@ -559,7 +571,8 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
    overwritten without `--force` and never armed (`systemctl --user enable --now` stays §6's own
    human step, below); `.claude/agents/{control-plane,worker-runner}.md` rendered from
    `agent_os/agents/*.md` (#510) if that directory exists yet; `.github/ISSUE_TEMPLATE/{task,bug}.md`
-   and `.github/workflows/ci-agent-os.yml`, copied as-is if absent. `--dry-run` prints every path
+   and `.github/workflows/ci-agent-os.yml`, copied as-is if absent, plus `.github/workflows/ci-host.yml`
+   running `project.test_command` on every pull request. `--dry-run` prints every path
    this would touch and its diff against what is there, so adopting the mechanism on a second
    machine — or checking a first one is still what `config/agents.yaml` describes — is three
    commands instead of a checklist of hand edits.

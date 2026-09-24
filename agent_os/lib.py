@@ -552,6 +552,12 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
+    # Whether `agent_os.install` writes `.github/workflows/ci-host.yml`, a workflow running
+    # `test_command` on every pull request with no path filter. The control plane counts zero
+    # checks on a PR's head SHA as merge condition 1 not met, and `ci-agent-os.yml` only fires on
+    # `agent_os/**`; a host whose own CI already reports on every PR sets this to false
+    # (agent_os/docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md).
+    install_host_ci: bool = True
     # How a freshly added worktree -- a worker's, on `init`, and a validator's throwaway one -- is
     # made runnable, since a new worktree carries tracked files only (agent-os#41,
     # agent_os/docs/adr/2026-09-24-a-fresh-worktree-is-provisioned-the-way-the-host-configures.md).
