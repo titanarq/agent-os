@@ -955,12 +955,15 @@ start|resume)
     # ANCHORED ON THE PLANNER'S OWN SHAPE, `<word>/<issue>-<slug>`. An unanchored token search
     # accepted `task/387-close-the-390-gap` as a branch for #390 and `chore/2026-09-16-cleanup`
     # for #16 -- and accepting a wrong branch is the whole failure this gate exists to stop.
-    elif ! printf '%s\n' "$current_branch" | grep -qE "(^|/)[a-z]+/$issue([-/]|$)"; then
+    # What anchors it is the NUMBER: right after a `/`, then `-`, `/` or the end. The `<word>` is
+    # any lowercase git word, hyphens and digits included (agent-os#16): `[a-z]+` refused the
+    # planner's `agent-os/37-gradle-skeleton` for #37 while its message said "a branch naming #37".
+    elif ! printf '%s\n' "$current_branch" | grep -qE "(^|/)[a-z][a-z0-9-]*/$issue([-/]|$)"; then
       issue_base=$(issue_base_branch "$body")
       if [ "$current_branch" != "$issue_base" ]; then
         echo "refusing to dispatch: $worktree is on ${current_branch:-a detached HEAD}, but issue" \
           "#$issue's base is $issue_base -- put the worktree on it" \
-          "($0 $backend branch task/$issue-<slug> $issue_base) or on a branch naming #$issue," \
+          "($0 $backend branch task/$issue-<slug> $issue_base) or on a <word>/$issue-<slug> branch," \
           "or pass --force"
         exit 1
       fi
