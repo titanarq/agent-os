@@ -27,12 +27,15 @@ import pathlib
 import re
 import shutil
 import signal
+import site
 import subprocess
 import tempfile
 import time
+import venv
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 from conftest import EXAMPLE_CONFIG, config_with_never_run, config_with_no_host_text
 
 from agent_os import guard as agent_guard
@@ -208,7 +211,7 @@ def test_the_validators_rules_name_the_worktree_the_driver_prepared_not_one_it_b
     # Nothing left that builds a worktree or links a venv into one, and the prohibition itself.
     for command in BUILD_OR_POPULATE_A_WORKTREE:
         assert command not in rules, command
-    assert "nothing that links or copies this checkout's `.venv`" in rules
+    assert "nothing that links or copies this checkout's own environment" in rules
 
 
 def test_the_refiners_rules_never_mention_a_worktree_or_a_pythonpath_it_does_not_get():
@@ -441,13 +444,11 @@ HOST_LITERALS = (
 # planner's each print theirs with `rules`, the two one-shot roles with `--dry-run`.
 ROLES_WITH_A_PROMPT = ("worker", "validator", "refiner", "planner")
 
-# What #509 could NOT move, measured rather than passed over. The validator's block names
-# `.venv/bin/ruff` and warns against linking `.venv` into a worktree, in two bullets that sit in
-# the middle of the mechanism's own list -- and a single extension point can only append, so moving
-# them would reorder the prompt, which is exactly what the golden test of
-# `test_prompt_templates.py` exists to refuse. Recorded as its own row in `agent_os/docs/AGENT_OS.md` §7
-# rather than quietly dropped from the literal set.
-LITERALS_A_TEMPLATE_STILL_CARRIES = {"validator": (".venv",)}
+# What a template still carries that belongs to a host, measured rather than passed over. #509 left
+# the validator's `.venv/bin/ruff` bullet and its `.venv` prohibition here; agent-os#41 moved the
+# first into `project.lint_commands` and made the second name no layout, so none is left -- an
+# entry added back here is a host literal the mechanism has started shipping again.
+LITERALS_A_TEMPLATE_STILL_CARRIES: dict[str, tuple[str, ...]] = {}
 
 
 def _role_rules(role, config_path, cache_dir=NO_VERDICT_CACHE_DIR) -> str:
@@ -555,23 +556,45 @@ if [ -n "${STUB_SLEEP-}" ]; then sleep "$STUB_SLEEP"; fi
 # The backend's own stream-json, when a test hands it one: what the run log then carries is the
 # record the guard reads a role's quota off (#429). Opt-in like the two above.
 if [ -n "${STUB_STREAM-}" ]; then cat "$STUB_STREAM"; fi
+# The worktree is PYTHONPATH's first entry: in a host that vendors the mechanism the driver exports
+# the worktree's copy of the mechanism after it (agent-os#35).
+worktree=${PYTHONPATH%%:*}
 {
   printf 'PYTHONPATH=%s\\n' "${PYTHONPATH-}"
+  printf 'WORKTREE=%s\\n' "$worktree"
   printf 'PWD=%s\\n' "$PWD"
-  printf 'WORKTREE_GIT=%s\\n' "$([ -e "${PYTHONPATH-}/.git" ] && echo yes || echo no)"
-  printf 'WORKTREE_PYTEST=%s\\n' "$([ -x "${PYTHONPATH-}/.venv/bin/pytest" ] && echo yes || echo no)"
-  printf 'WORKTREE_ENV_FILE=%s\\n' "$([ -e "${PYTHONPATH-}/.env" ] && echo yes || echo no)"
-  printf 'WORKTREE_HEAD=%s\\n' "$(git -C "${PYTHONPATH-}" rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'WORKTREE_GIT=%s\\n' "$([ -e "$worktree/.git" ] && echo yes || echo no)"
+  printf 'WORKTREE_PYTEST=%s\\n' "$([ -x "$worktree/.venv/bin/pytest" ] && echo yes || echo no)"
+  printf 'WORKTREE_ENV_FILE=%s\\n' "$([ -e "$worktree/.env" ] && echo yes || echo no)"
+  printf 'WORKTREE_PROVISIONED=%s\\n' "$(cat "$worktree/provisioned-by-setup" 2>/dev/null || echo no)"
+  printf 'WORKTREE_HEAD=%s\\n' "$(git -C "$worktree" rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'SCRATCH=%s\\n' "${AGENT_RUN_SCRATCH-}"
+  printf 'SCRATCH_IS_EMPTY_DIR=%s\\n' \\
+    "$([ -d "${AGENT_RUN_SCRATCH-}" ] && [ -z "$(ls -A "$AGENT_RUN_SCRATCH")" ] && echo yes || echo no)"
 } > "$STUB_RECORD"
+# A scratch file of the role's own, the way agent-os#33's refiner wrote its draft bodies: the
+# driver removes the directory whatever it holds.
+if [ -d "${AGENT_RUN_SCRATCH-}" ]; then printf 'draft\\n' > "$AGENT_RUN_SCRATCH/draft.md"; fi
 if [ -n "${STUB_RESOLVE_PACKAGE-}" ]; then
-  python="${PYTHONPATH-}/.venv/bin/python"
+  # The tree the package lives in, relative to the worktree's root: `.` for a package of the
+  # host's own, the mechanism's own directory for the mechanism's package in a vendoring host. Its
+  # venv is the one linked there; the driver's interpreter when there is none, which is the one a
+  # role falls back to (`$AGENT_OS_PYTHON`), and the record says which one answered.
+  tree=$worktree/${STUB_PACKAGE_TREE:-.}
+  if [ -x "$tree/.venv/bin/python" ]; then
+    python="$tree/.venv/bin/python"
+    printf 'PACKAGE_PYTHON=linked\\n' >> "$STUB_RECORD"
+  else
+    python="$AGENT_OS_PYTHON"
+    printf 'PACKAGE_PYTHON=driver\\n' >> "$STUB_RECORD"
+  fi
   # A marker only this worktree's copy of the package carries, dropped while the run is live: the
   # worktree is gone by the time a test reads the record, so the measurement has to happen here.
   # Dropped ONLY into a path the driver itself named a throwaway worktree -- a driver that exported
   # some real checkout's path has to fail the test, not leave a file behind in that checkout.
-  case ${PYTHONPATH-} in
+  case $worktree in
     */worktree-pr*)
-      printf 'dropped by the stub backend\\n' > "$PYTHONPATH/$STUB_RESOLVE_PACKAGE/marker.txt"
+      printf 'dropped by the stub backend\\n' > "$tree/$STUB_RESOLVE_PACKAGE/marker.txt"
       ;;
   esac
   {
@@ -851,12 +874,39 @@ def _the_projects_package() -> str | None:
     return carried[0]
 
 
-def _the_venvs_editable_root() -> pathlib.Path:
+def _the_mechanisms_place_in_the_host() -> pathlib.PurePath | None:
+    """Where the mechanism's own directory sits under the host root: `agent_os` in a host that
+    vendors it, None in the mechanism's own repository, where it IS the root."""
+    if AGENT_OS_DIR.resolve() == ROOT.resolve():
+        return None
+    return AGENT_OS_DIR.resolve().relative_to(ROOT.resolve())
+
+
+def _what_the_export_has_to_resolve() -> tuple[pathlib.PurePath, str, pathlib.Path] | None:
+    """The package the isolation test measures, as (its tree relative to the host root, its name,
+    the venv whose editable install carries it): a package of the host's own when it has one, else
+    -- in a host that vendors the mechanism -- the mechanism's own package, which is what a run
+    that tests a `subtree pull` has to import from the worktree (agent-os#35). None only in a host
+    with neither, one that vendors the mechanism without its `.venv`."""
+    package = _the_projects_package()
+    if package is not None:
+        return pathlib.PurePath("."), package, ROOT / ".venv"
+    place = _the_mechanisms_place_in_the_host()
+    # In the mechanism's own repository the package this measures is right there, and not finding
+    # it is the failure.
+    assert place is not None, f"no package found under the mechanism's own root {ROOT}"
+    if not (AGENT_OS_DIR / ".venv").is_dir():
+        return None
+    return place, "agent_os", AGENT_OS_DIR / ".venv"
+
+
+def _the_venvs_editable_root(venv: pathlib.Path | None = None) -> pathlib.Path:
     """The checkout the shared venv's editable install puts on `sys.path` -- one path in a `.pth`,
     and it is the MAIN checkout's, not the tree whose `.venv` is a link to it. That single line is
     the whole of #393: a worktree that links `.venv` and drops PYTHONPATH imports the code over
-    there."""
-    site_packages = next((ROOT / ".venv" / "lib").glob("python*/site-packages"))
+    there. `venv` is the host root's by default."""
+    venv = ROOT / ".venv" if venv is None else venv
+    site_packages = next((venv / "lib").glob("python*/site-packages"))
     editable = sorted(site_packages.glob("_editable_impl_*.pth"))
     assert len(editable) == 1, f"one editable install expected in {site_packages}: {editable}"
     root = pathlib.Path(editable[0].read_text().strip())
@@ -930,11 +980,16 @@ def test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it(
     assert result.returncode == 0, result.stdout + result.stderr
     seen = _record(launch_environment)
 
-    worktree = pathlib.Path(seen["PYTHONPATH"])
+    worktree = pathlib.Path(seen["WORKTREE"])
     assert worktree != pathlib.Path(launch_environment["PYTHONPATH"]), "the driver exported nothing"
     assert worktree.parent == pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
     assert f"pr{PULL_REQUEST}" in worktree.name
     assert f"worktree:  {worktree}" in result.stdout
+    # The worktree's root alone where the mechanism is the repository, and the worktree's copy of
+    # the mechanism after it where a host vendors it (agent-os#35).
+    place = _the_mechanisms_place_in_the_host()
+    expected = str(worktree) if place is None else f"{worktree}:{worktree / place}"
+    assert seen["PYTHONPATH"] == expected
 
     # A real checkout, populated with the two gitignored things `git worktree add` never brings:
     # the venv is the one whose absence made the 2026-09-16 run symlink the main checkout's in and
@@ -952,13 +1007,88 @@ def test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it(
     assert seen["PWD"] == str(ROOT)
 
 
+# -------------------------------------------------------------------------------------------------
+# agent-os#41: a host whose environment is not a root `.venv` -- a monorepo with `backend/.venv` and
+# `web/node_modules` -- got an empty worktree, and a validator told the worktree was "already
+# populated" could run nothing in it. The driver now provisions it the way the host configures:
+# `project.worktree_setup_command`, run inside the worktree before the backend starts, and a run
+# whose setup fails is refused rather than launched on an environment nobody could build.
+# -------------------------------------------------------------------------------------------------
+
+
+def _config_with_project_keys(environment, tmp_path, **keys) -> None:
+    path = pathlib.Path(environment["AGENTS_CONFIG_PATH"])
+    data = yaml.safe_load(path.read_text())
+    data["project"].update(keys)
+    provisioned = tmp_path / "agents-provisioned.yaml"
+    provisioned.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    environment["AGENTS_CONFIG_PATH"] = str(provisioned)
+
+
+def test_the_worktree_setup_command_runs_inside_the_worktree_before_the_backend_starts(
+    launch_environment, tmp_path
+):
+    _config_with_project_keys(
+        launch_environment,
+        tmp_path,
+        worktree_setup_command='printf "%s" "$PWD" > provisioned-by-setup',
+    )
+    result = _launch(launch_environment, "validator")
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _record(launch_environment)
+    assert seen["WORKTREE_PROVISIONED"] == seen["WORKTREE"], result.stdout + result.stderr
+
+
+def test_a_failing_worktree_setup_command_refuses_the_run_and_removes_the_worktree(
+    launch_environment, tmp_path
+):
+    _config_with_project_keys(
+        launch_environment, tmp_path, worktree_setup_command="echo cannot-sync; exit 7"
+    )
+    result = _launch(launch_environment, "validator")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "project.worktree_setup_command failed" in result.stdout, result.stdout
+    assert "cannot-sync" in result.stdout, result.stdout
+    assert not pathlib.Path(launch_environment["STUB_RECORD"]).exists(), "the backend ran anyway"
+    assert not list(pathlib.Path(launch_environment["AGENT_CACHE_DIR"]).glob("worktree-*"))
+
+
+def test_the_validators_rules_carry_no_host_specific_database_or_duration_claim(tmp_path):
+    # The host's own `never_run` reasons may name its database; the template itself may not.
+    rules = _flattened(_rules("validator", config_path=config_with_no_host_text(tmp_path)))
+    assert "shared database" not in rules
+    assert "50 minutes" not in rules
+    assert "already populated" not in rules
+
+
+def test_the_validators_lint_bullet_renders_the_configured_commands_or_nothing(tmp_path):
+    configured = _flattened(_rules("validator"))
+    assert "`.venv/bin/ruff check <files>`" in configured
+    assert "`.venv/bin/ruff format --check <files>`" in configured
+
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+    data["project"]["lint_commands"] = ["npx eslint"]
+    one_linter = tmp_path / "agents-eslint.yaml"
+    one_linter.write_text(yaml.safe_dump(data, sort_keys=False))
+    rendered = _flattened(_rules("validator", config_path=one_linter))
+    assert "`npx eslint <files>`" in rendered
+    assert "ruff" not in rendered
+
+    data["project"]["lint_commands"] = []
+    no_linter = tmp_path / "agents-no-lint.yaml"
+    no_linter.write_text(yaml.safe_dump(data, sort_keys=False))
+    rendered = _flattened(_rules("validator", config_path=no_linter))
+    assert "ruff" not in rendered
+    assert "__LINT_RULES__" not in rendered
+
+
 @pytest.mark.parametrize("backend_exit_code", [0, 3])
 def test_the_worktree_is_gone_and_unregistered_whatever_the_backend_exited_with(
     backend_exit_code, launch_environment
 ):
     launch_environment["STUB_EXIT_CODE"] = str(backend_exit_code)
     result = _launch(launch_environment, "validator")
-    worktree = pathlib.Path(_record(launch_environment)["PYTHONPATH"])
+    worktree = pathlib.Path(_record(launch_environment)["WORKTREE"])
 
     assert not worktree.exists(), f"the run left {worktree} behind"
     # Removing it is the DETACHED run's own last step (#400), so the line that says it happened is
@@ -987,6 +1117,77 @@ def test_a_role_that_runs_no_tests_gets_no_worktree_and_keeps_the_environment_it
     assert "worktree:" not in result.stdout, result.stdout
 
 
+def _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+    seen: dict[str, str], run_dir: pathlib.Path
+) -> None:
+    """agent-os#33: the refiner, told nowhere where scratch files go, wrote them under its own
+    `.cache/refiner/` and then `rm -rf`'d that directory -- the driver's run log, the PID file the
+    guard reads and every `runs.tsv` row with it. The driver now hands each run a scratch directory
+    of its own, empty, outside that run directory and outside the checkout, and removes it at the
+    run's end whatever the role left in it."""
+    scratch = pathlib.Path(seen.get("SCRATCH", ""))
+    assert seen.get("SCRATCH"), "the run was handed no AGENT_RUN_SCRATCH"
+    assert seen["SCRATCH_IS_EMPTY_DIR"] == "yes", "the scratch dir was not an empty directory"
+    assert not scratch.is_relative_to(run_dir), f"{scratch} lies inside the run dir {run_dir}"
+    assert not scratch.is_relative_to(ROOT), f"{scratch} lies inside the checkout {ROOT}"
+    assert not scratch.exists(), f"the run left its scratch dir {scratch} behind"
+
+
+@pytest.mark.parametrize("role", ONE_SHOT_ROLES)
+def test_a_role_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(role, launch_environment):
+    result = _launch(launch_environment, role)
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_dir = pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
+    _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+        _record(launch_environment), run_dir
+    )
+    # The driver's own bookkeeping is still there to read: the row, and the log it was taken from.
+    assert (run_dir / "runs.tsv").is_file()
+    assert _printed_path(result.stdout, "log").is_file()
+
+
+def test_the_planner_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(
+    launch_environment, tmp_path
+):
+    planner_dir = tmp_path / "planner"
+    launch_environment.update(
+        PLANNER_CACHE_DIR=str(planner_dir),
+        PLANNER_CLAUDE_BIN=launch_environment["AGENT_CLAUDE_BIN"],
+        PLANNER_QWEN_BIN=launch_environment["AGENT_CLAUDE_BIN"],
+    )
+    result = subprocess.run(
+        ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "run", "a test"],
+        cwd=ROOT,
+        env=launch_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+        _record(launch_environment), planner_dir
+    )
+    assert (planner_dir / "runs.tsv").is_file()
+
+
+def test_every_roles_rules_name_the_scratch_dir_and_forbid_the_drivers_own_cache():
+    planner = subprocess.run(
+        ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "rules"],
+        cwd=ROOT,
+        env={**os.environ, "WORKER_CACHE_DIR": NO_VERDICT_CACHE_DIR},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert planner.returncode == 0, planner.stdout + planner.stderr
+    rendered = {"planner": planner.stdout, **{role: _rules(role) for role in ONE_SHOT_ROLES}}
+    for role, rules in rendered.items():
+        flat = _flattened(rules)
+        assert "SCRATCH FILES" in flat, role
+        assert "`$AGENT_RUN_SCRATCH`" in flat, role
+        assert "never write, move or delete anything under `.cache/`" in flat, role
+
+
 def test_by_default_the_worktree_holds_the_head_origin_names_for_that_pull_request(stubbed_origin):
     """Without AGENT_WORKTREE_REF the driver asks origin for `refs/pull/<pr>/head` and builds the
     worktree at exactly that commit -- reviewing some other commit is the failure this exists to
@@ -1000,7 +1201,7 @@ def test_by_default_the_worktree_holds_the_head_origin_names_for_that_pull_reque
     assert any(f"ls-remote origin {pull_ref}" in line for line in calls), calls
     assert any(f"fetch -q origin {pull_ref}" in line for line in calls), calls
     assert seen["WORKTREE_HEAD"] == stubbed_origin["GIT_STUB_PR_HEAD"]
-    assert not pathlib.Path(seen["PYTHONPATH"]).exists(), "the run left its worktree behind"
+    assert not pathlib.Path(seen["WORKTREE"]).exists(), "the run left its worktree behind"
 
 
 def test_the_backend_is_told_the_path_of_the_worktree_it_was_handed(launch_environment):
@@ -1012,7 +1213,7 @@ def test_the_backend_is_told_the_path_of_the_worktree_it_was_handed(launch_envir
     seen = _record(launch_environment)
     prompt = _flattened(_prompt(launch_environment))
 
-    worktree = seen["PYTHONPATH"]
+    worktree = seen["WORKTREE"]
     assert worktree != launch_environment["PYTHONPATH"], "the driver exported what it inherited"
     assert f"Its path is {worktree}." in prompt
     assert "__WORKTREE__" not in prompt
@@ -1041,40 +1242,27 @@ def test_a_run_that_got_no_worktree_is_told_so_instead_of_being_left_to_improvis
         assert command not in prompt, command
 
 
-def test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts(
-    launch_environment, tmp_path
-):
-    """The isolation #393 asks for, measured rather than read off the wording: a marker dropped
-    into the worktree's copy of the package while the run is live is what the venv's own python
-    resolves THROUGH the environment the driver exported -- and what it does not resolve with that
-    PYTHONPATH taken away, which is the tree the 2026-09-16 validator's suite actually ran on while
-    its review talked about the branch."""
-    package = _the_projects_package()
-    if package is None:
-        # Only a host that vendors the mechanism may lack one: in the mechanism's own repository
-        # the package this measures is right there, and not finding it is the failure.
-        assert ROOT != AGENT_OS_DIR, f"no package found under the mechanism's own root {ROOT}"
-        pytest.skip(
-            f"{ROOT} has no top-level package and .venv of its own for the export to resolve"
-        )
-    resolver = tmp_path / "resolve_package.py"
-    resolver.write_text(PACKAGE_RESOLVER)
-    launch_environment["STUB_RESOLVE_PACKAGE"] = package
-    launch_environment["STUB_RESOLVER"] = str(resolver)
-
-    result = _launch(launch_environment, "validator")
-    assert result.returncode == 0, result.stdout + result.stderr
-    seen = _record(launch_environment)
+def _assert_the_run_resolved_the_worktrees_copy(
+    seen: dict[str, str],
+    host_root: pathlib.Path,
+    tree: pathlib.PurePath,
+    package: str,
+    venv: pathlib.Path,
+) -> None:
+    """The measurement both isolation tests make of one stub record: `package`, in `tree` of the
+    worktree, is what the venv's python resolves through the exported environment, and the
+    editable install's copy is what it resolves without it."""
     assert "ORIGIN" in seen, f"the stub resolved no package; it recorded {sorted(seen)}"
-    worktree = pathlib.Path(seen["PYTHONPATH"])
+    worktree = pathlib.Path(seen["WORKTREE"])
+    installed = _the_venvs_editable_root(venv)
 
     # Only the worktree's copy ever carried the marker: not this checkout's, and not the one the
     # editable install names. The worktree itself is gone by now -- removed on every exit path, as
     # the test above asserts -- so MARKER=yes in the record is the evidence it was there.
-    assert not (ROOT / package / "marker.txt").exists()
-    assert not (_the_venvs_editable_root() / package / "marker.txt").exists()
+    assert not (host_root / tree / package / "marker.txt").exists()
+    assert not (installed / package / "marker.txt").exists()
 
-    assert seen["ORIGIN"] == str(worktree / package / "__init__.py")
+    assert seen["ORIGIN"] == str(worktree / tree / package / "__init__.py")
     assert seen["MARKER"] == "yes"
 
     # The control, and the half that makes the two assertions above a measurement of the driver's
@@ -1083,9 +1271,201 @@ def test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_
     # the variable the driver exported -- with it the worktree's copy, without it the checkout the
     # `.pth` names.
     assert seen["INHERITED_EXECUTABLE"] == seen["EXECUTABLE"]
-    assert seen["INHERITED_ORIGIN"] == str(_the_venvs_editable_root() / package / "__init__.py")
+    assert seen["INHERITED_ORIGIN"] == str(installed / package / "__init__.py")
     assert seen["INHERITED_MARKER"] == "no"
     assert not pathlib.Path(seen["INHERITED_ORIGIN"]).is_relative_to(worktree)
+
+
+def test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts(
+    launch_environment, tmp_path
+):
+    """The isolation #393 asks for, measured rather than read off the wording: a marker dropped
+    into the worktree's copy of the package while the run is live is what the venv's own python
+    resolves THROUGH the environment the driver exported -- and what it does not resolve with that
+    PYTHONPATH taken away, which is the tree the 2026-09-16 validator's suite actually ran on while
+    its review talked about the branch. In a host that vendors the mechanism and has no package of
+    its own, the package measured is the mechanism's (agent-os#35)."""
+    measured = _what_the_export_has_to_resolve()
+    if measured is None:
+        pytest.skip(f"{ROOT} vendors the mechanism with no .venv of its own for the export to use")
+    tree, package, venv = measured
+    resolver = tmp_path / "resolve_package.py"
+    resolver.write_text(PACKAGE_RESOLVER)
+    launch_environment["STUB_RESOLVE_PACKAGE"] = package
+    launch_environment["STUB_PACKAGE_TREE"] = str(tree)
+    launch_environment["STUB_RESOLVER"] = str(resolver)
+
+    result = _launch(launch_environment, "validator")
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _record(launch_environment)
+    assert seen.get("PACKAGE_PYTHON") == "linked", seen
+    _assert_the_run_resolved_the_worktrees_copy(seen, ROOT, tree, package, venv)
+
+
+def _copy_of_the_mechanism(destination: pathlib.Path) -> None:
+    """The mechanism's tracked files as they stand in this tree, copied to `destination`: what a
+    `git subtree add --prefix <destination>` puts in a host, including this change's own drivers
+    and not whatever the last commit holds."""
+    listed = subprocess.run(
+        ["git", "-C", str(AGENT_OS_DIR), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    for relative in filter(None, listed):
+        source = AGENT_OS_DIR / relative
+        if not source.is_file():
+            continue
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _git(directory: pathlib.Path, *arguments: str) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(directory),
+            "-c",
+            "user.name=agent-os test",
+            "-c",
+            "user.email=test@example.invalid",
+            *arguments,
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+
+@pytest.fixture
+def vendoring_host(launch_environment, tmp_path):
+    """A throwaway host that vendors the mechanism as the documented install does: a git
+    repository of its own with the mechanism under `agent_os/`, no package and no `.venv` at its
+    root, and the mechanism's own `agent_os/.venv` whose editable install names the host's
+    `agent_os/` -- the `.pth` line the mechanism's `bootstrap.sh` leaves, pointing at the MAIN
+    checkout's copy. Its dependencies come from this suite's own interpreter, through a second
+    `.pth` that sorts after the editable one. Returns the host root and the environment a launch
+    of ITS driver runs with."""
+    host = tmp_path / "vendoring-host"
+    mechanism = host / "agent_os"
+    _copy_of_the_mechanism(mechanism)
+    (host / "scripts").mkdir()
+    (host / "scripts" / "tool.sh").write_text("#!/usr/bin/env bash\n")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(host)], capture_output=True, check=True)
+    _git(host, "add", "-A")
+    _git(host, "commit", "-q", "-m", "vendor the mechanism")
+
+    venv.EnvBuilder(symlinks=True, with_pip=False).create(mechanism / ".venv")
+    site_packages = next((mechanism / ".venv" / "lib").glob("python*/site-packages"))
+    (site_packages / "_editable_impl_agent_os.pth").write_text(f"{mechanism}\n")
+    dependencies = [path for path in map(pathlib.Path, site.getsitepackages()) if path.is_dir()]
+    (site_packages / "zz_dependencies.pth").write_text(
+        "".join(f"{path}\n" for path in dependencies)
+    )
+
+    environment = dict(launch_environment)
+    # Resolved by the host's own driver, exactly as a real launch there resolves them: an inherited
+    # answer from whatever launched this suite would point the driver at another tree.
+    for inherited in ("AGENT_OS_HOST_ROOT", "AGENT_OS_PYTHON", "AGENT_OS_DIR"):
+        environment.pop(inherited, None)
+    return host, environment
+
+
+def test_a_vendoring_hosts_role_imports_the_worktrees_copy_of_the_mechanism(
+    vendoring_host, tmp_path
+):
+    """agent-os#35: a validator testing a host pull request that changes `agent_os/` -- a `subtree
+    pull` -- has to run the mechanism's code from that pull request. With `PYTHONPATH=<worktree>`
+    alone, `<worktree>/agent_os/` is a directory with no `__init__.py`, a namespace portion, and the
+    regular package the editable install puts on `sys.path` wins over it: the run imports the MAIN
+    checkout's mechanism and certifies code it never executed. Measured here with the venv the
+    driver links into the worktree, and with the mechanism's `agent_os/.venv/bin/python`, which is
+    what `agent_os/.venv/bin/pytest agent_os/tests` runs under."""
+    host, environment = vendoring_host
+    resolver = tmp_path / "resolve_package.py"
+    resolver.write_text(PACKAGE_RESOLVER)
+    environment.update(
+        STUB_RESOLVE_PACKAGE="agent_os",
+        STUB_PACKAGE_TREE="agent_os",
+        STUB_RESOLVER=str(resolver),
+    )
+
+    result = subprocess.run(
+        ["bash", str(host / "agent_os" / "bin" / "agent_task.sh"), "validator", PULL_REQUEST]
+        + ["--no-wake"],
+        cwd=host,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    pid = _detached_pid(result.stdout)
+    if pid is not None:
+        _wait_for_run_to_end(pid)
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _record(environment)
+
+    worktree = pathlib.Path(seen["WORKTREE"])
+    assert worktree.parent == pathlib.Path(environment["AGENT_CACHE_DIR"]), seen
+    # The defect itself first: whichever of the two interpreters answered -- the linked venv, or
+    # the driver's own when there is no link -- it is the same venv and the same editable install.
+    _assert_the_run_resolved_the_worktrees_copy(
+        seen, host, pathlib.PurePath("agent_os"), "agent_os", host / "agent_os" / ".venv"
+    )
+    # The mechanism's own venv, linked where `agent_os/.venv/bin/pytest` names it.
+    assert seen["PACKAGE_PYTHON"] == "linked", seen
+    assert seen["PYTHONPATH"] == f"{worktree}:{worktree / 'agent_os'}"
+    assert not worktree.exists(), f"the run left {worktree} behind"
+
+
+def _link_the_mechanisms_venv(host: pathlib.Path, worktree: pathlib.Path) -> str:
+    """`agent_os_link_mechanism_venv` in the mode a worker's persistent worktree uses."""
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1/agent_os/bin/_python.sh" && agent_os_link_mechanism_venv "$2" "$1" "$3"',
+            "link",
+            str(host),
+            str(worktree),
+            "only-if-ignored",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def test_a_workers_worktree_gets_the_mechanisms_venv_only_where_git_ignores_the_link(
+    vendoring_host, tmp_path
+):
+    """A worker's worktree outlives its run, and an untracked entry in it refuses the next start.
+    A symlink is not a directory to git, so a `.venv/` rule does not ignore it: on a branch cut
+    before the mechanism's `.gitignore` said `.venv`, the driver leaves the link out rather than
+    dirty the tree (agent-os#35). On a branch that ignores it, the link is there and the tree
+    stays clean."""
+    host, _ = vendoring_host
+    ignoring = tmp_path / "ignoring"
+    _git(host, "worktree", "add", "-q", "--detach", str(ignoring), "HEAD")
+    assert "linked" in _link_the_mechanisms_venv(host, ignoring)
+    assert (ignoring / "agent_os" / ".venv").is_symlink()
+    assert (ignoring / "agent_os" / ".venv" / "bin" / "python").exists()
+    clean = subprocess.run(
+        ["git", "-C", str(ignoring), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert clean.stdout == ""
+
+    gitignore = host / "agent_os" / ".gitignore"
+    gitignore.write_text(gitignore.read_text().replace(".venv\n", ".venv/\n", 1))
+    _git(host, "commit", "-q", "-am", "the ignore rule before agent-os#35")
+    older = tmp_path / "older"
+    _git(host, "worktree", "add", "-q", "--detach", str(older), "HEAD")
+    assert _link_the_mechanisms_venv(host, older) == ""
+    assert not (older / "agent_os" / ".venv").exists()
 
 
 # -------------------------------------------------------------------------------------------------
@@ -1219,7 +1599,7 @@ def test_a_run_finishes_after_the_shell_that_launched_it_is_killed(launch_enviro
     # And the run's own half still happened after the kill: the worktree removed, the row saying
     # the run happened, and the event that brings the planner back to the pull request. PR #399 got
     # none of the three.
-    worktree = pathlib.Path(seen["PYTHONPATH"])
+    worktree = pathlib.Path(seen["WORKTREE"])
     assert not worktree.exists(), f"the killed launch left {worktree} behind"
     assert f"worktree:  removed {worktree}" in _run_log(printed)
 

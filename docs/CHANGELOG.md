@@ -9,6 +9,79 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 ## Unreleased
 
 - The mechanism is released under the MIT License (`LICENSE`).
+- agent-os#39 — a split no longer strands the original's dependents. `issues.py supersede N
+  --by A --by B [--route D=A]` rewrites every open issue's `Blocked by #N` line to the children
+  (all of them unless a route narrows one dependent), comments on each dependent, then comments
+  `Superseded by #A, #B` on N and closes it as `not planned`; it refuses a feature (its children
+  are its parts), a child that is not open, and is idempotent. The refiner prompt calls it after
+  splitting a task or bug. Before, the original stayed open and its dependents blocked forever, or
+  unblocked too early when a human closed it; a host rewriting dependents by hand can stop.
+- agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
+  App without the Workflows permission create or update a ref whose tree differs from the
+  default branch under `.github/workflows/` -- which a stale branch hits without touching a
+  workflow, typically after `open-pr`'s merge with its base conflicted -- now writes
+  `BLOCKED reason=workflows_permission` instead of attempting a fast-forward onto a remote branch
+  that does not exist. Every rejected push, classified or not, now comments the rejection on the
+  issue and moves it to `status:blocked-on-human`; it used to stay in `status:doing` with no pull
+  request and nothing visible. A later successful `open-pr` rewrites a leftover `BLOCKED` line 1
+  of `.state` to `DONE`. Hosts whose worker Apps lack Workflows permission: see `ADOPTION.md` §3.
+- agent-os#41 — a fresh worktree is provisioned the way the host configures it, not by a
+  hard-coded root `.venv`/`.env` link: `project.worktree_links` (default `[.venv, .env]`, the old
+  behaviour) are symlinked from the main checkout, then `project.worktree_setup_command` (default
+  empty) runs inside the worktree, for both the validator's throwaway worktree and
+  `worker_task.sh <backend> init` (one shared helper, `agent_provision_worktree`). A setup that
+  exits non-zero refuses the run -- no validator is launched, `init` removes the half-made tree
+  and its branch -- instead of handing an agent an empty tree. The validator's prompt no longer
+  claims the worktree is "already populated", its lint bullet renders from the new
+  `project.lint_commands` (default empty: no bullet; `config.example.yaml` keeps the two `ruff`
+  commands), and the shared-database pytest warning and the "~50 minutes" suite duration are gone
+  (a host that needs the warning puts it in `never_run` or its validator `prompt_extras`). Closes
+  §7 row (aa). Host follow-up: a monorepo sets `worktree_setup_command` to its own bootstrap
+  (e.g. its `uv sync --frozen` / `npm ci`); a host that relied on the validator's ruff bullet sets
+  `lint_commands`.
+
+- agent-os#35 — in a host that vendors the mechanism under `agent_os/`, a role's worktree now runs
+  the worktree's copy of the mechanism, not the main checkout's. `PYTHONPATH=<worktree>` alone
+  left `<worktree>/agent_os/` as a namespace portion (it has no `__init__.py`), so the regular
+  package the mechanism venv's editable `.pth` puts on `sys.path` won, and a validator testing a
+  `subtree pull` certified code it never ran. The drivers now export
+  `PYTHONPATH=<worktree>:<worktree>/agent_os` there (unchanged where the mechanism is the
+  repository root) and link `agent_os/.venv` into the worktree beside the root `.venv` and `.env`;
+  a worker's persistent worktree gets the link only where git ignores it. The mechanism's
+  `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
+  isolation test measures the mechanism's own package in such a host instead of skipping.
+- agent-os#32 — `refine_pending` names the head of a ranked refine queue instead of the ten
+  newest refine-needing issues: `guard.refinable_issues()` sorts by `lib.refine_queue_rank` —
+  parent carries `labels.auto_ready` first, then the issue's best label in `labels.priorities`
+  (none sorts last), then no open `Blocked by #N`, then issue number ascending. The parent's
+  labels are read once per distinct parent, through the same lookup `promote_refined` now
+  shares. The planner prompt says the list is in that order and to launch the refiner on the
+  earliest listed issue that passes its summary check. A host that parked refine-needing issues
+  to steer the order (studentassistant's `scripts/refine_window.py`) can drop that after the
+  subtree pull.
+
+- agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
+  that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
+  the given title. An issue created through the API skips GitHub's form, which is what adds the
+  prefix to a hand-written one, so the refiner's sub-issues came out without it. A title that
+  already starts with the prefix (case-insensitive, with or without its space) is left alone,
+  so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
+  keeps its title.
+
+- agent-os#37 — `agent_guard.py tick` no longer dies on a stream event whose top-level `message`
+  is a string (Claude Code's `system/permission_denied`, written when it refuses a tool call):
+  the parsers, the guard's loop detector and the drivers' inline readers take `message` as an
+  API message only when it is an object, and `read_events` drops any line that parses to
+  something other than an object. One refused command used to stall every tick -- no promotion,
+  no liveness, no quota verdict -- until its log aged out of the quota window. A host that worked
+  around it (a `sanitize_role_logs.py` `ExecStartPre` rewriting the key) can drop the workaround.
+- agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
+  each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
+  and the checkout, which the driver removes when the run ends; the three prompts name it and
+  forbid writing, moving or deleting anything under `.cache/`. A refiner had written its drafts
+  into `.cache/refiner/` and then `rm -rf`'d it, deleting the run log, the PID file `role_died`
+  detection reads and every `runs.tsv` row. A host's `prompt_extras` telling a role to use
+  `mktemp -d` is no longer needed.
 - agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
   (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
   the column `project.board_columns` maps that state to on the item it just added. Before, a later

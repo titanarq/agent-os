@@ -20,6 +20,7 @@ from agent_os.lib import (
     ProjectConfig,
     load_project,
     render_human_message,
+    replace_blocker,
 )
 
 # --------------------------------------------------------------------------------------------
@@ -447,6 +448,69 @@ def test_create_refuses_a_template_and_a_body_file_at_once():
                 label=None,
             )
         )
+
+
+def _created_title(title, *, issue_type="task", template=None):
+    """The title `cmd_create` sends to GitHub, every `gh` call mocked."""
+    created = {"number": 9, "id": 99, "html_url": "u"}
+    with (
+        patch.object(issues, "repo_name", return_value="owner/name"),
+        patch.object(issues, "ensure_fixed_labels", return_value=set()),
+        patch.object(issues, "ensure_labels"),
+        patch.object(issues, "create_issue", return_value=created) as create,
+        patch.object(issues, "add_to_board", return_value=[]),
+    ):
+        issues.cmd_create(
+            argparse.Namespace(
+                type=None if template else issue_type,
+                title=title,
+                parent=None,
+                body_file=None,
+                template=template,
+                label=None,
+            )
+        )
+    return create.call_args[0][1]
+
+
+@pytest.mark.parametrize(
+    "issue_type,prefixed", [("task", "[task] Split it"), ("bug", "[bug] Split it")]
+)
+def test_create_prefixes_the_title_the_types_template_declares(
+    shipped_issue_templates, issue_type, prefixed
+):
+    """#15: the refiner's `create --type task --title T` produced `T`, not the `[task] T` the
+    template's front matter declares and every hand-written task carries."""
+    assert _created_title("Split it", issue_type=issue_type) == prefixed
+
+
+def test_create_from_a_template_also_prefixes_the_title(shipped_issue_templates):
+    assert _created_title("Split it", template="task") == "[task] Split it"
+
+
+@pytest.mark.parametrize("title", ["[task] Split it", "[task]Split it", "[Task] Split it"])
+def test_create_never_prefixes_a_title_that_already_carries_the_prefix(
+    shipped_issue_templates, title
+):
+    assert _created_title(title) == title
+
+
+def test_prefixing_twice_is_prefixing_once(shipped_issue_templates):
+    assert _created_title(_created_title("Split it")) == "[task] Split it"
+
+
+def test_the_prefix_comes_from_the_hosts_template_never_from_the_code(shipped_issue_templates):
+    task = shipped_issue_templates / "task.md"
+    task.write_text(task.read_text().replace("title: '[task] '", "title: 'TASK: '"))
+    assert _created_title("Split it") == "TASK: Split it"
+
+
+def test_a_type_with_no_template_or_no_title_in_it_keeps_its_title(shipped_issue_templates):
+    # `epic` and `feature` have no template; a template may declare no `title:` at all.
+    assert _created_title("Group them", issue_type="epic") == "Group them"
+    bug = shipped_issue_templates / "bug.md"
+    bug.write_text(bug.read_text().replace("title: '[bug] '\n", ""))
+    assert _created_title("Split it", issue_type="bug") == "Split it"
 
 
 def test_create_from_a_template_sends_the_scaffold_as_the_body_and_infers_the_type(
@@ -1116,3 +1180,101 @@ def test_cmd_brief_writes_the_assembled_file(tmp_path):
         )
     text = output.read_text()
     assert "## Supplement" in text and "Extra context." in text
+
+
+# ---- supersede: the refiner's split, closed out deterministically (#39) ----------------------
+
+
+def test_replace_blocker_rewrites_the_original_line_to_every_child_in_its_indentation():
+    body = "## Dependencies\n  Blocked by #15\nBlocked by #3\n\n## Definition of done\nx\n"
+    assert replace_blocker(body, 15, [84, 85]) == (
+        "## Dependencies\n  Blocked by #84\n  Blocked by #85\nBlocked by #3\n\n"
+        "## Definition of done\nx\n"
+    )
+
+
+def test_replace_blocker_never_duplicates_a_child_the_body_already_lists():
+    body = "## Dependencies\nBlocked by #84\nBlocked by #15"
+    assert replace_blocker(body, 15, [84, 85]) == "## Dependencies\nBlocked by #84\nBlocked by #85"
+
+
+def test_replace_blocker_leaves_a_body_that_does_not_name_the_original_alone():
+    assert replace_blocker("## Dependencies\nBlocked by #150\nsee #15", 15, [84]) is None
+
+
+def _supersede(rows, *, original_state="OPEN", original_labels=(), routes=None, children=(84, 85)):
+    """`supersede` against a fake tracker: `gh issue view` of the original, `gh issue list` of the
+    open issues, every write recorded. Never shells out."""
+    view = {"state": original_state, "labels": [{"name": n} for n in original_labels]}
+    calls = []
+
+    def fake_gh_json(*args, **_kwargs):
+        calls.append(("gh", args))
+        return rows if args[:2] == ("issue", "list") else {}
+
+    def fake_update(repo, number, fields):
+        calls.append(("update", number, fields))
+        return {}
+
+    with (
+        patch.object(issues, "gh_json_dict", return_value=view),
+        patch.object(issues, "gh_json", side_effect=fake_gh_json),
+        patch.object(issues, "update_issue", side_effect=fake_update),
+    ):
+        lines = issues.supersede("owner/name", 15, list(children), routes or {})
+    return lines, calls
+
+
+SPLIT_ROWS = [
+    {"number": 15, "body": "the original"},
+    {"number": 84, "body": "child a"},
+    {"number": 85, "body": "child b"},
+    {"number": 20, "body": "## Dependencies\nBlocked by #15\n"},
+    {"number": 21, "body": "## Dependencies\nBlocked by #15\nBlocked by #3\n"},
+    {"number": 22, "body": "## Dependencies\nnone\n"},
+]
+
+
+def test_supersede_repoints_every_dependent_comments_on_it_and_closes_the_original():
+    lines, calls = _supersede(SPLIT_ROWS, routes={21: [85]})
+    updates = {call[1]: call[2] for call in calls if call[0] == "update"}
+    assert updates[20] == {"body": "## Dependencies\nBlocked by #84\nBlocked by #85\n"}
+    assert updates[21] == {"body": "## Dependencies\nBlocked by #85\nBlocked by #3\n"}
+    assert updates[15] == {"state": "closed", "state_reason": "not_planned"}
+    assert 22 not in updates
+    comments = {
+        call[1][1]: call[1][-1] for call in calls if call[0] == "gh" and call[1][0] == "api"
+    }
+    assert "#15 was split into #84, #85" in comments["repos/owner/name/issues/20/comments"]
+    assert comments["repos/owner/name/issues/15/comments"] == "body=Superseded by #84, #85."
+    # The dependents are repointed before the original closes: a run cut in between leaves every
+    # dependent still blocked, never unblocked early.
+    order = [call[1] for call in calls if call[0] == "update"]
+    assert order[-1] == 15
+    assert lines[-1] == "closed #15 as not planned, superseded by #84, #85"
+
+
+def test_supersede_run_twice_changes_nothing_the_second_time():
+    rewritten = [dict(row) for row in SPLIT_ROWS if row["number"] != 15]
+    for row in rewritten:
+        row["body"] = row["body"].replace("#15", "#84")
+    lines, calls = _supersede(rewritten, original_state="CLOSED")
+    assert [call for call in calls if call[0] == "update"] == []
+    assert lines == ["#15 was already closed"]
+
+
+def test_supersede_refuses_a_child_that_is_not_an_open_issue():
+    with pytest.raises(SystemExit, match="#99 is not an open issue"):
+        _supersede(SPLIT_ROWS, children=(84, 99))
+
+
+def test_supersede_refuses_a_feature_whose_children_are_its_parts():
+    feature = issues.type_labels()["feature"]
+    with pytest.raises(SystemExit, match="only a split task or bug"):
+        _supersede(SPLIT_ROWS, original_labels=(feature,))
+
+
+def test_parse_routes_refuses_a_child_outside_the_split():
+    with pytest.raises(SystemExit, match="#7 is not one of the --by children"):
+        issues.parse_routes(["21=7"], [84, 85])
+    assert issues.parse_routes(["#21=#85, 84"], [84, 85]) == {21: [85, 84]}
