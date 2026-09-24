@@ -35,6 +35,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `.venv` `bootstrap.sh` builds), and refuses with a message naming `bootstrap.sh` and
   `AGENT_OS_PYTHON` when that is not an absolute path to an executable, in the module form too.
   Nothing is written in that case.
+- agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
+  by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
+  exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
+  doctor's label check on its first run. Step 23 now says four labels, not three.
+  `tests/test_adoption_doc.py` asks `doctor.check_labels` which labels it requires and fails when
+  step 12 leaves one out.
 - agent-os#18 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over the
   previous run's diary: when `.state` records that run's ending (`DONE`, `CUT_BY_GUARD`,
   `FAILED_LAUNCH`, `BLOCKED`), nothing is alive and the untracked `scratchpad/progress.log` is the
