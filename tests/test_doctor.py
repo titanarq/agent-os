@@ -409,6 +409,28 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
     }
 
 
+# agent-os#10: the hint a failed timer check prints is read on a host that has only what ships in
+# `agent_os/`. It says what to run, and any doc it names is one this repository ships.
+
+
+def _named_docs_exist(text):
+    import re
+
+    from agent_os.cli import AGENT_OS_DIR
+
+    named = re.findall(r"(?:agent_os/)?docs/[\w./-]+\.md", text)
+    return [path for path in named if not (AGENT_OS_DIR / path.removeprefix("agent_os/")).is_file()]
+
+
+def test_check_guard_timer_hint_is_self_sufficient_and_names_only_shipped_docs():
+    with patch("agent_os.doctor.subprocess.run", return_value=_completed(stdout="inactive\n")):
+        check = doctor.check_guard_timer(_project())
+    assert not check.ok
+    assert "systemctl --user enable --now acme-guard.timer" in check.detail
+    assert "agent-os-install" in check.detail
+    assert _named_docs_exist(check.detail) == [], check.detail
+
+
 # --------------------------------------------------------------------------------------------
 # A `gh` failure inside one check (agent-os#4): that check turns into a [FAIL] carrying the error
 # and every other check still runs -- `gh_json` answers a failure with `sys.exit`, which used to
