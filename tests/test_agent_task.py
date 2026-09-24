@@ -562,7 +562,13 @@ if [ -n "${STUB_STREAM-}" ]; then cat "$STUB_STREAM"; fi
   printf 'WORKTREE_PYTEST=%s\\n' "$([ -x "${PYTHONPATH-}/.venv/bin/pytest" ] && echo yes || echo no)"
   printf 'WORKTREE_ENV_FILE=%s\\n' "$([ -e "${PYTHONPATH-}/.env" ] && echo yes || echo no)"
   printf 'WORKTREE_HEAD=%s\\n' "$(git -C "${PYTHONPATH-}" rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'SCRATCH=%s\\n' "${AGENT_RUN_SCRATCH-}"
+  printf 'SCRATCH_IS_EMPTY_DIR=%s\\n' \\
+    "$([ -d "${AGENT_RUN_SCRATCH-}" ] && [ -z "$(ls -A "$AGENT_RUN_SCRATCH")" ] && echo yes || echo no)"
 } > "$STUB_RECORD"
+# A scratch file of the role's own, the way agent-os#33's refiner wrote its draft bodies: the
+# driver removes the directory whatever it holds.
+if [ -d "${AGENT_RUN_SCRATCH-}" ]; then printf 'draft\\n' > "$AGENT_RUN_SCRATCH/draft.md"; fi
 if [ -n "${STUB_RESOLVE_PACKAGE-}" ]; then
   python="${PYTHONPATH-}/.venv/bin/python"
   # A marker only this worktree's copy of the package carries, dropped while the run is live: the
@@ -985,6 +991,77 @@ def test_a_role_that_runs_no_tests_gets_no_worktree_and_keeps_the_environment_it
     assert seen["PYTHONPATH"] == launch_environment["PYTHONPATH"], "the refiner got a worktree"
     assert not list(pathlib.Path(launch_environment["AGENT_CACHE_DIR"]).glob("worktree-*"))
     assert "worktree:" not in result.stdout, result.stdout
+
+
+def _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+    seen: dict[str, str], run_dir: pathlib.Path
+) -> None:
+    """agent-os#33: the refiner, told nowhere where scratch files go, wrote them under its own
+    `.cache/refiner/` and then `rm -rf`'d that directory -- the driver's run log, the PID file the
+    guard reads and every `runs.tsv` row with it. The driver now hands each run a scratch directory
+    of its own, empty, outside that run directory and outside the checkout, and removes it at the
+    run's end whatever the role left in it."""
+    scratch = pathlib.Path(seen.get("SCRATCH", ""))
+    assert seen.get("SCRATCH"), "the run was handed no AGENT_RUN_SCRATCH"
+    assert seen["SCRATCH_IS_EMPTY_DIR"] == "yes", "the scratch dir was not an empty directory"
+    assert not scratch.is_relative_to(run_dir), f"{scratch} lies inside the run dir {run_dir}"
+    assert not scratch.is_relative_to(ROOT), f"{scratch} lies inside the checkout {ROOT}"
+    assert not scratch.exists(), f"the run left its scratch dir {scratch} behind"
+
+
+@pytest.mark.parametrize("role", ONE_SHOT_ROLES)
+def test_a_role_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(role, launch_environment):
+    result = _launch(launch_environment, role)
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_dir = pathlib.Path(launch_environment["AGENT_CACHE_DIR"])
+    _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+        _record(launch_environment), run_dir
+    )
+    # The driver's own bookkeeping is still there to read: the row, and the log it was taken from.
+    assert (run_dir / "runs.tsv").is_file()
+    assert _printed_path(result.stdout, "log").is_file()
+
+
+def test_the_planner_is_handed_a_scratch_dir_of_its_own_and_the_run_removes_it(
+    launch_environment, tmp_path
+):
+    planner_dir = tmp_path / "planner"
+    launch_environment.update(
+        PLANNER_CACHE_DIR=str(planner_dir),
+        PLANNER_CLAUDE_BIN=launch_environment["AGENT_CLAUDE_BIN"],
+        PLANNER_QWEN_BIN=launch_environment["AGENT_CLAUDE_BIN"],
+    )
+    result = subprocess.run(
+        ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "run", "a test"],
+        cwd=ROOT,
+        env=launch_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_a_scratch_dir_of_the_runs_own_was_handed_and_removed(
+        _record(launch_environment), planner_dir
+    )
+    assert (planner_dir / "runs.tsv").is_file()
+
+
+def test_every_roles_rules_name_the_scratch_dir_and_forbid_the_drivers_own_cache():
+    planner = subprocess.run(
+        ["bash", str(AGENT_OS_DIR / "bin" / "planner_task.sh"), "rules"],
+        cwd=ROOT,
+        env={**os.environ, "WORKER_CACHE_DIR": NO_VERDICT_CACHE_DIR},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert planner.returncode == 0, planner.stdout + planner.stderr
+    rendered = {"planner": planner.stdout, **{role: _rules(role) for role in ONE_SHOT_ROLES}}
+    for role, rules in rendered.items():
+        flat = _flattened(rules)
+        assert "SCRATCH FILES" in flat, role
+        assert "`$AGENT_RUN_SCRATCH`" in flat, role
+        assert "never write, move or delete anything under `.cache/`" in flat, role
 
 
 def test_by_default_the_worktree_holds_the_head_origin_names_for_that_pull_request(stubbed_origin):
