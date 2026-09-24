@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#39 — a split no longer strands the original's dependents. `issues.py supersede N
+  --by A --by B [--route D=A]` rewrites every open issue's `Blocked by #N` line to the children
+  (all of them unless a route narrows one dependent), comments on each dependent, then comments
+  `Superseded by #A, #B` on N and closes it as `not planned`; it refuses a feature (its children
+  are its parts), a child that is not open, and is idempotent. The refiner prompt calls it after
+  splitting a task or bug. Before, the original stayed open and its dependents blocked forever, or
+  unblocked too early when a human closed it; a host rewriting dependents by hand can stop.
 - agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
   App without the Workflows permission create or update a ref whose tree differs from the
   default branch under `.github/workflows/` -- which a stale branch hits without touching a
