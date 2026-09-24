@@ -40,7 +40,8 @@ run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 planner_dir=${PLANNER_CACHE_DIR:-$(agent_run_dir planner)}
 logfile=$planner_dir/$run_stamp.log
 runs_tsv=$planner_dir/runs.tsv
-mkdir -p "$planner_dir"
+# Created by `run` alone, the one subcommand that writes there: before agent-os#25 `rules` made it
+# too, and every test that rendered the planner's rules left `.cache/planner/` in the checkout.
 
 # Worktrees, identities and every other project-specific value come from config/agents.yaml's
 # `project:` section -- agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-
@@ -91,6 +92,7 @@ rules)
   ;;
 run)
   context=${2:-"(no context given -- manual invocation)"}
+  mkdir -p "$planner_dir"
 
   # GitHub identity: its own App, distinct from a worker's backend identity, so a planning
   # decision reads as one at a glance -- agent_os/docs/adr/2026-09-14-the-planner-has-its-own-github-
