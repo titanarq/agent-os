@@ -8,6 +8,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#61 — `worker_task.sh open-pr` classifies a rejected push. GitHub's refusal to let an
+  App without the Workflows permission create or update a ref whose tree differs from the
+  default branch under `.github/workflows/` -- which a stale branch hits without touching a
+  workflow, typically after `open-pr`'s merge with its base conflicted -- now writes
+  `BLOCKED reason=workflows_permission` instead of attempting a fast-forward onto a remote branch
+  that does not exist. Every rejected push, classified or not, now comments the rejection on the
+  issue and moves it to `status:blocked-on-human`; it used to stay in `status:doing` with no pull
+  request and nothing visible. A later successful `open-pr` rewrites a leftover `BLOCKED` line 1
+  of `.state` to `DONE`. Hosts whose worker Apps lack Workflows permission: see `ADOPTION.md` §3.
 - agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
   that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
   the given title. An issue created through the API skips GitHub's form, which is what adds the

@@ -4158,6 +4158,90 @@ def test_open_pr_stops_and_leaves_the_issue_alone_when_the_push_is_rejected(work
     assert state == "BLOCKED reason=push_rejected branch=claude/348-pr", state
     recorded = calls.read_text() if calls.is_file() else ""
     assert "labels[]=status:ai-completed" not in recorded, recorded
+    # ... but never silently in `doing` (#61): the issue says why and waits for a human.
+    assert "labels[]=status:blocked-on-human" in recorded, recorded
+    posted = [line for line in recorded.splitlines() if "/comments\t-X\tPOST" in line]
+    assert len(posted) == 1, recorded
+    assert "rejected" in recorded
+    assert "pr\tcreate" not in recorded
+
+
+def _reject_pushes_like_github_without_workflows_permission(remote):
+    """GitHub's own refusal, as the remote says it: a pre-receive hook on the local bare origin
+    prints the message a GitHub App without `workflows` permission gets, and declines the push."""
+    hook = remote / "hooks" / "pre-receive"
+    hook.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo 'refusing to allow a GitHub App to create or update workflow "
+        "`.github/workflows/ci.yml` without `workflows` permission' >&2\n"
+        "exit 1\n"
+    )
+    hook.chmod(0o755)
+
+
+def test_open_pr_classifies_a_workflows_permission_rejection_and_asks_a_human(worker_at_its_end):
+    """A stale branch pushed by an App without `workflows` permission is refused because its tree
+    differs from the default branch under `.github/workflows/` (#61). That is not a diverged
+    remote: it used to be read as one, end in `BLOCKED reason=push_rejected`, and leave finished
+    work in `doing` with no pull request, no comment and no `blocked-on-human`."""
+    environment, _worktree, remote, cache, calls = worker_at_its_end
+    _reject_pushes_like_github_without_workflows_permission(remote)
+
+    result = _open_pr(environment)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "was ahead" not in result.stdout, result.stdout
+    assert "workflows" in result.stdout, result.stdout
+    state = (cache / "worker_claude.state").read_text().splitlines()
+    assert state[0] == "BLOCKED reason=workflows_permission branch=claude/348-pr", state
+    assert state[1] == "issue=348 label=status:blocked-on-human", state
+
+    recorded = calls.read_text()
+    assert "pr\tcreate" not in recorded, recorded
+    assert "labels[]=status:ai-completed" not in recorded, recorded
+    assert "labels[]=status:blocked-on-human" in recorded, recorded
+    posted = [line for line in recorded.splitlines() if "/comments\t-X\tPOST" in line]
+    assert len(posted) == 1, recorded
+    # The comment quotes GitHub and says what unblocks it.
+    assert "refusing to allow a GitHub App to create or update workflow" in recorded
+    assert "merge `origin/main` into `claude/348-pr`" in recorded, recorded
+    assert "workflows: write" in recorded
+
+
+def test_open_pr_names_the_conflict_when_the_stale_branch_is_refused(worker_at_its_end):
+    """The conflict path is the one that pushes a stale branch, so it is the one that hits the
+    workflows refusal: the comment names the conflicting paths the human has to resolve."""
+    environment, worktree, remote, cache, calls = worker_at_its_end
+    (worktree / "README.md").write_text("the worker's line\n")
+    _git("add", "README.md", cwd=worktree)
+    _git("commit", "-qm", "the worker rewrote the readme", cwd=worktree)
+    _advance_the_base(
+        remote, path="README.md", contents="somebody else's line\n", subject="the base rewrote it"
+    )
+    _reject_pushes_like_github_without_workflows_permission(remote)
+
+    result = _open_pr(environment)
+    assert result.returncode == 1, result.stdout + result.stderr
+    state = (cache / "worker_claude.state").read_text().splitlines()[0]
+    assert state == "BLOCKED reason=workflows_permission branch=claude/348-pr", state
+    recorded = calls.read_text()
+    assert "- `README.md`" in recorded, recorded
+    assert "labels[]=status:blocked-on-human" in recorded, recorded
+
+
+def test_open_pr_clears_a_previous_blocked_line_when_it_succeeds(worker_at_its_end):
+    """A human fixes what blocked `open-pr` and runs it again: the pull request opens, and the
+    earlier `BLOCKED` line must not outlive it -- `write_state_marker` preserves line 1 (#61)."""
+    environment, _worktree, _remote, cache, calls = worker_at_its_end
+    (cache / "worker_claude.state").write_text(
+        "BLOCKED reason=workflows_permission branch=claude/348-pr\n"
+        "issue=348 label=status:blocked-on-human\n"
+    )
+
+    result = _open_pr(environment)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "pr\tcreate" in calls.read_text()
+    state = (cache / "worker_claude.state").read_text().splitlines()
+    assert state == ["DONE", "issue=348 label=status:ai-completed"], state
 
 
 def test_resume_leaves_a_label_a_human_set_on_a_live_issue_alone(tmp_path):
