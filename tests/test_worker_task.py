@@ -1577,7 +1577,8 @@ def test_start_refuses_at_cap_two_when_the_other_backend_shares_a_module(tmp_pat
 # THE DIRTY SIGNAL SURVIVES (#407). No commit carries the diary, and that is only safe because
 # its uncommitted lines keep the worktree dirty: dirtiness is what `start`, `resume` and `branch`
 # refuse to relaunch a run over, since a diary something is still writing to means a run that is
-# not over. Both shapes the file takes in the wild are covered here -- untracked, which is the
+# not over -- except where the driver has seen the run end (#18 below for `start`/`branch`, #22
+# for `resume` over a cut). Both shapes the file takes in the wild are covered here -- untracked, which is the
 # state of every branch cut after `main` stopped tracking it (5a827d9), and tracked-and-modified,
 # which is what a branch forked before that deletion carries. `.gitignore`-ing the diary, or
 # narrowing these two checks to `--untracked-files=no` the way the pre-merge freeze reads the
@@ -1642,18 +1643,49 @@ def test_start_refuses_a_worktree_whose_tracked_diary_holds_uncommitted_lines(tm
         _stop(environment)
 
 
-def test_resume_refuses_a_worktree_whose_untracked_diary_holds_lines(tmp_path):
-    # One cut commit, so the relaunch cap is not what refuses this: the dirty check comes first.
+# ---------------------------------------------------------------------------------------------
+# AFTER A CUT, THE DIARY IS THE RESUMED RUN'S OWN HISTORY (#22). The signal above is #407's, and it
+# does not hold for `resume` over a run the guard cut: nothing is alive (checked first), the freeze
+# has committed everything else, and the lines are the ones the run being resumed wrote. So
+# `resume` over `CUT_BY_GUARD` starts on a worktree whose only dirt is the diary -- in both shapes
+# -- and leaves the file where it is, untouched. Anything else dirty, or a `.state` that is not a
+# cut, still refuses.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tracked", [False, True], ids=["untracked", "tracked"])
+def test_resume_after_a_cut_starts_over_the_diary_of_the_run_it_continues(tmp_path, tracked):
+    # One cut commit, so the relaunch cap is not what could refuse this.
     environment, cache = _worktree_with_cut_commits(tmp_path, 1)
-    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    assert (cache / "worker_claude.state").read_text() == "CUT_BY_GUARD reason=stall\n"
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=tracked)
+    before = diary.read_text()
+    try:
+        result = _resume(environment)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "worktree is dirty" not in result.stdout, result.stdout
+        assert "started pid" in result.stdout, result.stdout
+        # Left on disk exactly as the cut run wrote it, where the monitor reads it and the resumed
+        # run appends to it: not archived, not staged, not rewritten.
+        assert diary.read_text() == before
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_resume_after_a_cut_still_refuses_other_work_beside_the_diary(tmp_path):
+    environment, cache = _worktree_with_cut_commits(tmp_path, 1)
+    worktree = tmp_path / "worktree"
+    diary = _diary_with_an_uncommitted_line(worktree, tracked=False)
+    # In the same untracked `scratchpad/`, so git still reports the one collapsed entry the diary
+    # alone would produce -- which is exactly why that entry is not dropped on sight.
+    (worktree / "scratchpad" / "notes.md").write_text("a draft the worker never committed\n")
     try:
         result = _resume(environment)
         assert result.returncode != 0
         assert "worktree is dirty" in result.stdout, result.stdout
         assert "?? scratchpad/" in result.stdout, result.stdout
-        assert "resume refused" not in result.stdout, result.stdout
-        # A refusal writes nothing: the state the prior cut left is untouched, and so are the
-        # diary's own lines, which the monitor is still reading.
+        # A refusal writes nothing: the state the cut left is untouched, and so is the diary.
         assert not (cache / "worker_claude.pid").exists()
         assert not (cache / "worker_claude.jsonl").exists()
         assert (cache / "worker_claude.state").read_text() == "CUT_BY_GUARD reason=stall\n"
@@ -1662,18 +1694,41 @@ def test_resume_refuses_a_worktree_whose_untracked_diary_holds_lines(tmp_path):
         _stop(environment)
 
 
-def test_resume_refuses_a_worktree_whose_tracked_diary_holds_uncommitted_lines(tmp_path):
+def test_resume_after_a_cut_still_refuses_a_modified_file_beside_the_tracked_diary(tmp_path):
     environment, cache = _worktree_with_cut_commits(tmp_path, 1)
-    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=True)
+    worktree = tmp_path / "worktree"
+    diary = _diary_with_an_uncommitted_line(worktree, tracked=True)
+    (worktree / "README.md").write_text("an edit nothing froze\n")
     try:
         result = _resume(environment)
         assert result.returncode != 0
         assert "worktree is dirty" in result.stdout, result.stdout
-        assert "scratchpad/progress.log" in result.stdout, result.stdout
-        assert "resume refused" not in result.stdout, result.stdout
+        assert "README.md" in result.stdout, result.stdout
+        # Only the other work is named: the diary is no longer what the refusal is about.
+        assert "progress.log" not in result.stdout, result.stdout
         assert not (cache / "worker_claude.pid").exists()
-        assert not (cache / "worker_claude.jsonl").exists()
-        assert (cache / "worker_claude.state").read_text() == "CUT_BY_GUARD reason=stall\n"
+        assert "still-working" in diary.read_text()
+    finally:
+        _stop(environment)
+
+
+@pytest.mark.parametrize(
+    "state_line",
+    ["STARTED", "RESUMED after=guard_cut", "DONE", "FAILED_LAUNCH command=claude status=127"],
+)
+def test_resume_still_refuses_the_diary_when_the_state_is_not_a_cut(tmp_path, state_line):
+    # `resume` continues a run the guard cut. Over a run the driver never saw end, one that
+    # finished, or one that never launched, the diary is #407's signal again and still refuses.
+    environment, cache = _worktree_with_cut_commits(tmp_path, 1)
+    (cache / "worker_claude.state").write_text(f"{state_line}\n")
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    try:
+        result = _resume(environment)
+        assert result.returncode != 0
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "?? scratchpad/" in result.stdout, result.stdout
+        assert not (cache / "worker_claude.pid").exists()
+        assert (cache / "worker_claude.state").read_text() == f"{state_line}\n"
         assert "still-working" in diary.read_text()
     finally:
         _stop(environment)
@@ -1748,20 +1803,6 @@ def test_start_leaves_a_finished_runs_diary_alone_when_other_work_is_also_left(t
         assert result.returncode == 1
         assert "worktree is dirty" in result.stdout, result.stdout
         # A refusal writes nothing: the diary stays where it was.
-        assert "still-working" in diary.read_text()
-        assert _archived_diaries(cache) == []
-    finally:
-        _stop(environment)
-
-
-def test_resume_keeps_the_diary_of_the_run_it_continues(tmp_path):
-    # `resume` continues the same run, so its diary is its own and is never archived -- the
-    # refusal is `test_resume_refuses_a_worktree_whose_untracked_diary_holds_lines`'s, unchanged.
-    environment, cache = _worktree_with_cut_commits(tmp_path, 1)
-    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
-    try:
-        result = _resume(environment)
-        assert "worktree is dirty" in result.stdout, result.stdout
         assert "still-working" in diary.read_text()
         assert _archived_diaries(cache) == []
     finally:
@@ -2342,11 +2383,13 @@ def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(
         config_path=_config_with_backend_foo(tmp_path) if backend == "foo" else None,
     )
     environment["FAKE_BACKEND_UNTRACKED"] = "price_candidates.py,tests/test_candidates_pricing.py"
-    # The real repository holds the diary in `.git/info/exclude` (PR #406), so a cut leaves it as
-    # the one untracked path `git status` does not report and `resume` is not refused over it --
-    # that refusal is what the diary tests above exercise, on a worktree without the entry.
+    # NO `.git/info/exclude` entry for the diary (#22). The original host keeps one by hand (PR
+    # #406) and this test used to add it too, which hid that `resume` refused every relaunch after
+    # a cut over the diary the cut run itself had written. The fake backend appends to the diary,
+    # so the cut leaves it untracked here, exactly as on a host that never made that manual step.
     exclude = worktree / ".git" / "info" / "exclude"
-    exclude.write_text(exclude.read_text() + "scratchpad/progress.log\n")
+    assert "progress.log" not in exclude.read_text()
+    diary = worktree / "scratchpad" / "progress.log"
     try:
         with _planner_lock_held(cache):
             started = _start(environment, "347", backend=backend)
@@ -2376,6 +2419,10 @@ def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(
             assert _wait_until(lambda: _run_is_over(cache, backend)), (
                 "the launcher subshell never exited"
             )
+            # The one thing still dirty is the cut run's own diary -- the case #22 is about.
+            assert "scratchpad/progress.log" not in frozen, frozen
+            diary_before = diary.read_text()
+            assert "still-working" in diary_before
             resumed = _resume(environment, backend)
             assert resumed.returncode == 0, resumed.stdout + resumed.stderr
             assert "worktree is dirty" not in resumed.stdout, resumed.stdout
@@ -2383,6 +2430,8 @@ def test_a_cut_stage_leaves_nothing_untracked_and_resume_starts_without_a_human(
             # Reached the backend -- proof `resume` accepted the tree the cut left, with no
             # manual `git add` and no `--force` anywhere in this test.
             assert "started pid" in resumed.stdout, resumed.stdout
+            # And the diary is where the cut left it, for the monitor and the resumed run.
+            assert diary.read_text().startswith(diary_before)
             if backend == "foo":
                 # The class on `foo` named the model, and the run's own events are `foo`'s.
                 assert "model:     foo-model-1" in started.stdout, started.stdout
