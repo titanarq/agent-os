@@ -97,14 +97,63 @@ def check_labels(project: ProjectConfig, repo: str) -> Check:
     return Check("labels that do not autocreate", True, f"{required} all exist")
 
 
+# The Projects linked to one repository, each with its owner's login: `repository.projectsV2`
+# answers exactly "which boards does this repo show", which `gh project list --owner` cannot.
+LINKED_PROJECTS_QUERY = """
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    projectsV2(first: 100) {
+      nodes { number owner { ... on Organization { login } ... on User { login } } }
+    }
+  }
+}
+"""
+
+
+def linked_boards(repo: str) -> set[tuple[int, str]]:
+    """`(number, lowercased owner login)` for every Project v2 linked to `repo`."""
+    owner, name = repo.split("/", 1)
+    response = gh_json(
+        "api",
+        "graphql",
+        "-f",
+        f"query={LINKED_PROJECTS_QUERY}",
+        "-F",
+        f"owner={owner}",
+        "-F",
+        f"name={name}",
+    )
+    repository = ((response or {}).get("data") or {}).get("repository") or {}
+    nodes = (repository.get("projectsV2") or {}).get("nodes") or []
+    return {
+        (node["number"], ((node.get("owner") or {}).get("login") or "").lower())
+        for node in nodes
+        if node and "number" in node
+    }
+
+
 def check_board(project: ProjectConfig, repo: str) -> Check:
     owner = board_owner(repo)
     try:
+        linked = linked_boards(repo)
         response = gh_json(
             "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
         )
     except SystemExit as failure:
         return Check("Project v2 Status field", False, str(failure))
+    # A `board_number` copied from the example names SOME Project of the owner, possibly another
+    # repository's with every column in place; only a board linked to `repo` is this one's
+    # (agent-os#5).
+    if (project.board_number, owner.lower()) not in linked:
+        others = sorted(number for number, login in linked if login == owner.lower())
+        return Check(
+            "Project v2 Status field",
+            False,
+            f"project {owner}/{project.board_number} is not linked to {repo} "
+            f"(linked: {others or 'none'}) -- set project.board_number to the repository's "
+            f"board, or `gh project link {project.board_number} --owner {owner} "
+            f"--repo {repo.split('/', 1)[1]}`",
+        )
     fields = (response or {}).get("fields") or []
     single_selects = [field for field in fields if field.get("options") is not None]
     status = next(

@@ -8,6 +8,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#5 — `agent-os-doctor`'s board check no longer passes on a Project that is not the
+  repository's: besides the `Status` field and its options, it reads the Projects linked to
+  `project.repo` (`repository.projectsV2`) and fails when `project.board_number` is not one of
+  them, naming the linked ones and the `gh project link` that would fix it. A `board_number: 1`
+  copied from the example used to pass against whatever the owner's Project 1 was.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
