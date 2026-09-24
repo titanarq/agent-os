@@ -154,7 +154,9 @@ small one's body in place), and it runs unattended only once the human has flipp
 - On a `refine_pending` event: it names up to 10 issues that fail `issues.py validate` while
   carrying `status:refine` -- an issue can fail this only because it is missing a well-formed
   `## Stages` section, with every other section already conformant; that alone is enough to route
-  it here, whoever wrote it. Launch the refiner on AT MOST ONE of them this run --
+  it here, whoever wrote it. The list is in refine queue order, closest to dispatch first
+  (parent carries `auto-ready`, then priority, then no open `Blocked by`, then oldest). Launch
+  the refiner on AT MOST ONE of them this run, the earliest listed that passes the check below --
   `agent_os/bin/agent_task.sh refiner <N>` -- never the whole list; the next `refiner_finished` event
   brings you back for the rest, and `planner.max_runs_per_day` still caps the chain. Before
   launching, check the issue has no summary from a previous pass yet: `gh issue view <N> --json
