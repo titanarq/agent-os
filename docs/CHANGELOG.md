@@ -18,6 +18,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   a worker's persistent worktree gets the link only where git ignores it. The mechanism's
   `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
   isolation test measures the mechanism's own package in such a host instead of skipping.
+- agent-os#22 — `worker_task.sh resume` no longer refuses to relaunch a run the guard cut over
+  that run's own diary: when `.state` line 1 records `CUT_BY_GUARD` and nothing is alive, the
+  dirty check leaves out `scratchpad/progress.log` (` M` when tracked, `??` when untracked, and
+  the collapsed `?? scratchpad/` only while the diary is the one file inside it). The file stays
+  on disk untouched, for the monitor and the resumed run. Any other dirty path, and a diary over
+  any other `.state` (`STARTED`, `RESUMED`, `DONE`, `FAILED_LAUNCH`, `BLOCKED`), still refuse. A
+  cut followed by `resume` no longer needs a host's `info/exclude` entry for the diary.
 - agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
   `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
   with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports
