@@ -46,6 +46,14 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `.venv` `bootstrap.sh` builds), and refuses with a message naming `bootstrap.sh` and
   `AGENT_OS_PYTHON` when that is not an absolute path to an executable, in the module form too.
   Nothing is written in that case.
+- agent-os#51 — the guard unit's `ExecStart=` no longer prefers a `.venv` at the host root when
+  the host has a `scripts/agent_guard.py` shim: the shim, like the module form, now always runs on
+  the mechanism's own interpreter (`unit_python()`), as AGENT_OS.md §8 already said, so the host's
+  package versions cannot change how the guard behaves. The shim only re-executes
+  `agent_os.guard` on that same interpreter, so nothing it needs came from the host's venv. A host
+  whose unit was rendered with the host's `.venv` keeps it until it re-renders: run
+  `agent-os-install --dry-run` to see the diff, then `agent-os-install --force` (which also
+  rewrites the other installed templates) and `systemctl --user daemon-reload`.
 - agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
   by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
   exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
