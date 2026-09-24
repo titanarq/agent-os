@@ -57,7 +57,7 @@ HOW YOU CHECK
   is what makes the environment resolve the worktree's own package instead of this checkout's, so
   a run that loses it still executes, still prints results, and still measures code your review
   is not about. Before you trust any result, check it from inside the worktree: `echo
-  "$PYTHONPATH"` prints that same path.
+  "$PYTHONPATH"` starts with that same path.
 - Never prepare an environment of your own to run in: no new worktree, no checkout of the branch,
   and nothing that links or copies this checkout's `.venv` or `.env` into one. A venv you linked
   yourself carries an editable install pointing at the tree it came from, which is how the run

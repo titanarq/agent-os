@@ -712,7 +712,12 @@ launch_stage() {
     [ -n "$env_key" ] && export "$env_key=$env_value"
   done < <("$agent_python" -m agent_os.lib worker-environment)
 
-  export PYTHONPATH="$worktree"
+  # The worktree's root, and in a host that vendors the mechanism its copy of the mechanism too
+  # (agent-os#35, `agent_os_worktree_pythonpath`); with the mechanism's venv linked for a worktree
+  # `init` made before the driver linked it, and only where git ignores that link.
+  agent_os_link_mechanism_venv "$worktree" "$main" only-if-ignored
+  PYTHONPATH=$(agent_os_worktree_pythonpath "$worktree" "$main")
+  export PYTHONPATH
   export WORKER_RULES="$RULES" WORKER_BRIEF="$brief" WORKER_MODEL_ID="$model"
   # AGENTS.md, then the brief (the issue and its parent), then only what those name -- in that
   # order and nothing else. agent_os/docs/adr/2026-09-14-the-issue-is-the-unit-of-work-and-status-labels-
@@ -865,6 +870,7 @@ init)
       echo "linked $worktree/$linked -> $main/$linked"
     fi
   done
+  agent_os_link_mechanism_venv "$worktree" "$main" only-if-ignored
   ;;
 
 branch)

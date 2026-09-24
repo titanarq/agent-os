@@ -286,7 +286,12 @@ agent_prepare_worktree() {
     [ -e "$path/$linked" ] && continue
     [ -e "$agent_main/$linked" ] && ln -s "$agent_main/$linked" "$path/$linked"
   done
-  export PYTHONPATH="$path"
+  # In a host that vendors the mechanism, its own venv and its own package too (agent-os#35): the
+  # run that tests a `subtree pull` has to import the worktree's copy of the mechanism, not this
+  # checkout's. Both are no-ops where the mechanism is the repository root.
+  agent_os_link_mechanism_venv "$path" "$agent_main"
+  PYTHONPATH=$(agent_os_worktree_pythonpath "$path" "$agent_main")
+  export PYTHONPATH
   echo "worktree:  $path @ $(git -C "$path" rev-parse --short HEAD) (PYTHONPATH exported at it)"
 }
 
@@ -326,12 +331,14 @@ agent_wait_for_own_session() {
 # in the record, from a review that read the code it claims to have reviewed.
 #
 # Prints the NAMES, one per line, of the run-scoped variables in this shell's environment.
-# PYTHONPATH is one of them only when it is a run's worktree, which this run's own EXIT trap is
-# about to remove: a PYTHONPATH the caller had for its own reasons is the caller's and stays.
+# PYTHONPATH is one of them only when it is the value a run's worktree was exported with, which
+# this run's own EXIT trap is about to remove: a PYTHONPATH the caller had for its own reasons is
+# the caller's and stays.
 # ---------------------------------------------------------------------------------------------
 agent_run_environment_names() {
   compgen -e | grep -E '^(AGENT_RUN_|AGENT_DETACHED_RUN$)'
-  if [ -n "${AGENT_RUN_WORKTREE:-}" ] && [ "${PYTHONPATH-}" = "$AGENT_RUN_WORKTREE" ]; then
+  if [ -n "${AGENT_RUN_WORKTREE:-}" ] \
+    && [ "${PYTHONPATH-}" = "$(agent_os_worktree_pythonpath "$AGENT_RUN_WORKTREE" "$agent_main")" ]; then
     echo PYTHONPATH
   fi
   return 0
