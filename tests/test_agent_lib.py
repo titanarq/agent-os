@@ -2163,3 +2163,55 @@ def test_the_role_backend_cli_stops_on_a_role_no_single_class_claims(tmp_path, m
     with pytest.raises(SystemExit) as exited:
         agent_lib.main()
     assert int(exited.value.code or 0) == 1
+
+
+# ---- refine_queue_rank: which refine-needing issue the refiner should see first (#32) ----------
+
+
+def _refine_row(number, *labels, body="x"):
+    return {
+        "number": number,
+        "state": "OPEN",
+        "labels": [{"name": n} for n in labels],
+        "body": body,
+    }
+
+
+def test_refine_queue_rank_puts_the_issues_closest_to_dispatch_first():
+    vocabulary = agent_lib.LabelVocabulary()
+    auto_ready_parent = {vocabulary.auto_ready}
+    open_numbers = {5, 14, 20, 30, 74, 83, 90}
+    rows_and_parents = [
+        # Newest, lowest priority, parent not opted in: last -- the order `gh issue list` gives.
+        (_refine_row(83, vocabulary.priorities[3]), set()),
+        (_refine_row(74, vocabulary.priorities[2]), auto_ready_parent),
+        # Parent opted in, p1, but waiting on an open blocker.
+        (_refine_row(30, vocabulary.priorities[0], body="x\n\nBlocked by #5\n"), auto_ready_parent),
+        # Parent opted in, p1, a blocker that is already closed counts as no blocker.
+        (_refine_row(20, vocabulary.priorities[0], body="x\n\nBlocked by #6\n"), auto_ready_parent),
+        # The root of the critical path: parent opted in, p1, nothing blocking.
+        (_refine_row(14, vocabulary.priorities[0]), auto_ready_parent),
+        # No priority label at all sorts after every priority, and a failed parent lookup (None)
+        # reads as "not opted in" rather than breaking the order.
+        (_refine_row(90), None),
+    ]
+    ranked = sorted(
+        rows_and_parents,
+        key=lambda pair: agent_lib.refine_queue_rank(
+            pair[0], parent_labels=pair[1], open_issue_numbers=open_numbers, labels=vocabulary
+        ),
+    )
+    assert [row["number"] for row, _ in ranked] == [14, 20, 30, 74, 83, 90]
+
+
+def test_refine_queue_rank_reads_the_priority_scale_from_config():
+    vocabulary = agent_lib.LabelVocabulary(priorities=["urgent", "later"])
+    high = _refine_row(40, "later")
+    low = _refine_row(41, "urgent")
+    ranked = sorted(
+        [high, low],
+        key=lambda row: agent_lib.refine_queue_rank(
+            row, parent_labels=set(), open_issue_numbers=set(), labels=vocabulary
+        ),
+    )
+    assert [row["number"] for row in ranked] == [41, 40]

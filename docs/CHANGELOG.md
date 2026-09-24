@@ -17,6 +17,25 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   without a path filter. `ADOPTION.md` step 23: land the host's CI before the first product PR,
   and never make the CI task depend on a skeleton. ADR
   `2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`.
+- agent-os#35 — in a host that vendors the mechanism under `agent_os/`, a role's worktree now runs
+  the worktree's copy of the mechanism, not the main checkout's. `PYTHONPATH=<worktree>` alone
+  left `<worktree>/agent_os/` as a namespace portion (it has no `__init__.py`), so the regular
+  package the mechanism venv's editable `.pth` puts on `sys.path` won, and a validator testing a
+  `subtree pull` certified code it never ran. The drivers now export
+  `PYTHONPATH=<worktree>:<worktree>/agent_os` there (unchanged where the mechanism is the
+  repository root) and link `agent_os/.venv` into the worktree beside the root `.venv` and `.env`;
+  a worker's persistent worktree gets the link only where git ignores it. The mechanism's
+  `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
+  isolation test measures the mechanism's own package in such a host instead of skipping.
+- agent-os#32 — `refine_pending` names the head of a ranked refine queue instead of the ten
+  newest refine-needing issues: `guard.refinable_issues()` sorts by `lib.refine_queue_rank` —
+  parent carries `labels.auto_ready` first, then the issue's best label in `labels.priorities`
+  (none sorts last), then no open `Blocked by #N`, then issue number ascending. The parent's
+  labels are read once per distinct parent, through the same lookup `promote_refined` now
+  shares. The planner prompt says the list is in that order and to launch the refiner on the
+  earliest listed issue that passes its summary check. A host that parked refine-needing issues
+  to steer the order (studentassistant's `scripts/refine_window.py`) can drop that after the
+  subtree pull.
 - agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
   that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
   the given title. An issue created through the API skips GitHub's form, which is what adds the
