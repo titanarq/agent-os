@@ -2115,6 +2115,50 @@ def test_refinable_issues_keeps_only_status_refine_issues_that_fail_validate(mon
     assert agent_guard.refinable_issues(main=tmp_path) == [61]
 
 
+def test_refinable_issues_come_in_refine_queue_order_not_gh_list_order(monkeypatch, tmp_path):
+    # `gh issue list` answers newest first; the refiner must see the issue closest to dispatch
+    # first instead -- auto-ready parent, then priority, then unblocked, then oldest (#32).
+    vocabulary = agent_guard.PROJECT.labels
+    refine = [
+        {
+            "number": number,
+            "state": "OPEN",
+            "labels": [{"name": agent_guard.REFINE_LABEL}, *[{"name": n} for n in extra]],
+            "body": "x",
+            **({"parent": {"number": parent}} if parent else {}),
+        }
+        for number, extra, parent in [
+            (83, [vocabulary.priorities[3]], 3),
+            (74, [vocabulary.priorities[2]], 2),
+            (15, [vocabulary.priorities[0]], None),
+            (14, [vocabulary.priorities[0]], 2),
+        ]
+    ]
+    monkeypatch.setattr(
+        agent_guard.subprocess,
+        "run",
+        _gh_issue_list_stub(refine, [{"number": n} for n in (2, 3, 14, 15, 74, 83)]),
+    )
+    looked_up: list[int] = []
+
+    def parent_labels(number, *, main):
+        looked_up.append(number)
+        return {vocabulary.auto_ready} if number == 2 else set()
+
+    monkeypatch.setattr(agent_guard, "_gh_issue_labels", parent_labels)
+    assert agent_guard.refinable_issues(main=tmp_path) == [14, 74, 15, 83]
+    assert sorted(looked_up) == [2, 3]  # one lookup per parent, not per child
+
+
+def test_refine_pending_names_the_head_of_the_refine_queue(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent_guard, "load_planner_config", lambda: _planner_config())
+    monkeypatch.setattr(agent_guard, "refinable_issues", lambda *, main: list(range(14, 30)))
+    outcome = agent_guard._write_refine_pending_event_if_due(
+        main=tmp_path, now=_utc(2026, 9, 14, 10, 0, 0)
+    )
+    assert "#14, #15" in outcome.line and "#23" in outcome.line and "#24" not in outcome.line
+
+
 def test_refinable_issues_empty_when_no_issue_carries_the_refine_label(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_guard.subprocess, "run", _gh_issue_list_stub([], [{"number": 61}]))
     assert agent_guard.refinable_issues(main=tmp_path) == []
