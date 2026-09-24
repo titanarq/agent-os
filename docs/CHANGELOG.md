@@ -18,6 +18,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   a worker's persistent worktree gets the link only where git ignores it. The mechanism's
   `.gitignore` names `.venv` without the trailing slash so that link is ignored. The worktree
   isolation test measures the mechanism's own package in such a host instead of skipping.
+- agent-os#5 — `agent-os-doctor`'s board check no longer passes on a Project that is not the
+  repository's: besides the `Status` field and its options, it reads the Projects linked to
+  `project.repo` (`repository.projectsV2`) and fails when `project.board_number` is not one of
+  them, naming the linked ones and the `gh project link` that would fix it. A `board_number: 1`
+  copied from the example used to pass against whatever the owner's Project 1 was.
 - agent-os#4 — `agent-os-doctor` reports every check even when `gh` fails inside one of them:
   a failed `gh` call (a `project.repo` that does not exist, say) or a `gh`/`systemctl` that is
   not installed turns that check into a `[FAIL]` carrying the error on one line, and the run
@@ -86,6 +91,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)
   and this file.
+- agent-os#13 — `docs/ADOPTION.md` step 7 spells out the `git remote add` + `git subtree add`
+  commands and says when git needs a credential of its own. `titanarq/agent-os` is public now, so
+  the add and every `subtree pull` need none. A `subtree push`, or any fetch from a private fork
+  or mirror, needs one, and a `gh` login alone does not give it to git. The step gives
+  `gh auth setup-git` as the fix, and an SSH remote as the alternative. Prose only: nothing in
+  the mechanism runs this step, so there is no behaviour for a test to pin.
 - agent-os#14 — `issues.py move` finds the issue's board item from the issue's own
   `projectItems` (one GraphQL query matching board number and owner) instead of listing the whole
   board with `gh project item-list`, which returned zero items for an org Project v2 that held them
