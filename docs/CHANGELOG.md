@@ -8,6 +8,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
+  `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
+  with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports
+  it as a failed `config/agents.yaml loads` check and still runs the two checks that need no
+  config (python version, `gh auth status`).
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
