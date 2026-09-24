@@ -60,6 +60,13 @@ DECIDE THE SHAPE
   time: `"$AGENT_OS_PYTHON" -m agent_os.lib project-value labels.refine` prints the exact label
   spelling to remove, then `"$AGENT_OS_PYTHON" -m agent_os.issues update N --remove-label <that
   label>`.
+  When the ORIGINAL is a task or bug (never a feature, whose children are its parts), the children
+  replace it: once every child validates, run `"$AGENT_OS_PYTHON" -m agent_os.issues supersede N
+  --by <child> --by <child> ...` with every child. It rewrites each open issue's `Blocked by #N`
+  line to the children, comments on that issue, and closes N as not planned, superseded by them --
+  never rewrite a dependent or close N by hand. When you can tell that one dependent waits on only
+  some of the children, add `--route <dependent>=<child>[,<child>]` for it; otherwise leave it to
+  wait on all of them.
 
 STAGE THE WORK -- EVERY BODY YOU WRITE OR REWRITE NEEDS A WELL-FORMED `## Stages` SECTION
 Without one, an issue is not dispatchable however good every other section already is -- which is

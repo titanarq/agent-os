@@ -552,6 +552,12 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
+    # Whether `agent_os.install` writes `.github/workflows/ci-host.yml`, a workflow running
+    # `test_command` on every pull request with no path filter. The control plane counts zero
+    # checks on a PR's head SHA as merge condition 1 not met, and `ci-agent-os.yml` only fires on
+    # `agent_os/**`; a host whose own CI already reports on every PR sets this to false
+    # (agent_os/docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md).
+    install_host_ci: bool = True
     # How a freshly added worktree -- a worker's, on `init`, and a validator's throwaway one -- is
     # made runnable, since a new worktree carries tracked files only (agent-os#41,
     # agent_os/docs/adr/2026-09-24-a-fresh-worktree-is-provisioned-the-way-the-host-configures.md).
@@ -1460,6 +1466,35 @@ BLOCKED_BY_RE = re.compile(r"^\s*Blocked by\s+#(\d+)\s*$", re.MULTILINE | re.IGN
 
 def blocking_issue_numbers(body: str) -> list[int]:
     return [int(n) for n in BLOCKED_BY_RE.findall(body or "")]
+
+
+def replace_blocker(body: str, original: int, replacements: list[int]) -> str | None:
+    """`body` with every `Blocked by #<original>` line replaced by one `Blocked by #<n>` line per
+    number in `replacements`, in the same indentation, skipping a number the body already lists as
+    a blocker so a line is never duplicated; None when the body names no such blocker. Each line is
+    matched against the same `BLOCKED_BY_RE` `blocking_issue_numbers` reads, so the writer never
+    rewrites a line the reader would not have taken for a blocker (#39)."""
+    body = body or ""
+    if original not in blocking_issue_numbers(body):
+        return None
+    already_listed = set(blocking_issue_numbers(body)) - {original}
+    new_numbers = [n for n in dict.fromkeys(replacements) if n not in already_listed]
+    lines: list[str] = []
+    written = False
+    for line in body.splitlines(keepends=True):
+        text = line.rstrip("\r\n")
+        match = BLOCKED_BY_RE.fullmatch(text)
+        if not match or int(match.group(1)) != original:
+            lines.append(line)
+            continue
+        if written:
+            continue  # the same blocker named twice: one set of replacement lines is enough
+        written = True
+        indent = text[: len(text) - len(text.lstrip())]
+        ending = line[len(text) :] or "\n"
+        lines += [f"{indent}Blocked by #{n}{ending}" for n in new_numbers]
+    rewritten = "".join(lines)
+    return rewritten if body.endswith(("\n", "\r")) else rewritten.rstrip("\r\n")
 
 
 # The shape of a task or bug body, in the order the sections must appear

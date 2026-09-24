@@ -27,6 +27,8 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import yaml
+
 from agent_os.cli import host_root
 from agent_os.issues import board_owner, gh_json, repo_name
 from agent_os.lib import (
@@ -273,6 +275,58 @@ def check_guard_timer(project: ProjectConfig) -> Check:
     return Check("guard timer active", ok, detail)
 
 
+PULL_REQUEST_CI_CHECK = "a check on every pull request"
+PATH_FILTER_KEYS = ("paths", "paths-ignore")
+
+
+def _reports_on_every_pull_request(workflow: object) -> bool:
+    """Whether a parsed workflow's `on:` fires on `pull_request` with no `paths`/`paths-ignore`
+    filter. PyYAML reads the bare key `on` as the boolean True, so both spellings are looked up.
+    A heuristic: it does not read job-level `if:` conditions or branch filters."""
+    if not isinstance(workflow, dict):
+        return False
+    triggers = workflow.get("on", workflow.get(True))
+    if triggers == "pull_request":
+        return True
+    if isinstance(triggers, list):
+        return "pull_request" in triggers
+    if isinstance(triggers, dict) and "pull_request" in triggers:
+        pull_request = triggers["pull_request"] or {}
+        return isinstance(pull_request, dict) and not any(
+            key in pull_request for key in PATH_FILTER_KEYS
+        )
+    return False
+
+
+def check_pull_request_ci(root: pathlib.Path) -> Check:
+    """At least one workflow under `.github/workflows/` would report a check on a PR that touches
+    only host files. The control plane counts zero checks on a PR's head SHA as merge condition 1
+    not met (agent-os#50), and the installed `ci-agent-os.yml` is path-filtered to `agent_os/**`."""
+    workflows_dir = root / ".github" / "workflows"
+    candidates = sorted([*workflows_dir.glob("*.yml"), *workflows_dir.glob("*.yaml")])
+    unfiltered = []
+    for path in candidates:
+        try:
+            workflow = yaml.safe_load(path.read_text())
+        except (OSError, yaml.YAMLError):
+            continue
+        if _reports_on_every_pull_request(workflow):
+            unfiltered.append(path.name)
+    if unfiltered:
+        return Check(
+            PULL_REQUEST_CI_CHECK, True, f"unfiltered pull_request trigger in {unfiltered}"
+        )
+    return Check(
+        PULL_REQUEST_CI_CHECK,
+        False,
+        f"no workflow under {workflows_dir} fires on pull_request without a path filter "
+        "(read from the `on:` block only), so a host-only PR would report zero checks and the "
+        "control plane's merge condition 1 would never be met -- run `agent-os-install` to add "
+        "`ci-host.yml` (project.install_host_ci), or give your own CI an unfiltered "
+        "pull_request trigger",
+    )
+
+
 def _guarded(name: str, check: Callable[..., Check], *args) -> Check:
     """`check(*args)`, or a [FAIL] under `name` carrying the error when the check cannot finish:
     `gh_json` answers a failed `gh` call with `sys.exit(message)`, and a binary that is not
@@ -301,6 +355,7 @@ def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Ch
         check_worktrees(project, root),
         check_notify_topic(project, root),
         _guarded("guard timer active", check_guard_timer, project),
+        check_pull_request_ci(root),
     ]
 
 
