@@ -237,6 +237,39 @@ agent_remove_run_scratch() {
   agent_run_scratch=""
 }
 
+# Makes a freshly added worktree runnable the way the host configures it (agent-os#41): a new
+# worktree carries tracked files only, and what a project's commands need beside them -- a
+# virtualenv, `node_modules`, a `.env` -- is gitignored. First every `project.worktree_links` path
+# the main checkout has is linked in (a link, never a copy: one file stays authoritative for every
+# tree), then `project.worktree_setup_command` runs inside the worktree. Shared by this driver's
+# throwaway worktree and by `worker_task.sh init`. Returns non-zero, having said why, when either
+# step fails: a tree nobody could provision is refused, never handed to an agent as if it were ready.
+agent_provision_worktree() {
+  local main=$1 tree=$2 links linked setup
+  if ! links=$("$agent_python" -m agent_os.lib worktree-links); then
+    echo "ERROR: cannot read project.worktree_links -- refusing to provision $tree"
+    return 1
+  fi
+  while IFS= read -r linked; do
+    [ -n "$linked" ] || continue
+    { [ -e "$tree/$linked" ] || [ -L "$tree/$linked" ]; } && continue
+    [ -e "$main/$linked" ] || continue
+    mkdir -p "$(dirname "$tree/$linked")"
+    ln -s "$main/$linked" "$tree/$linked"
+    echo "linked $tree/$linked -> $main/$linked"
+  done <<<"$links"
+  if ! setup=$(agent_project_value worktree_setup_command); then
+    echo "ERROR: cannot read project.worktree_setup_command -- refusing to provision $tree"
+    return 1
+  fi
+  [ -n "$setup" ] || return 0
+  echo "setup:     $setup (in $tree)"
+  if ! (cd "$tree" && bash -c "$setup"); then
+    echo "ERROR: project.worktree_setup_command failed in $tree: $setup"
+    return 1
+  fi
+}
+
 # Sourced for the helpers above (planner_task.sh) -- everything below is the driver itself.
 [ "${BASH_SOURCE[0]}" != "${0}" ] && return 0
 
@@ -302,14 +335,8 @@ agent_prepare_worktree() {
     return 1
   fi
   agent_worktree=$path
-  # `git worktree add` brings tracked files only, and both of these are gitignored: without `.venv`
-  # nothing runs at all (`scripts/test.sh` calls `.venv/bin/pytest`), and without `.env` a tool
-  # that needs a credential refuses before it reaches the network. A link, never a copy -- one file
-  # stays authoritative for every tree, exactly as worker_task.sh's launch does for a worker.
-  for linked in .venv .env; do
-    [ -e "$path/$linked" ] && continue
-    [ -e "$agent_main/$linked" ] && ln -s "$agent_main/$linked" "$path/$linked"
-  done
+  # Set before provisioning, so the EXIT trap removes a worktree whose setup failed as well.
+  agent_provision_worktree "$agent_main" "$path" || return 2
   export PYTHONPATH="$path"
   echo "worktree:  $path @ $(git -C "$path" rev-parse --short HEAD) (PYTHONPATH exported at it)"
 }
@@ -607,6 +634,15 @@ trap 'agent_remove_worktree; exit 143' INT TERM HUP
 
 if [ "$runs_tests" = yes ]; then
   agent_prepare_worktree "$role" "$subject" "$run_stamp"
+  prepare_status=$?
+  # 1 is "no worktree", which the run survives by reading the diff only; 2 is a worktree the host's
+  # own provisioning could not make runnable (agent-os#41), and a review launched on it would
+  # request changes on correct code for a failure that is the environment's -- so no run at all.
+  if [ "$prepare_status" -eq 2 ]; then
+    echo "ERROR: the worktree for #$subject could not be provisioned -- no $role run launched" \
+      | tee -a "$logfile"
+    exit 1
+  fi
   [ -n "$agent_worktree" ] && echo "worktree:  $agent_worktree" >>"$logfile"
   # The RULES name that worktree by its own path instead of leaving the agent to derive it: on the
   # run that prepared none, an inherited `$PYTHONPATH` still points at whatever tree launched this

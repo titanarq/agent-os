@@ -33,6 +33,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 from conftest import EXAMPLE_CONFIG, config_with_never_run, config_with_no_host_text
 
 from agent_os import guard as agent_guard
@@ -208,7 +209,7 @@ def test_the_validators_rules_name_the_worktree_the_driver_prepared_not_one_it_b
     # Nothing left that builds a worktree or links a venv into one, and the prohibition itself.
     for command in BUILD_OR_POPULATE_A_WORKTREE:
         assert command not in rules, command
-    assert "nothing that links or copies this checkout's `.venv`" in rules
+    assert "nothing that links or copies this checkout's own environment" in rules
 
 
 def test_the_refiners_rules_never_mention_a_worktree_or_a_pythonpath_it_does_not_get():
@@ -441,13 +442,11 @@ HOST_LITERALS = (
 # planner's each print theirs with `rules`, the two one-shot roles with `--dry-run`.
 ROLES_WITH_A_PROMPT = ("worker", "validator", "refiner", "planner")
 
-# What #509 could NOT move, measured rather than passed over. The validator's block names
-# `.venv/bin/ruff` and warns against linking `.venv` into a worktree, in two bullets that sit in
-# the middle of the mechanism's own list -- and a single extension point can only append, so moving
-# them would reorder the prompt, which is exactly what the golden test of
-# `test_prompt_templates.py` exists to refuse. Recorded as its own row in `agent_os/docs/AGENT_OS.md` §7
-# rather than quietly dropped from the literal set.
-LITERALS_A_TEMPLATE_STILL_CARRIES = {"validator": (".venv",)}
+# What a template still carries that belongs to a host, measured rather than passed over. #509 left
+# the validator's `.venv/bin/ruff` bullet and its `.venv` prohibition here; agent-os#41 moved the
+# first into `project.lint_commands` and made the second name no layout, so none is left -- an
+# entry added back here is a host literal the mechanism has started shipping again.
+LITERALS_A_TEMPLATE_STILL_CARRIES: dict[str, tuple[str, ...]] = {}
 
 
 def _role_rules(role, config_path, cache_dir=NO_VERDICT_CACHE_DIR) -> str:
@@ -561,6 +560,7 @@ if [ -n "${STUB_STREAM-}" ]; then cat "$STUB_STREAM"; fi
   printf 'WORKTREE_GIT=%s\\n' "$([ -e "${PYTHONPATH-}/.git" ] && echo yes || echo no)"
   printf 'WORKTREE_PYTEST=%s\\n' "$([ -x "${PYTHONPATH-}/.venv/bin/pytest" ] && echo yes || echo no)"
   printf 'WORKTREE_ENV_FILE=%s\\n' "$([ -e "${PYTHONPATH-}/.env" ] && echo yes || echo no)"
+  printf 'WORKTREE_PROVISIONED=%s\\n' "$(cat "${PYTHONPATH-}/provisioned-by-setup" 2>/dev/null || echo no)"
   printf 'WORKTREE_HEAD=%s\\n' "$(git -C "${PYTHONPATH-}" rev-parse HEAD 2>/dev/null || echo none)"
   printf 'SCRATCH=%s\\n' "${AGENT_RUN_SCRATCH-}"
   printf 'SCRATCH_IS_EMPTY_DIR=%s\\n' \\
@@ -956,6 +956,81 @@ def test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it(
     # The backend itself still runs from the main checkout: the worktree is where the commands it
     # runs resolve, not where it sits.
     assert seen["PWD"] == str(ROOT)
+
+
+# -------------------------------------------------------------------------------------------------
+# agent-os#41: a host whose environment is not a root `.venv` -- a monorepo with `backend/.venv` and
+# `web/node_modules` -- got an empty worktree, and a validator told the worktree was "already
+# populated" could run nothing in it. The driver now provisions it the way the host configures:
+# `project.worktree_setup_command`, run inside the worktree before the backend starts, and a run
+# whose setup fails is refused rather than launched on an environment nobody could build.
+# -------------------------------------------------------------------------------------------------
+
+
+def _config_with_project_keys(environment, tmp_path, **keys) -> None:
+    path = pathlib.Path(environment["AGENTS_CONFIG_PATH"])
+    data = yaml.safe_load(path.read_text())
+    data["project"].update(keys)
+    provisioned = tmp_path / "agents-provisioned.yaml"
+    provisioned.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    environment["AGENTS_CONFIG_PATH"] = str(provisioned)
+
+
+def test_the_worktree_setup_command_runs_inside_the_worktree_before_the_backend_starts(
+    launch_environment, tmp_path
+):
+    _config_with_project_keys(
+        launch_environment,
+        tmp_path,
+        worktree_setup_command='printf "%s" "$PWD" > provisioned-by-setup',
+    )
+    result = _launch(launch_environment, "validator")
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _record(launch_environment)
+    assert seen["WORKTREE_PROVISIONED"] == seen["PYTHONPATH"], result.stdout + result.stderr
+
+
+def test_a_failing_worktree_setup_command_refuses_the_run_and_removes_the_worktree(
+    launch_environment, tmp_path
+):
+    _config_with_project_keys(
+        launch_environment, tmp_path, worktree_setup_command="echo cannot-sync; exit 7"
+    )
+    result = _launch(launch_environment, "validator")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "project.worktree_setup_command failed" in result.stdout, result.stdout
+    assert "cannot-sync" in result.stdout, result.stdout
+    assert not pathlib.Path(launch_environment["STUB_RECORD"]).exists(), "the backend ran anyway"
+    assert not list(pathlib.Path(launch_environment["AGENT_CACHE_DIR"]).glob("worktree-*"))
+
+
+def test_the_validators_rules_carry_no_host_specific_database_or_duration_claim(tmp_path):
+    # The host's own `never_run` reasons may name its database; the template itself may not.
+    rules = _flattened(_rules("validator", config_path=config_with_no_host_text(tmp_path)))
+    assert "shared database" not in rules
+    assert "50 minutes" not in rules
+    assert "already populated" not in rules
+
+
+def test_the_validators_lint_bullet_renders_the_configured_commands_or_nothing(tmp_path):
+    configured = _flattened(_rules("validator"))
+    assert "`.venv/bin/ruff check <files>`" in configured
+    assert "`.venv/bin/ruff format --check <files>`" in configured
+
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+    data["project"]["lint_commands"] = ["npx eslint"]
+    one_linter = tmp_path / "agents-eslint.yaml"
+    one_linter.write_text(yaml.safe_dump(data, sort_keys=False))
+    rendered = _flattened(_rules("validator", config_path=one_linter))
+    assert "`npx eslint <files>`" in rendered
+    assert "ruff" not in rendered
+
+    data["project"]["lint_commands"] = []
+    no_linter = tmp_path / "agents-no-lint.yaml"
+    no_linter.write_text(yaml.safe_dump(data, sort_keys=False))
+    rendered = _flattened(_rules("validator", config_path=no_linter))
+    assert "ruff" not in rendered
+    assert "__LINT_RULES__" not in rendered
 
 
 @pytest.mark.parametrize("backend_exit_code", [0, 3])

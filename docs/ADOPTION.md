@@ -28,6 +28,13 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    `__TEST_COMMAND__` into the worker's prompt; a host with more than one suite (Python backend,
    Kotlin app, Node tooling — `../twistedworldar`'s actual shape) names the one wrapper that runs
    the right one, or a script that runs all of them.
+   If the environment that command needs is not a virtualenv at the host's root — a monorepo
+   with `backend/.venv` and `web/node_modules`, say — set `project.worktree_links` to the
+   gitignored paths a fresh worktree should link from the main checkout, and/or
+   `project.worktree_setup_command` to the bootstrap that builds them inside the worktree
+   (`uv sync --frozen`, `npm ci`): the validator's throwaway worktree and each worker's `init` run
+   it, and a failing one refuses the run (agent-os#41). Set `project.lint_commands` to the
+   linters the validator should run on a PR's files; left empty, it runs none.
 5. A default branch named `main`. This is not a `project.*` key: `git worktree add`/`branch`/
    `open-pr` in `agent_os/bin/worker_task.sh` fetch and fork from the literal `origin/main`
    throughout (§4.1's own list of files, the `init` and `branch` cases). A repository whose default
