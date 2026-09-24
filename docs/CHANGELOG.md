@@ -51,6 +51,10 @@ Wave 3's other two tasks, #429 (which backend fallback rule to write down as an 
   where `[a-z]+` refused it. The anchoring on the number is unchanged, so
   `task/387-close-the-390-gap` still fails for #390, and the refusal now names the accepted shape
   (`<word>/<issue>-<slug>`) instead of "a branch naming #N".
+- agent-os#6 — `pyproject.toml` depends on `PyJWT[crypto]>=2.8` instead of a bare `PyJWT>=2.8`:
+  without the extra, the interpreter `bootstrap.sh` builds has no `cryptography`, PyJWT registers
+  no RS256 signer, and `gh_app_token` fails with `KeyError: 'RS256'` signing the App JWT. A host
+  that installed `cryptography` by hand as a workaround can drop that step.
 
 ## 2026-09-22
 
