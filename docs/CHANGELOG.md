@@ -8,6 +8,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#13 — `docs/ADOPTION.md` step 7 spells out the `git remote add` + `git subtree add`
+  commands and says when git needs a credential of its own. `titanarq/agent-os` is public now, so
+  the add and every `subtree pull` need none. A `subtree push`, or any fetch from a private fork
+  or mirror, needs one, and a `gh` login alone does not give it to git. The step gives
+  `gh auth setup-git` as the fix, and an SSH remote as the alternative. Prose only: nothing in
+  the mechanism runs this step, so there is no behaviour for a test to pin.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
