@@ -43,7 +43,26 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    `git subtree add --prefix=agent_os <remote> main --squash` from `titanarq/agent-os`
    (§4.1's own ADR), or a plain `cp -r` for a first look. Nothing under it is edited;
    a host extends it only through `config/agents.yaml`, host-owned files that config names, and
-   hook commands.
+   hook commands. From the host's root, over HTTPS:
+   ```bash
+   git remote add agent-os https://github.com/titanarq/agent-os.git
+   git subtree add --prefix=agent_os agent-os main --squash
+   ```
+   `titanarq/agent-os` is public, so this fetch — and every later `subtree pull` (step 25) —
+   needs no credential. Two cases do: `subtree push` (step 26) always, and every fetch when the
+   remote is a private fork or mirror. Then **git itself** has to present a GitHub credential for
+   an account that can write the repository (for a push) or read it (for a private fetch), and a
+   `gh` login is not that by itself. A token in `GH_TOKEN`, a non-interactive
+   `gh auth login --with-token`, or a "no" to the interactive login's "authenticate Git" question
+   all leave git with no credential helper for `github.com`, and the `https://` push or fetch
+   stops on an auth prompt. Point git at `gh`'s login once per machine, before the first such
+   command:
+   ```bash
+   gh auth setup-git       # registers gh as git's credential helper for every host gh is logged in to
+   ```
+   The `repo` scope step 17 already asks for covers both reading a private repository and
+   pushing. An SSH remote (`git@github.com:<owner>/<repo>.git`) with a key registered on such an
+   account works instead and needs no credential helper.
 8. **Write `<host>/config/agents.yaml`** from `agent_os/config.example.yaml`, which carries every
    key of §4.2 filled in for an invented project: copy the `project:`/`mechanism:`/`planner:`
    structure and fill in each key against what step 1–6 just wrote (`project.modules` from item 2,

@@ -6,7 +6,7 @@ absent -- the three files `agent_os/docs/AGENT_OS.md` §5 step 7 used to say wer
 but manual regardless" (`agent_os/docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
 (`agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
-`docs/runbooks/agent_monitor.md`).
+`agent_os/docs/ADOPTION.md` step 22).
 
     agent-os-install --dry-run     # print every path this would touch and its diff, write nothing
     agent-os-install               # write what does not already exist
@@ -93,7 +93,7 @@ def unit_python() -> str:
 def resolve_exec_start(root: pathlib.Path) -> str:
     """The host's own shim (`scripts/agent_guard.py`) run on the host's own interpreter when one
     exists -- reproducing exactly what a hand-armed unit on this machine already does
-    (`docs/runbooks/agent_monitor.md`) -- or the package's own console form otherwise, which is
+    (`agent_os/docs/ADOPTION.md` step 20) -- or the package's own console form otherwise, which is
     what a host with no shims (one that never ran #508's move) gets instead. Every other case
     runs on `unit_python()`, which refuses rather than render a bare `python3`."""
     shim = root / "scripts" / "agent_guard.py"

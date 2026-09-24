@@ -140,10 +140,34 @@ def _fields_response(options):
     return json.dumps({"fields": [{"name": "Status", "options": [{"name": o} for o in options]}]})
 
 
+ALL_SIX = ["Backlog", "Ready for AI", "In progress", "AI completed", "Review", "Done"]
+
+
+def _linked_response(boards):
+    """What `gh api graphql` answers for the repository's linked Projects: `(number, owner)`."""
+    import json
+
+    nodes = [{"number": number, "owner": {"login": owner}} for number, owner in boards]
+    return json.dumps({"data": {"repository": {"projectsV2": {"nodes": nodes}}}})
+
+
+def _board_gh(fields, linked=((1, "owner"),)):
+    """One `subprocess.run` stand-in answering the board check's two `gh` calls."""
+
+    def dispatch(args, **kwargs):
+        if args[1:3] == ["project", "field-list"]:
+            return _completed(stdout=fields)
+        if args[1:3] == ["api", "graphql"]:
+            return _completed(stdout=_linked_response(linked))
+        raise AssertionError(f"unexpected call: {args}")
+
+    return dispatch
+
+
 def test_check_board_fails_when_an_option_is_missing():
     project = _project()
     response = _fields_response(["Backlog", "Ready for AI", "In progress"])  # 3 of 6
-    with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout=response)):
+    with patch("agent_os.issues.subprocess.run", side_effect=_board_gh(response)):
         check = doctor.check_board(project, "owner/name")
     assert not check.ok
     assert "AI completed" in check.detail
@@ -153,19 +177,47 @@ def test_check_board_fails_when_no_status_field_exists():
     import json
 
     response = json.dumps({"fields": [{"name": "Other", "options": [{"name": "x"}]}]})
-    with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout=response)):
+    with patch("agent_os.issues.subprocess.run", side_effect=_board_gh(response)):
         check = doctor.check_board(_project(), "owner/name")
     assert not check.ok
     assert "Status" in check.detail
 
 
 def test_check_board_passes_with_all_six_columns():
-    response = _fields_response(
-        ["Backlog", "Ready for AI", "In progress", "AI completed", "Review", "Done"]
-    )
-    with patch("agent_os.issues.subprocess.run", return_value=_completed(stdout=response)):
+    response = _fields_response(ALL_SIX)
+    with patch("agent_os.issues.subprocess.run", side_effect=_board_gh(response)):
         check = doctor.check_board(_project(), "owner/name")
     assert check.ok
+
+
+# agent-os#5: `board_number` copied from the example names SOME Project of the owner -- one that
+# may belong to another repository and still carry all six columns. The check also reads which
+# Projects are linked to `project.repo`, and fails on one that is not.
+
+
+def test_check_board_fails_on_a_project_not_linked_to_the_repository():
+    response = _fields_response(ALL_SIX)
+    gh = _board_gh(response, linked=[(2, "owner")])
+    with patch("agent_os.issues.subprocess.run", side_effect=gh):
+        check = doctor.check_board(_project(board_number=1), "owner/name")
+    assert not check.ok
+    assert "not linked to owner/name" in check.detail
+    assert "gh project link 1 --owner owner --repo name" in check.detail
+
+
+def test_check_board_fails_when_the_repository_has_no_linked_project():
+    gh = _board_gh(_fields_response(ALL_SIX), linked=[])
+    with patch("agent_os.issues.subprocess.run", side_effect=gh):
+        check = doctor.check_board(_project(board_number=1), "owner/name")
+    assert not check.ok
+    assert "not linked to owner/name" in check.detail
+
+
+def test_check_board_fails_on_a_same_numbered_project_of_another_owner():
+    gh = _board_gh(_fields_response(ALL_SIX), linked=[(1, "someone-else")])
+    with patch("agent_os.issues.subprocess.run", side_effect=gh):
+        check = doctor.check_board(_project(board_number=1), "owner/name")
+    assert not check.ok
 
 
 # --------------------------------------------------------------------------------------------
@@ -308,11 +360,9 @@ def test_run_checks_all_pass(tmp_path):
             ]
             return _completed(stdout=__import__("json").dumps(labels))
         if args[1:3] == ["project", "field-list"]:
-            return _completed(
-                stdout=_fields_response(
-                    ["Backlog", "Ready for AI", "In progress", "AI completed", "Review", "Done"]
-                )
-            )
+            return _completed(stdout=_fields_response(ALL_SIX))
+        if args[1:3] == ["api", "graphql"]:
+            return _completed(stdout=_linked_response([(1, "owner")]))
         if args[:2] == ["gh", "auth"]:
             return _completed(stdout="  - Token scopes: 'repo', 'project'")
         if args[:1] == ["systemctl"]:
@@ -336,6 +386,8 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
             return _completed(stdout="[]")
         if args[1:3] == ["project", "field-list"]:
             return _completed(stdout=_fields_response([]))
+        if args[1:3] == ["api", "graphql"]:
+            return _completed(stdout=_linked_response([(1, "owner")]))
         if args[:2] == ["gh", "auth"]:
             return _completed(returncode=1, stderr="not logged in")
         if args[:1] == ["systemctl"]:
@@ -355,6 +407,28 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
         "notify topic file",
         "guard timer active",
     }
+
+
+# agent-os#10: the hint a failed timer check prints is read on a host that has only what ships in
+# `agent_os/`. It says what to run, and any doc it names is one this repository ships.
+
+
+def _named_docs_exist(text):
+    import re
+
+    from agent_os.cli import AGENT_OS_DIR
+
+    named = re.findall(r"(?:agent_os/)?docs/[\w./-]+\.md", text)
+    return [path for path in named if not (AGENT_OS_DIR / path.removeprefix("agent_os/")).is_file()]
+
+
+def test_check_guard_timer_hint_is_self_sufficient_and_names_only_shipped_docs():
+    with patch("agent_os.doctor.subprocess.run", return_value=_completed(stdout="inactive\n")):
+        check = doctor.check_guard_timer(_project())
+    assert not check.ok
+    assert "systemctl --user enable --now acme-guard.timer" in check.detail
+    assert "agent-os-install" in check.detail
+    assert _named_docs_exist(check.detail) == [], check.detail
 
 
 # --------------------------------------------------------------------------------------------
