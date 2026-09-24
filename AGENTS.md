@@ -51,10 +51,11 @@ The whole suite takes over ten minutes: launch it in the background and check it
 diverge from CI.
 
 ## Rules
-- **No host literal anywhere outside `docs/`.** `tests/test_no_host_literals.py` walks every file
-  under the repository root (except `.git`, `.venv`, `__pycache__`, `docs/`, `tests/golden/`,
+- **No host literal anywhere outside `docs/`.** `tests/test_no_host_literals.py` reads every file
+  git knows (`git ls-files --cached --others --exclude-standard`, except `docs/`, `tests/golden/`,
   `config.example.yaml`) and fails on a host project's name, org, owner login or database port.
-  That includes untracked files: anything you leave in the tree is scanned.
+  That includes untracked files that are not ignored: a stray file you leave in the tree is
+  scanned; ignored paths (`.venv`, `.cache/`, `.claude/worktrees/`) and nested worktrees are not.
 - A host-specific value (a path, a label, a runbook, a test command) is a config key with a
   documented default, never a literal in code, prompts or templates.
 - **Tests must never launch a real backend.** A driver test without a fake `claude`/`qwen` first in
