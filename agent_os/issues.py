@@ -18,6 +18,7 @@ No third-party GitHub library and no new dependency: every call is `gh api` / `g
         review|done
     python -m agent_os.issues brief <N> [--supplement F]
     python -m agent_os.issues load <backlog.yaml> [--dry-run]
+    python -m agent_os.issues supersede <N> --by A [--by B ...] [--route D=A[,B] ...]
 
 Repository: the `AGENT_OS_GH_REPO` env variable (`owner/name`), else `project.repo` in
 `config/agents.yaml`, else `gh repo view` on the cwd. Printed at the start of every command.
@@ -90,6 +91,7 @@ from agent_os.lib import (
     load_project,
     load_task_classes,
     render_human_message,
+    replace_blocker,
     validate_issue_body,
 )
 
@@ -1049,6 +1051,102 @@ def cmd_brief(args: argparse.Namespace) -> None:
         print(text, end="")
 
 
+def parse_routes(routes: list[str] | None, children: list[int]) -> dict[int, list[int]]:
+    """`--route D=A,B` pairs as {dependent: [children]}: which of the split's children a given
+    dependent really waits on, when the refiner can tell. Every child named must be one of `--by`,
+    so a typo can never point a dependent at an unrelated issue."""
+    parsed: dict[int, list[int]] = {}
+    for route in routes or []:
+        dependent, _, targets = route.partition("=")
+        try:
+            numbers = [int(n.strip().lstrip("#")) for n in targets.split(",") if n.strip()]
+            parsed[int(dependent.strip().lstrip("#"))] = numbers
+        except ValueError:
+            sys.exit(f"--route {route!r}: expected DEPENDENT=CHILD[,CHILD...]")
+        if not numbers:
+            sys.exit(f"--route {route!r} names no child")
+        strangers = [n for n in numbers if n not in children]
+        if strangers:
+            listed = ", ".join(f"#{n}" for n in strangers)
+            sys.exit(f"--route {route!r}: {listed} is not one of the --by children")
+    return parsed
+
+
+def supersede(
+    repo: str, original: int, children: list[int], routes: dict[int, list[int]]
+) -> list[str]:
+    """The split's bookkeeping, done in one deterministic pass rather than left to a prompt (#39):
+    every OPEN issue whose `## Dependencies` says `Blocked by #<original>` has that line rewritten
+    to the children it is routed to (all of them when no route says otherwise) and gets a comment
+    saying so; then the original is closed as `not planned` with a "superseded by" comment. Left
+    open, the original blocked its dependents forever; closed by hand, it unblocked them before
+    the children were done. Idempotent: a second run finds no dependent line and a closed original.
+    Returns one line per thing it did."""
+    if not children:
+        sys.exit("supersede needs at least one --by child")
+    if original in children:
+        sys.exit(f"#{original} cannot supersede itself")
+    current = gh_json_dict("issue", "view", str(original), "--repo", repo, "--json", "labels,state")
+    labels = type_labels()
+    grouping = sorted(label_names(current) & {labels["epic"], labels["feature"]})
+    if grouping:
+        # A feature's children are its parts, not its replacement: it stays open to group them.
+        sys.exit(f"#{original} is {grouping[0]}: only a split task or bug is superseded")
+    listing = ("issue", "list", "--repo", repo, "--state", "open", "--limit", "1000")
+    rows = gh_json(*listing, "--json", "number,body") or []
+    open_numbers = {int(row["number"]) for row in rows}
+    missing = [n for n in children if n not in open_numbers]
+    if missing:
+        listed = ", ".join(f"#{n}" for n in missing)
+        sys.exit(f"{listed} is not an open issue: a superseding child must exist and be open")
+    unrouted = [d for d in routes if d not in open_numbers]
+    if unrouted:
+        sys.exit(f"--route names #{unrouted[0]}, which is not an open issue")
+    children_text = ", ".join(f"#{n}" for n in children)
+    done: list[str] = []
+    for row in rows:
+        dependent = int(row["number"])
+        if dependent == original or dependent in children:
+            continue
+        targets = routes.get(dependent, children)
+        body = replace_blocker(row.get("body") or "", original, targets)
+        if body is None:
+            continue
+        update_issue(repo, dependent, {"body": body})
+        targets_text = ", ".join(f"#{n}" for n in targets)
+        comment = (
+            f"`Blocked by #{original}` is now `Blocked by` {targets_text}: #{original} was split "
+            f"into {children_text} and closed as superseded."
+        )
+        gh_json(
+            "api",
+            f"repos/{repo}/issues/{dependent}/comments",
+            "-X",
+            "POST",
+            "-f",
+            f"body={comment}",
+        )
+        done.append(f"dependent #{dependent}: Blocked by #{original} -> {targets_text}")
+    if (current.get("state") or "").upper() == "OPEN":
+        comment = f"Superseded by {children_text}."
+        gh_json(
+            "api", f"repos/{repo}/issues/{original}/comments", "-X", "POST", "-f", f"body={comment}"
+        )
+        update_issue(repo, original, {"state": "closed", "state_reason": "not_planned"})
+        done.append(f"closed #{original} as not planned, superseded by {children_text}")
+    else:
+        done.append(f"#{original} was already closed")
+    return done
+
+
+def cmd_supersede(args: argparse.Namespace) -> None:
+    repo = repo_name()
+    print(f"repo: {repo}")
+    children = list(dict.fromkeys(args.by or []))
+    for line in supersede(repo, args.number, children, parse_routes(args.route, children)):
+        print(line)
+
+
 def cmd_load(args: argparse.Namespace) -> None:
     repo = repo_name()
     print(f"repo: {repo}")
@@ -1127,6 +1225,18 @@ def main() -> None:
     p.add_argument("file")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_load)
+
+    p = sub.add_parser(
+        "supersede", help="after a split: repoint the original's dependents and close it"
+    )
+    p.add_argument("number", type=int)
+    p.add_argument("--by", type=int, action="append", required=True, help="a child of the split")
+    p.add_argument(
+        "--route",
+        action="append",
+        help="DEPENDENT=CHILD[,CHILD]: the children one dependent waits on (default: all)",
+    )
+    p.set_defaults(func=cmd_supersede)
 
     args = parser.parse_args()
     args.func(args)

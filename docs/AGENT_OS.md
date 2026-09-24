@@ -52,6 +52,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | `status:refine` (structural defect) → refiner runs, stays `status:refine` | Refiner | `refine_pending` event, only if `planner.refiner_unattended: true`; it names the head of the refine queue, closest to dispatch first (`agent_os.lib.refine_queue_rank`: parent carries `labels.auto_ready`, then position in `labels.priorities`, then no open `Blocked by`, then issue number ascending — #32) | original body posted as a comment, body rewritten, `<!-- refiner-summary -->` comment | `agent_os.guard:947-972`; `agent_os.lib:399-427` (`needs_refinement`); `agent_os/bin/agent_task.sh:234-247` |
 | `status:refine` (otherwise conformant, `## Stages` missing or empty) → refiner writes it, stays `status:refine` | Refiner | same `refine_pending` event — a missing/empty `## Stages` is itself the structural defect `needs_refinement` checks for | `## Stages` checklist written into the body, `<!-- refiner-summary -->` comment | `agent_os.lib` `REQUIRED_SECTIONS`, `parse_stages`, `section_failures` (`stages: no checklist line`); `agent_os/bin/agent_task.sh` refiner RULES; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:refine` → split into sub-issues `status:refine`, original loses the label | Refiner | same as above | `issues.py create --parent N` + `move refine` per child | `agent_os/bin/agent_task.sh:239-247` |
+| split task/bug → original closed `not planned`, its dependents repointed | Refiner, through `issues.py supersede N --by <child>...` (#39) | the refiner split a task or bug (never a feature, whose children are its parts) | every open `Blocked by #N` line rewritten to the children (all of them unless `--route D=child` narrows one dependent), a comment on each dependent, a `Superseded by` comment and a `not planned` close on N; dependents first, so a cut run never unblocks early | `agent_os.issues` `supersede`; `agent_os.lib` `replace_blocker`; `agent_os/prompts/refiner.md` DECIDE THE SHAPE |
 | `status:refine` → `status:blocked-on-human` (refiner's doubt) | Refiner | refiner decides | `<!-- refiner-summary -->` + `@__HUMAN_LOGIN__` + move | `agent_os/bin/agent_task.sh:269-280` |
 | `status:refine` → `status:ready` (**auto-ready**) | Guard, via `promote_refined` | **every tick** (#365) — no longer a step the planner must remember; a promotion shows up in the same tick's dispatchable scan and reaches the planner as `new_dispatchable` | label + "Ready for AI" column | `agent_os.guard` `tick`/`promote_refined`; predicate `agent_lib.promotable_to_ready` |
 | **fixed** (#365): `promote-refined` outside the `tick` | Guard (`tick`) | every tick calls `promote_refined()` (it is idempotent and already tested) | same label + column as the row above | `agent_os.guard` `tick`; the CLI subcommand stays for a manual sweep, and `agent_os/bin/planner_task.sh` no longer asks the planner to run it |
@@ -179,6 +180,13 @@ GitHub and the diff rather than trusted from the PR text. `.claude/agents/contro
 "Duty 4" is the binding source for them; what follows restates it:
 
 1. CI is green on the PR's HEAD SHA (`gh pr checks N`), and the PR targets the default branch.
+   A head SHA with **zero** checks reported (no check run, no status) fails this condition: the
+   control plane does not merge and hands the PR back to the human with that reason. The
+   mechanism's side of the bargain is that no PR lacks a check: `agent-os-install` writes
+   `.github/workflows/ci-host.yml`, running `project.test_command` on every pull request with no
+   path filter (`project.install_host_ci`), because `ci-agent-os.yml` only fires on `agent_os/**`;
+   `agent-os-doctor` fails when no workflow would report on a host-only PR
+   (`docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md`, agent-os#50).
 2. The validator approved it (`gh pr view N --json reviews`) — or no validator review exists and the
    control plane reviewed the diff against the issue's acceptance criteria line by line.
 3. The diff (`gh pr diff N --name-only`) touches only files the issue's scope allows, none of the
@@ -370,6 +378,7 @@ agent_os/
 │                                  [tool.ruff]/[tool.pytest.ini_options]
 └── templates/
     ├── ci-agent-os.yml            CI snippet agent-os-install copies if the host has none yet
+    ├── ci-host.yml                host CI running project.test_command on every PR, rendered if absent
     ├── issue_template/            .github/ISSUE_TEMPLATE/{task,bug}.md, copied if absent
     │   ├── bug.md
     │   └── task.md
@@ -483,11 +492,15 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   same command also copies `.claude/agents/{control-plane,worker-runner}.md` (rendered from
   `agent_os/agents/*.md`, #510, absent until that PR lands — `install` reports "no templates dir,
   skipped" and does nothing else for that step), `.github/ISSUE_TEMPLATE/{task,bug}.md` and
-  `.github/workflows/ci-agent-os.yml`, copied as-is if absent.
+  `.github/workflows/ci-agent-os.yml`, copied as-is if absent, and `.github/workflows/ci-host.yml`,
+  rendered from `agent_os/templates/ci-host.yml` with `project.test_command` if absent and
+  `project.install_host_ci` is true (the default): a workflow with no path filter, so every PR
+  reports at least one check (§2.4 condition 1, agent-os#50).
 - `agent-os-doctor` (#511) reads back the checklist above — `gh auth status` scopes, the labels
   that do not autocreate, the Project v2 `Status` field and its six options, each App's
   `.json`+`.pem`, each `project.executables` entry, each worktree, `project.notify_topic_file` and
-  the guard timer's `systemctl --user is-active` — one line per check, exit 1 on any failure. It
+  the guard timer's `systemctl --user is-active`, and whether any `.github/workflows/*.yml` fires on
+  `pull_request` without a path filter (read from its `on:` block only) — one line per check, exit 1 on any failure. It
   never calls `agent_guard.py check` or any other trigger a role reacts to: a manual check would
   re-announce a run that already finished and wake the planner for free.
 
@@ -558,7 +571,8 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
    overwritten without `--force` and never armed (`systemctl --user enable --now` stays §6's own
    human step, below); `.claude/agents/{control-plane,worker-runner}.md` rendered from
    `agent_os/agents/*.md` (#510) if that directory exists yet; `.github/ISSUE_TEMPLATE/{task,bug}.md`
-   and `.github/workflows/ci-agent-os.yml`, copied as-is if absent. `--dry-run` prints every path
+   and `.github/workflows/ci-agent-os.yml`, copied as-is if absent, plus `.github/workflows/ci-host.yml`
+   running `project.test_command` on every pull request. `--dry-run` prints every path
    this would touch and its diff against what is there, so adopting the mechanism on a second
    machine — or checking a first one is still what `config/agents.yaml` describes — is three
    commands instead of a checklist of hand edits.

@@ -1,8 +1,8 @@
 """Adopting the mechanism on a machine, from `config/agents.yaml` alone.
 
 `agent-os install [--dry-run] [--force]` writes the systemd `--user` units the tick runs on, and
-copies the host's `.claude/agents/*.md`, `.github/ISSUE_TEMPLATE/*.md` and a CI snippet if they are
-absent -- the three files `agent_os/docs/AGENT_OS.md` §5 step 7 used to say were "machine steps, not code,
+copies the host's `.claude/agents/*.md`, `.github/ISSUE_TEMPLATE/*.md`, the mechanism's CI snippet
+and a host CI workflow running `project.test_command` on every pull request if they are absent -- the three files `agent_os/docs/AGENT_OS.md` §5 step 7 used to say were "machine steps, not code,
 but manual regardless" (`agent_os/docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
 (`agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
@@ -34,6 +34,8 @@ from agent_os.render import render_agent_template
 SYSTEMD_TEMPLATES_DIR = AGENT_OS_DIR / "templates" / "systemd"
 ISSUE_TEMPLATES_DIR = AGENT_OS_DIR / "templates" / "issue_template"
 CI_SNIPPET_SOURCE = AGENT_OS_DIR / "templates" / "ci-agent-os.yml"
+HOST_CI_WORKFLOW_SOURCE = AGENT_OS_DIR / "templates" / "ci-host.yml"
+HOST_CI_WORKFLOW_NAME = "ci-host.yml"
 AGENT_TEMPLATES_DIR = AGENT_OS_DIR / "agents"
 
 # The standard systemd/POSIX default -- present on every Linux box regardless of what this one
@@ -230,6 +232,18 @@ def plan_ci_snippet(root: pathlib.Path) -> list[Action]:
     ]
 
 
+def plan_host_ci_workflow(project: ProjectConfig, root: pathlib.Path) -> list[Action]:
+    """`.github/workflows/ci-host.yml`, running `project.test_command` on every pull request with
+    no path filter, so no PR reaches the control plane with zero checks -- which its merge
+    condition 1 counts as not met (agent-os#50). `ci-agent-os.yml` alone only fires on
+    `agent_os/**`. A host whose own CI already reports on every PR opts out with
+    `project.install_host_ci: false`."""
+    if not project.install_host_ci:
+        return []
+    rendered = render_agent_template(HOST_CI_WORKFLOW_SOURCE.read_text(), project)
+    return [Action(root / ".github" / "workflows" / HOST_CI_WORKFLOW_NAME, rendered)]
+
+
 def plan_agent_templates(
     project: ProjectConfig, root: pathlib.Path
 ) -> tuple[list[Action], str | None]:
@@ -275,6 +289,7 @@ def main() -> None:
     actions += agent_actions
     actions += plan_issue_templates(root)
     actions += plan_ci_snippet(root)
+    actions += plan_host_ci_workflow(project, root)
 
     failed = False
     for action in actions:

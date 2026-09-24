@@ -68,7 +68,11 @@ stay in the repository's language (English).
 ## Duty 4 — approve and merge PRs
 
 A PR merges only when **all** of these hold; verify each one yourself, do not trust the PR text:
-1. CI green on the PR's HEAD SHA (`gh pr checks N`), and the PR targets the default branch.
+1. CI green on the PR's HEAD SHA (`gh pr checks N`), and the PR targets the default branch. Zero
+   checks reported on the head SHA (no check run and no status) is condition 1 NOT met, never an
+   exemption -- not even when you ran the test command green yourself: do not merge, hand the PR
+   back to the human with that reason (the host needs a workflow that fires on every pull
+   request, `agent-os-install`'s `ci-host.yml`; `agent-os-doctor` names it).
 2. The validator approved it (`gh pr view N --json reviews`), or no validator review exists and you
    reviewed the diff against the issue's acceptance criteria line by line.
 3. The diff (`gh pr diff N --name-only`) touches only files the issue's scope allows, none of the
