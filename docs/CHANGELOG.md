@@ -81,6 +81,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)
   and this file.
+- agent-os#13 — `docs/ADOPTION.md` step 7 spells out the `git remote add` + `git subtree add`
+  commands and says when git needs a credential of its own. `titanarq/agent-os` is public now, so
+  the add and every `subtree pull` need none. A `subtree push`, or any fetch from a private fork
+  or mirror, needs one, and a `gh` login alone does not give it to git. The step gives
+  `gh auth setup-git` as the fix, and an SSH remote as the alternative. Prose only: nothing in
+  the mechanism runs this step, so there is no behaviour for a test to pin.
 - agent-os#14 — `issues.py move` finds the issue's board item from the issue's own
   `projectItems` (one GraphQL query matching board number and owner) instead of listing the whole
   board with `gh project item-list`, which returned zero items for an org Project v2 that held them
