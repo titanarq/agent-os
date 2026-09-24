@@ -93,6 +93,11 @@ rules)
 run)
   context=${2:-"(no context given -- manual invocation)"}
   mkdir -p "$planner_dir"
+  # The run's own scratch directory, outside `$planner_dir` and the checkout, removed on every exit
+  # path of this run (agent-os#33, `agent_make_run_scratch`).
+  trap agent_remove_run_scratch EXIT
+  trap 'agent_remove_run_scratch; exit 143' INT TERM HUP
+  agent_make_run_scratch planner || exit 1
 
   # GitHub identity: its own App, distinct from a worker's backend identity, so a planning
   # decision reads as one at a glance -- agent_os/docs/adr/2026-09-14-the-planner-has-its-own-github-

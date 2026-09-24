@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#33 — the planner, validator and refiner get a scratch directory of their own:
+  each run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory outside `.cache/<role>/`
+  and the checkout, which the driver removes when the run ends; the three prompts name it and
+  forbid writing, moving or deleting anything under `.cache/`. A refiner had written its drafts
+  into `.cache/refiner/` and then `rm -rf`'d it, deleting the run log, the PID file `role_died`
+  detection reads and every `runs.tsv` row. A host's `prompt_extras` telling a role to use
+  `mktemp -d` is no longer needed.
 - agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
   (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
   the column `project.board_columns` maps that state to on the item it just added. Before, a later
