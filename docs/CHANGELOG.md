@@ -8,6 +8,7 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- The mechanism is released under the MIT License (`LICENSE`).
 - agent-os#39 — a split no longer strands the original's dependents. `issues.py supersede N
   --by A --by B [--route D=A]` rewrites every open issue's `Blocked by #N` line to the children
   (all of them unless a route narrows one dependent), comments on each dependent, then comments
