@@ -8,6 +8,14 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#22 — `worker_task.sh resume` no longer refuses to relaunch a run the guard cut over
+  that run's own diary: when `.state` line 1 records `CUT_BY_GUARD` and nothing is alive, the
+  dirty check leaves out `scratchpad/progress.log` (` M` when tracked, `??` when untracked, and
+  the collapsed `?? scratchpad/` only while the diary is the one file inside it). The file stays
+  on disk untouched, for the monitor and the resumed run. Any other dirty path, and a diary over
+  any other `.state` (`STARTED`, `RESUMED`, `DONE`, `FAILED_LAUNCH`, `BLOCKED`), still refuse. A
+  cut followed by `resume` no longer needs a host's `info/exclude` entry for the diary.
+
 - agent-os#18 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over the
   previous run's diary: when `.state` records that run's ending (`DONE`, `CUT_BY_GUARD`,
   `FAILED_LAUNCH`, `BLOCKED`), nothing is alive and the untracked `scratchpad/progress.log` is the

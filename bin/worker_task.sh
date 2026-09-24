@@ -160,7 +160,9 @@ mkdir -p "$cache"
 # is the one file a worker writes that NO commit may carry (#407): it is not the task's output, it
 # reached `main` inside a pull request and every worker branch after that conflicted with `main` on
 # it, and its uncommitted lines are the dirty-worktree signal `start`, `resume` and `branch` refuse
-# to relaunch over -- until `.state` records that run's end (`retire_finished_runs_diary`, #18). Relative, so it is a pathspec `git add`, `git diff` and `git log` all take.
+# to relaunch over -- until `.state` records that run's end (`retire_finished_runs_diary`, #18),
+# or `resume` continues the run the guard cut (`drop_the_cut_runs_diary`, #22). Relative, so it is
+# a pathspec `git add`, `git diff` and `git log` all take.
 DIARY=scratchpad/progress.log
 
 # The subject every freeze this driver writes, and the ONE freeze that is not a cut (#407):
@@ -525,8 +527,11 @@ freeze_uncommitted_work() {
 # temporary one, or any project that does not gitignore it -- it was refused every time. This
 # repository does ignore it, which is why the real worktrees never showed the defect; the guarantee
 # cannot rest on that, because the driver is project-agnostic and knows no `.gitignore` of its own.
+#
+# `uncommitted_work resume` also leaves out the diary of a run the guard cut, and only that (#22):
+# see `drop_the_cut_runs_diary`. Every other caller still counts the diary as work.
 uncommitted_work() {
-  local entries
+  local mode=${1:-} entries
   entries=$(git -C "$worktree" status --porcelain)
   # Narrow on purpose: only that path's UNTRACKED entry, and only while the path holds a symlink,
   # which is the shape the driver's link has. A `.env` that is a real file, a tracked `.env` git
@@ -535,8 +540,44 @@ uncommitted_work() {
   if [ -L "$worktree/.env" ]; then
     entries=$(printf '%s\n' "$entries" | grep -v -x '?? \.env' || true)
   fi
+  if [ "$mode" = resume ]; then
+    entries=$(printf '%s\n' "$entries" | drop_the_cut_runs_diary)
+  fi
   [ -n "$entries" ] || return 0
   printf '%s\n' "$entries" | head -5
+}
+
+# A CUT RUN'S DIARY IS THE HISTORY OF THE RUN `resume` CONTINUES (#22). The freeze never stages
+# the diary (#407), so a run the guard cut leaves it in the worktree, untracked or modified, and
+# `resume` used to refuse every relaunch over the lines the very run it resumes had written: on a
+# host with no `.git/info/exclude` entry for the file, each resume after a cut needed a human.
+# #407's reading -- uncommitted diary lines mean live work -- does not hold here: `alive` has
+# already answered no, and the freeze has committed everything else. So the `git status
+# --porcelain` entries on stdin come back without the diary's when `.state` line 1 records
+# `CUT_BY_GUARD`, the one ending `resume` continues from (`after=guard_cut`). A run that finished
+# (`DONE`), never launched (`FAILED_LAUNCH`) or reached `open-pr` and blocked (`BLOCKED`) is not
+# one to resume, and a `.state` recording no ending is a run the driver never saw end: over any
+# of those the diary still counts. Dropped are the diary's own entries -- ` M` while git tracks
+# it, `??` when something else in `scratchpad/` is tracked -- and the collapsed `?? scratchpad/`
+# only while the diary is the one untracked file inside it. The file itself is never touched,
+# unlike #18's archive: the monitor reads it and the resumed run appends to it.
+drop_the_cut_runs_diary() {
+  local previous_state diary_dir inside entry
+  previous_state=$([ -s "$statefile" ] && sed -n '1p' "$statefile" || true)
+  if [ "${previous_state%% *}" != CUT_BY_GUARD ]; then
+    cat
+    return 0
+  fi
+  diary_dir=${DIARY%/*}/
+  inside=$(git -C "$worktree" status --porcelain --untracked-files=all -- "$diary_dir")
+  while IFS= read -r entry; do
+    case "$entry" in
+      '' | " M $DIARY" | "?? $DIARY") continue ;;
+      "?? $diary_dir") [ "$inside" = "?? $DIARY" ] && continue ;;
+    esac
+    printf '%s\n' "$entry"
+  done
+  return 0
 }
 
 # A FINISHED RUN'S DIARY IS NOT THE NEXT RUN'S DIRT (#18). No commit carries the diary (#407), so
@@ -908,9 +949,10 @@ start|resume)
 
   alive && { echo "a run is already alive (pid $(cat "$pidfile")); stop it first"; exit 1; }
   [ -e "$worktree/.git" ] || { echo "no worktree at $worktree"; exit 1; }
-  # `start` only: `resume` continues the SAME run, whose diary is its own.
+  # `start` only: `resume` continues the SAME run, whose diary is its own -- kept on disk, and
+  # left out of the dirty check when that run was cut (`drop_the_cut_runs_diary`, #22).
   [ "$mode" = start ] && retire_finished_runs_diary
-  dirty=$(uncommitted_work)
+  dirty=$(uncommitted_work "$mode")
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
 
   if [ "$mode" = start ]; then
