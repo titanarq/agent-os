@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#15 — `issues.py create --type task|bug` (and `--template`) now puts the `title:` of
+  that type's `.github/ISSUE_TEMPLATE/<type>.md` front matter (`[task] `, `[bug] `) in front of
+  the given title. An issue created through the API skips GitHub's form, which is what adds the
+  prefix to a hand-written one, so the refiner's sub-issues came out without it. A title that
+  already starts with the prefix (case-insensitive, with or without its space) is left alone,
+  so `[task] [task] ` cannot happen. A type with no template, or a template with no `title:`,
+  keeps its title.
 - agent-os#23 — `issues.py create` now adds the new issue to `project.board_number`
   (`gh project item-add`) and, when it is created with a state label (`status:ready`, …), sets
   the column `project.board_columns` maps that state to on the item it just added. Before, a later
