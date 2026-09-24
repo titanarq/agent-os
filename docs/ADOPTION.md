@@ -127,7 +127,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     mechanism creates a credential.
 20. **`agent-os-install [--dry-run] [--force]`** — renders the systemd `--user` units
     (`~/.config/systemd/user/<guard_unit>.{service,timer}` and `.service.d/override.conf`) from
-    `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`; copies
+    `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, with
+    `ExecStart=` on the interpreter from step 16 (never a `.venv` at the host root; install refuses
+    when step 16 has not been run and `AGENT_OS_PYTHON` is unset); copies
     `.claude/agents/{control-plane,worker-runner}.md` (rendered from `agent_os/agents/*.md`),
     `.github/ISSUE_TEMPLATE/{task,bug}.md` and `.github/workflows/ci-agent-os.yml`, each only if
     absent. Never overwrites without `--force`, and never arms, restarts or reloads a unit —
