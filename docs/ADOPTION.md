@@ -71,7 +71,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     (any other name falls back silently to the first single-select field found) and six options
     matching `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`,
     `Review`, `Done`.
-14. **One GitHub App per identity** — `project.worker_apps.qwen`, `project.worker_apps.claude`,
+14. **One GitHub App per identity** — `project.backends.<name>.app` for each worker backend
+    (`project.backends.qwen.app`, `project.backends.claude.app` in the example),
     `project.planner_app`, and optionally `project.role_apps.validator`/`.refiner` (falling back to
     `planner_app` when unset, §7 row (p)). This is a browser step with no manifest automation in
     the mechanism (`agent_os.gh_app_token` only mints tokens for an App that already exists):
@@ -95,9 +96,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
     `project.executables` at any of these whose PATH the launching shell (a systemd user unit,
     typically) does not carry.
-18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per entry in
-    `project.worktrees`: idempotent `git worktree add` on a fresh branch from `origin/main` when
-    the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
+18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per
+    `project.backends` entry that sets a `worktree`: idempotent `git worktree add` on a fresh
+    branch from `origin/main` when the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
     either is missing.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App
     `.json`/`.pem` pairs from step 15, if not already placed there; `<host>/.env` at the repo root

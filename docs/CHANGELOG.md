@@ -8,6 +8,13 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#8 — `docs/ADOPTION.md` names the live config keys: step 14 puts a worker's App at
+  `project.backends.<name>.app` instead of the deprecated `project.worker_apps.*`, and step 18
+  runs `worker_task.sh <backend> init` once per `project.backends` entry with a `worktree`
+  instead of per `project.worktrees` entry. `docs/AGENT_OS.md`'s actors table and §4.3 say the
+  same. A test in `tests/test_backends_config.py` walks every `project.`/`mechanism.`/`planner.`
+  key ADOPTION.md mentions through the config schema and fails on one the loader does not have
+  or warns about as deprecated.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
