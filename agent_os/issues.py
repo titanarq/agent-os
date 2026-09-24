@@ -664,23 +664,44 @@ def board_status_field(owner: str, board: int) -> tuple[str, str, dict[str, str]
     return project["id"], status["id"], options
 
 
+ISSUE_PROJECT_ITEMS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      projectItems(first: 50) {
+        nodes { id project { number owner { ... on Organization { login } ... on User { login } } } }
+      }
+    }
+  }
+}
+"""
+
+
 def board_item_id(owner: str, board: int, repo: str, number: int) -> str | None:
     """The board item holding issue #N, or None when the issue was never added to the board —
-    which is not an error: the labels carry the state, the board only shows it."""
+    which is not an error: the labels carry the state, the board only shows it.
+
+    Asked from the issue's side, not by listing the board (#14): `gh project item-list` on an org
+    Project v2 came back with zero items while every issue's `projectItems` named its item there,
+    so every `move` skipped the mirror in silence. One issue's items are also a bounded answer,
+    where the listing stopped at its `--limit`."""
+    repo_owner, name = repo.split("/", 1)
     data = gh_json(
-        "project",
-        "item-list",
-        str(board),
-        "--owner",
-        owner,
-        "--format",
-        "json",
-        "--limit",
-        "1000",
+        "api",
+        "graphql",
+        "-f",
+        f"query={ISSUE_PROJECT_ITEMS_QUERY}",
+        "-f",
+        f"owner={repo_owner}",
+        "-f",
+        f"name={name}",
+        "-F",
+        f"number={number}",
     )
-    for item in (data or {}).get("items") or []:
-        content = item.get("content") or {}
-        if content.get("number") == number and content.get("repository") in (None, repo):
+    issue = (((data or {}).get("data") or {}).get("repository") or {}).get("issue") or {}
+    for item in (issue.get("projectItems") or {}).get("nodes") or []:
+        project = item.get("project") or {}
+        if project.get("number") == board and (project.get("owner") or {}).get("login") == owner:
             return item["id"]
     return None
 

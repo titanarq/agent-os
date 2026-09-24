@@ -101,6 +101,9 @@ def driver_environment(tmp_path):
     environment.update(
         PATH=f"{binaries}:{environment['PATH']}",
         WORKER_WORKTREE=str(worktree),
+        # `start` creates its cache before it gets to the refusals these tests read, so a
+        # disposable one keeps that out of the checkout's real `.cache` (agent-os#25).
+        WORKER_CACHE_DIR=str(tmp_path / "cache"),
         AGENT_OS_GH_REPO="owner/name",
     )
     return environment
@@ -1677,6 +1680,109 @@ def test_resume_refuses_a_worktree_whose_tracked_diary_holds_uncommitted_lines(t
 
 
 # ---------------------------------------------------------------------------------------------
+# A FINISHED RUN'S DIARY IS NOT THE NEXT RUN'S DIRT (#18). The signal above holds for a run the
+# driver never saw end; once `.state` line 1 records an ending, the untracked diary is the previous
+# run's leftover, and `start`/`branch` archive it into `$cache/diaries/` instead of refusing the
+# next dispatch over it. Observed on a host with no ignore rule for the file: the first dispatch to
+# a backend after every completed issue was refused.
+# ---------------------------------------------------------------------------------------------
+
+
+def _finished_previous_run(cache, state_line, previous_issue="37"):
+    (cache / "worker_claude.state").write_text(f"{state_line}\nissue={previous_issue} label=done\n")
+    (cache / "worker_claude.issue").write_text(f"{previous_issue}\n")
+
+
+def _archived_diaries(cache):
+    return (
+        sorted((cache / "diaries").glob("*.progress.log")) if (cache / "diaries").is_dir() else []
+    )
+
+
+@pytest.mark.parametrize("ending", ["DONE", "CUT_BY_GUARD reason=stall", "BLOCKED reason=ci"])
+def test_start_archives_a_finished_runs_diary_and_dispatches(tmp_path, ending):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    _finished_previous_run(cache, ending)
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "worktree is dirty" not in result.stdout, result.stdout
+        assert "started pid" in result.stdout, result.stdout
+        # Archived, not deleted, and named after the run that wrote it.
+        [archived] = _archived_diaries(cache)
+        assert archived.name.startswith("worker_claude-issue37-"), archived.name
+        assert "still-working" in archived.read_text()
+    finally:
+        _stop(environment)
+
+
+def test_start_still_refuses_a_diary_whose_run_the_driver_never_saw_end(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    _finished_previous_run(cache, "STARTED")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_start_leaves_a_finished_runs_diary_alone_when_other_work_is_also_left(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    diary = _diary_with_an_uncommitted_line(worktree, tracked=False)
+    (worktree / "scratchpad" / "notes.md").write_text("a draft the worker never committed\n")
+    _finished_previous_run(cache, "DONE")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        # A refusal writes nothing: the diary stays where it was.
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_resume_keeps_the_diary_of_the_run_it_continues(tmp_path):
+    # `resume` continues the same run, so its diary is its own and is never archived -- the
+    # refusal is `test_resume_refuses_a_worktree_whose_untracked_diary_holds_lines`'s, unchanged.
+    environment, cache = _worktree_with_cut_commits(tmp_path, 1)
+    diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
+    try:
+        result = _resume(environment)
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "still-working" in diary.read_text()
+        assert _archived_diaries(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_branch_archives_a_finished_runs_diary_before_switching(tmp_path):
+    _remote, worktree = _worktree_with_origin(tmp_path)
+    _diary_with_an_uncommitted_line(worktree, tracked=False)
+    environment = _branch_environment(tmp_path, worktree)
+    cache = tmp_path / "cache"
+    _finished_previous_run(cache, "DONE")
+
+    result = _branch(environment, "task/81-next-issue")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "is now on task/81-next-issue" in result.stdout, result.stdout
+    [archived] = _archived_diaries(cache)
+    assert "still-working" in archived.read_text()
+
+
+# ---------------------------------------------------------------------------------------------
 # STAGES (#375): one stage per process, chained by the driver. The fake backend below is the only
 # thing standing in for a model -- `claude` and `qwen` are both stubbed on PATH regardless of
 # which backend a test drives, so a real one can never be reached even by accident.
@@ -1797,13 +1903,15 @@ if args[:2] == ["label", "list"]:
         {"name": "status:ai-completed"},
         {"name": "status:blocked-on-human"},
     ]))
-if args[:2] == ["project", "item-list"]:
-    # $GH_STUB_BOARD_ITEM is the issue number the board holds an item for; unset, the board holds
-    # none and `mirror_board_column` says so instead of editing anything.
+if args[:2] == ["api", "graphql"]:
+    # The issue's own `projectItems` (#14). $GH_STUB_BOARD_ITEM is the issue number that has an
+    # item on board 1 of `owner`; unset, no issue has one and `mirror_board_column` says so
+    # instead of editing anything.
     on_board = os.environ.get("GH_STUB_BOARD_ITEM")
-    if on_board:
-        out(json.dumps({"items": [{"id": "ITEM1", "content": {"number": int(on_board)}}]}))
-    out(json.dumps({"items": []}))
+    nodes = []
+    if on_board and f"number={on_board}" in args:
+        nodes = [{"id": "ITEM1", "project": {"number": 1, "owner": {"login": "owner"}}}]
+    out(json.dumps({"data": {"repository": {"issue": {"projectItems": {"nodes": nodes}}}}}))
 if args[:2] == ["project", "view"]:
     out(json.dumps({"id": "PROJECT1"}))
 if args[:2] == ["project", "field-list"]:
@@ -3046,6 +3154,34 @@ def test_start_accepts_a_branch_whose_name_carries_this_issues_number(tmp_path):
         assert "started pid" in result.stdout
     finally:
         _stop(environment)
+
+
+def test_start_accepts_a_hyphenated_prefix_and_its_refusal_names_the_shape(tmp_path):
+    """agent-os#16: the planner branched `agent-os/37-gradle-skeleton` and `start 37` refused it
+    while telling it to use "a branch naming #37" -- which it was. The anchoring that stops a wrong
+    branch is on the number (`/<issue>` then `-`, `/` or the end), not on the prefix being letters
+    only; so a hyphenated prefix passes, a hyphenated prefix does NOT let `…/387-close-the-390-gap`
+    through for #390, and the refusal spells out the shape it accepts instead of paraphrasing it."""
+    (tmp_path / "accepted").mkdir()
+    environment, _cache, _worktree = _base_check_environment(
+        tmp_path / "accepted", branch="agent-os/347-the-work"
+    )
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "started pid" in result.stdout
+    finally:
+        _stop(environment)
+
+    (tmp_path / "refused").mkdir()
+    environment, cache, _worktree = _base_check_environment(
+        tmp_path / "refused", branch="agent-os/387-close-the-390-gap"
+    )
+    refused = _start(environment, "390")
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert "refusing to dispatch" in refused.stdout
+    assert "<word>/390-<slug>" in refused.stdout, refused.stdout
+    assert list(cache.iterdir()) == []
 
 
 def test_start_accepts_the_worktree_sitting_on_the_base_the_issue_names(tmp_path):

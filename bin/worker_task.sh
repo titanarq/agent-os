@@ -153,14 +153,16 @@ stagefile=$cache/worker_$backend.stage
 # One finished stage process's event stream, per issue, kept where #367's spend report will read
 # it: .cache/spend/<issue>/<ts>-<backend>-stage<N>.jsonl.
 spenddir=$cache/spend
-mkdir -p "$cache"
+# `rules` only prints, so it creates nothing: before agent-os#25 it made `$cache` too, and every
+# test that rendered a worker's rules left a `.cache/` in the checkout the suite ran from.
+[ "${1:-status}" = rules ] || mkdir -p "$cache"
 
 # The worker's own liveness diary, relative to the worktree root -- the same path the guard reads
 # (`agent_guard.py`'s `worker_paths`) and the one the RULES below tell the worker to append to. It
 # is the one file a worker writes that NO commit may carry (#407): it is not the task's output, it
 # reached `main` inside a pull request and every worker branch after that conflicted with `main` on
 # it, and its uncommitted lines are the dirty-worktree signal `start`, `resume` and `branch` refuse
-# to relaunch over. Relative, so it is a pathspec `git add`, `git diff` and `git log` all take.
+# to relaunch over -- until `.state` records that run's end (`retire_finished_runs_diary`, #18). Relative, so it is a pathspec `git add`, `git diff` and `git log` all take.
 DIARY=scratchpad/progress.log
 
 # The subject every freeze this driver writes, and the ONE freeze that is not a cut (#407):
@@ -539,6 +541,33 @@ uncommitted_work() {
   printf '%s\n' "$entries" | head -5
 }
 
+# A FINISHED RUN'S DIARY IS NOT THE NEXT RUN'S DIRT (#18). No commit carries the diary (#407), so
+# the lines a run wrote stay untracked in the worktree after it ends, and the next `branch`/`start`
+# read them as work left behind: in a host with no ignore rule for the file, the first dispatch to
+# a backend after ANY completed issue was refused. What tells a finished run from one that never
+# reached its end is the driver's own `.state` line 1, not the file's existence and not a line the
+# agent may or may not have typed: `DONE`, `CUT_BY_GUARD`, `FAILED_LAUNCH` and `BLOCKED` are the
+# endings (`agent_os.guard.RUN_ENDED_STATES`). Only then, only while nothing is alive, and only when
+# the diary is the ONE thing dirty -- a refusal over anything else still writes nothing -- the file
+# is moved to `$cache/diaries/`, archived rather than deleted. A diary git tracks (a branch forked
+# before the base stopped tracking it) is left alone: moving it would leave a deletion behind.
+retire_finished_runs_diary() {
+  local previous_state entries archive
+  alive && return 0
+  [ -f "$worktree/$DIARY" ] || return 0
+  previous_state=$([ -s "$statefile" ] && sed -n '1p' "$statefile" || true)
+  case "${previous_state%% *}" in DONE | CUT_BY_GUARD | FAILED_LAUNCH | BLOCKED) ;; *) return 0 ;; esac
+  entries=$(git -C "$worktree" status --porcelain --untracked-files=all)
+  if [ -L "$worktree/.env" ]; then
+    entries=$(printf '%s\n' "$entries" | grep -v -x '?? \.env' || true)
+  fi
+  [ "$entries" = "?? $DIARY" ] || return 0
+  mkdir -p "$cache/diaries"
+  archive="$cache/diaries/worker_$backend-issue$(cat "$issuefile" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S).progress.log"
+  mv "$worktree/$DIARY" "$archive"
+  echo "moved the finished run's diary (${previous_state%% *}) to $archive"
+}
+
 # What happened to work the process never committed -- the last clause of the progress comment.
 # The same reading as the refusals below: a link the driver created is not work the worker left.
 stage_tree_state() {
@@ -843,6 +872,7 @@ branch)
   [ -n "$name" ] || { echo "usage: $0 $backend branch <name> [<from>]"; exit 2; }
   alive && { echo "a run is alive (pid $(cat "$pidfile")); stop it before switching branches"; exit 1; }
   [ -e "$worktree/.git" ] || { echo "no worktree at $worktree"; exit 1; }
+  retire_finished_runs_diary
   dirty=$(uncommitted_work)
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
   # No explicit base: start from the remote's tip, never from whatever the shared `.git` happens
@@ -880,6 +910,8 @@ start|resume)
 
   alive && { echo "a run is already alive (pid $(cat "$pidfile")); stop it first"; exit 1; }
   [ -e "$worktree/.git" ] || { echo "no worktree at $worktree"; exit 1; }
+  # `start` only: `resume` continues the SAME run, whose diary is its own.
+  [ "$mode" = start ] && retire_finished_runs_diary
   dirty=$(uncommitted_work)
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
 
@@ -925,12 +957,15 @@ start|resume)
     # ANCHORED ON THE PLANNER'S OWN SHAPE, `<word>/<issue>-<slug>`. An unanchored token search
     # accepted `task/387-close-the-390-gap` as a branch for #390 and `chore/2026-09-16-cleanup`
     # for #16 -- and accepting a wrong branch is the whole failure this gate exists to stop.
-    elif ! printf '%s\n' "$current_branch" | grep -qE "(^|/)[a-z]+/$issue([-/]|$)"; then
+    # What anchors it is the NUMBER: right after a `/`, then `-`, `/` or the end. The `<word>` is
+    # any lowercase git word, hyphens and digits included (agent-os#16): `[a-z]+` refused the
+    # planner's `agent-os/37-gradle-skeleton` for #37 while its message said "a branch naming #37".
+    elif ! printf '%s\n' "$current_branch" | grep -qE "(^|/)[a-z][a-z0-9-]*/$issue([-/]|$)"; then
       issue_base=$(issue_base_branch "$body")
       if [ "$current_branch" != "$issue_base" ]; then
         echo "refusing to dispatch: $worktree is on ${current_branch:-a detached HEAD}, but issue" \
           "#$issue's base is $issue_base -- put the worktree on it" \
-          "($0 $backend branch task/$issue-<slug> $issue_base) or on a branch naming #$issue," \
+          "($0 $backend branch task/$issue-<slug> $issue_base) or on a <word>/$issue-<slug> branch," \
           "or pass --force"
         exit 1
       fi
