@@ -8,6 +8,14 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#11 — the role prompts name no script under a host's own `scripts/`. The worker's
+  HOW TO REPORT no longer sends every worker to `scripts/debug.py`, a file one host has: it asks
+  for a breakpoint, a debugger session or a throwaway print, with the project's own debugging tool
+  when the host's `project.prompt_extras` paragraph names one. The validator's evidence example
+  spells the test runner as `__TEST_COMMAND__`, so it renders the host's `project.test_command`
+  (the example config's `scripts/test.sh` renders word for word as before). `tests/golden/worker.md`
+  changes by that one sentence. A test in `tests/test_prompt_templates.py` fails on any
+  `scripts/<path>` in a template.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
