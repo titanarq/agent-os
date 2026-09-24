@@ -552,6 +552,23 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
+    # How a freshly added worktree -- a worker's, on `init`, and a validator's throwaway one -- is
+    # made runnable, since a new worktree carries tracked files only (agent-os#41,
+    # agent_os/docs/adr/2026-09-24-a-fresh-worktree-is-provisioned-the-way-the-host-configures.md).
+    # `worktree_links` are paths relative to the repository root, each symlinked from the main
+    # checkout into the worktree when the checkout has it and the worktree does not: a link and
+    # never a copy, so one file stays authoritative for every tree. The default is the root
+    # `.venv` and `.env` the drivers linked before this key existed. `worktree_setup_command` is
+    # then run by `bash -c` INSIDE the worktree before any backend starts -- a monorepo's `uv sync`
+    # in `backend/`, an `npm ci` in `web/` -- and a non-zero exit refuses the run rather than
+    # handing an agent a tree it cannot run anything in. Empty by default: nothing is run.
+    worktree_links: list[str] = [".venv", ".env"]
+    worktree_setup_command: str = ""
+    # The linters the validator runs on the files a pull request touches, each a command that
+    # takes the file list as its trailing arguments, rendered into its RULES as `__LINT_RULES__`.
+    # Empty by default, and an empty list renders no lint bullet at all: a project whose linter
+    # is not configured is not told a command it may not have.
+    lint_commands: list[str] = []
     # One host-owned file per role whose text is appended at that role's `__PROJECT_EXTRAS__`
     # extension point, as a path relative to the HOST project's root. Every key is optional, and a
     # role with no entry renders nothing there: this is where a sentence only the host can write
@@ -1296,6 +1313,23 @@ def _substitute_block(text: str, placeholder: str, value: str) -> str:
     return "\n".join(rendered)
 
 
+def lint_rules(project: ProjectConfig | None = None) -> str:
+    """The validator's lint bullet, rendered from `project.lint_commands`, or nothing when the list
+    is empty (agent-os#41: the bullet used to hard-code one Python host's `.venv/bin/ruff`)."""
+    commands = (project or load_project()).lint_commands
+    if not commands:
+        return ""
+    spelled = " and ".join(f"`{command} <files>`" for command in commands)
+    return (
+        "- Run the project's linters on the files the pull request actually touches, never on the\n"
+        "  whole repository -- a finding about a file it did not touch is not a verdict about it --\n"
+        "  and run them from inside that worktree:\n"
+        f"  {spelled}.\n"
+        "  The same file in this checkout is not the code under review, and linting it is a verdict\n"
+        "  about something else."
+    )
+
+
 def prompt_extras_path(role: str, project: ProjectConfig | None = None) -> pathlib.Path | None:
     """The host-owned file whose text is appended at this role's extension point, or None when the
     host names none. Relative to the HOST project's root, never to this package."""
@@ -1324,6 +1358,7 @@ def prompt_substitutions(
         "HUMAN_LOGIN": project.human_login,
         "HUMAN_MESSAGE_RULES": human_message_rules(project),
         "TEST_COMMAND": project.test_command,
+        "LINT_RULES": lint_rules(project),
         "FORBIDDEN_PATHS_RULES": forbidden_paths_rules(project) if both_lists_configured else "",
         "MECHANISM_PATHS_RULES": mechanism_paths_rules(mechanism) if both_lists_configured else "",
         "NEVER_RUN_RULES": never_run_rules(project),
@@ -2268,6 +2303,7 @@ def main() -> None:
     sub.add_parser("mechanism-paths-rules")
     sub.add_parser("mechanism-paths-regex")
     sub.add_parser("never-run-rules")
+    sub.add_parser("worktree-links")
     sub.add_parser("worker-environment")
     sub.add_parser("worker-environment-rules")
     render = sub.add_parser("render-prompt")
@@ -2353,6 +2389,10 @@ def main() -> None:
         print(mechanism_paths_rules())
     elif args.command == "mechanism-paths-regex":
         print(mechanism_paths_regex())
+    elif args.command == "worktree-links":
+        # One path per line, for the drivers' `while read` loop.
+        for path in load_project().worktree_links:
+            print(path)
     elif args.command == "never-run-rules":
         print(never_run_rules())
     elif args.command == "worker-environment":

@@ -901,16 +901,16 @@ init)
   git -C "$main" worktree add -q -b "$init_branch" "$worktree" origin/main \
     || { echo "git worktree add failed for $worktree"; exit 1; }
   echo "created $worktree on $init_branch @ $(git -C "$worktree" rev-parse --short HEAD) (from origin/main)"
-  # `git worktree add` brings tracked files only; without these two gitignored links a worker
-  # cannot run a test (`.venv`) or reach a network credential (`.env`) the first time it starts --
-  # the same reasoning `agent_prepare_worktree`'s throwaway worktree already applies to a role run.
-  # A link, never a copy: one file stays authoritative for every tree.
-  for linked in .venv .env; do
-    if [ ! -e "$worktree/$linked" ] && [ -e "$main/$linked" ]; then
-      ln -s "$main/$linked" "$worktree/$linked"
-      echo "linked $worktree/$linked -> $main/$linked"
-    fi
-  done
+  # `git worktree add` brings tracked files only: the host's `project.worktree_links` and
+  # `project.worktree_setup_command` make it runnable, through the same helper the one-shot roles'
+  # throwaway worktree uses (agent-os#41). A tree whose provisioning failed is removed along with
+  # its branch, so the next `init` starts from nothing instead of calling it initialized.
+  if ! agent_provision_worktree "$main" "$worktree"; then
+    git -C "$main" worktree remove --force "$worktree" >/dev/null 2>&1
+    git -C "$main" branch -q -D "$init_branch" >/dev/null 2>&1
+    echo "removed $worktree and $init_branch -- fix the provisioning and run init again"
+    exit 1
+  fi
   agent_os_link_mechanism_venv "$worktree" "$main" only-if-ignored
   ;;
 
