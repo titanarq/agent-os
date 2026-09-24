@@ -19,6 +19,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   point, independent of the board's size. New bulk form, backward compatible:
   `issues.py move 2 3 4 refine` resolves the label and the board field once, goes on past an
   issue that fails and exits non-zero naming it; one number prints exactly what it printed before.
+- agent-os#54 — `agent-os-doctor`'s "labels that do not autocreate" check no longer requires
+  `status:ai-completed`: it is a state label that `issues.py move` creates on first use, so a
+  fresh host that has not yet completed a task passes. The check requires `status:agents-paused`,
+  `auto-ready` and `wake:planner`, and `AGENT_OS.md` §4.3/§6 and `ADOPTION.md` steps 12 and 23
+  list only those three as labels to create by hand.
+- agent-os#53 — `tests/test_no_host_literals.py` scans the files git knows (tracked, plus
+  untracked-but-not-ignored) instead of walking the filesystem, and fails loudly when the root has
+  no `.git` or `git ls-files` fails. Nested agent worktrees under `.claude/worktrees/` and ignored
+  caches are no longer read; `.claude/worktrees/` and `.cache/` are now in `.gitignore`.
 - agent-os#66 — the suite no longer registers worktrees in the repository that runs it. The
   launch-path tests of `tests/test_agent_task.py` ran the real driver with the checkout under test
   as its host, so every `git worktree add` wrote a registration into the real repository's gitdir,
