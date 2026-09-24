@@ -355,3 +355,54 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
         "notify topic file",
         "guard timer active",
     }
+
+
+# --------------------------------------------------------------------------------------------
+# A `gh` failure inside one check (agent-os#4): that check turns into a [FAIL] carrying the error
+# and every other check still runs -- `gh_json` answers a failure with `sys.exit`, which used to
+# end the whole run after one line.
+# --------------------------------------------------------------------------------------------
+
+
+def test_run_checks_turns_a_gh_failure_into_a_failed_check_and_keeps_going(tmp_path):
+    missing_repo = "GraphQL: Could not resolve to a Repository with the name 'owner/name'."
+
+    def dispatch(args, **kwargs):
+        if args[:2] == ["gh", "auth"]:
+            return _completed(stdout="  - Token scopes: 'repo', 'project'")
+        if args[:1] == ["gh"]:
+            return _completed(returncode=1, stderr=missing_repo)
+        if args[:1] == ["systemctl"]:
+            return _completed(stdout="inactive\n")
+        raise AssertionError(f"unexpected call: {args}")
+
+    with patch("subprocess.run", side_effect=lambda args, **kw: dispatch(args, **kw)):
+        checks = doctor.run_checks(_project(), tmp_path, "owner/name")
+
+    by_name = {check.name: check for check in checks}
+    assert len(checks) == 9, [c.line() for c in checks]
+    labels = by_name["labels that do not autocreate"]
+    assert not labels.ok
+    assert "Could not resolve to a Repository" in labels.detail
+    assert "\n" not in labels.line()
+    assert not by_name["Project v2 Status field"].ok
+    assert "guard timer active" in by_name
+
+
+def test_run_checks_reports_a_missing_binary_as_a_failed_check(tmp_path):
+    def missing(args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", args[0])
+
+    with patch("subprocess.run", side_effect=missing):
+        checks = doctor.run_checks(_project(), tmp_path, "owner/name")
+
+    by_name = {check.name: check for check in checks}
+    assert len(checks) == 9, [c.line() for c in checks]
+    for name in (
+        "gh auth status",
+        "labels that do not autocreate",
+        "Project v2 Status field",
+        "guard timer active",
+    ):
+        assert not by_name[name].ok
+        assert "No such file or directory" in by_name[name].detail
