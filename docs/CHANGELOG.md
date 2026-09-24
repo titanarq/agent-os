@@ -16,6 +16,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 Wave 3's other two tasks, #429 (which backend fallback rule to write down as an ADR) and #514
 (optional), add their own entries here once their pull requests merge.
 
+- agent-os#6 — `pyproject.toml` depends on `PyJWT[crypto]>=2.8` instead of a bare `PyJWT>=2.8`:
+  without the extra, the interpreter `bootstrap.sh` builds has no `cryptography`, PyJWT registers
+  no RS256 signer, and `gh_app_token` fails with `KeyError: 'RS256'` signing the App JWT. A host
+  that installed `cryptography` by hand as a workaround can drop that step.
+
 ## 2026-09-22
 
 - #512 (PR #525) — the mechanism's own suite (`agent_os/tests -q`) now runs from a copy made
