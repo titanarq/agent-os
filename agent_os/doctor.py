@@ -97,7 +97,9 @@ def check_gh_auth() -> Check:
 
 def check_labels(project: ProjectConfig, repo: str) -> Check:
     labels = project.labels
-    required = [labels.ai_completed, labels.agents_paused, labels.auto_ready, labels.wake_planner]
+    # Only the labels `issues.py move` never writes: every state label (`status:ai-completed`
+    # included) is created by `move` on first use, so its absence on a fresh host is healthy (#54).
+    required = [labels.agents_paused, labels.auto_ready, labels.wake_planner]
     rows = gh_json("label", "list", "--repo", repo, "--limit", "200", "--json", "name") or []
     existing = {row["name"] for row in rows}
     missing = [name for name in required if name not in existing]

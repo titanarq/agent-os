@@ -8,6 +8,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#54 — `agent-os-doctor`'s "labels that do not autocreate" check no longer requires
+  `status:ai-completed`: it is a state label that `issues.py move` creates on first use, so a
+  fresh host that has not yet completed a task passes. The check requires `status:agents-paused`,
+  `auto-ready` and `wake:planner`, and `AGENT_OS.md` §4.3/§6 and `ADOPTION.md` steps 12 and 23
+  list only those three as labels to create by hand.
 - agent-os#53 — `tests/test_no_host_literals.py` scans the files git knows (tracked, plus
   untracked-but-not-ignored) instead of walking the filesystem, and fails loudly when the root has
   no `.git` or `git ls-files` fails. Nested agent worktrees under `.claude/worktrees/` and ignored
