@@ -89,7 +89,7 @@ BACKEND_STUB = r"""#!/usr/bin/env bash
 {
   env | grep -E '^AGENT_RUN_(ROLE|SUBJECT|CONTEXT|DIR|LOGFILE|PIDFILE|WORKTREE)=' | sort
   printf 'PYTHONPATH=%s\n' "${PYTHONPATH-}"
-  printf 'WORKTREE_HEAD=%s\n' "$(git -C "${PYTHONPATH-}" rev-parse HEAD 2>/dev/null || echo none)"
+  printf 'WORKTREE_HEAD=%s\n' "$(git -C "${PYTHONPATH%%:*}" rev-parse HEAD 2>/dev/null || echo none)"
   printf 'INSTRUCTION_FIRST_LINE=%s\n' "${AGENT_RUN_INSTRUCTION%%$'\n'*}"
   printf 'RULES_WORKTREES=%s\n' \
     "$(printf '%s' "${AGENT_RUN_RULES-}" \
@@ -592,7 +592,7 @@ def test_a_role_launched_from_another_roles_wake_cuts_its_own_worktree(
     # The worktree the run was handed and the one its rules name are the same tree: the `__WORKTREE__`
     # placeholder is substituted with the path the driver prepared, so a role told to work in one
     # tree while running in another is a defect the rules themselves would hide.
-    assert second["AGENT_RUN_WORKTREE"] == second["PYTHONPATH"]
+    assert second["AGENT_RUN_WORKTREE"] == second["PYTHONPATH"].split(":")[0]
     assert f"worktree-pr{SECOND_PULL_REQUEST}-" in second["RULES_WORKTREES"]
 
 
