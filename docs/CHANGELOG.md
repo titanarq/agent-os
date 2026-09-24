@@ -16,6 +16,11 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   (the example config's `scripts/test.sh` renders word for word as before). `tests/golden/worker.md`
   changes by that one sentence. A test in `tests/test_prompt_templates.py` fails on any
   `scripts/<path>` in a template.
+- agent-os#3 — `agent-os-install` and `agent-os-doctor` no longer crash with a traceback when
+  `config/agents.yaml` is missing, is not YAML or does not match the schema. `install` exits 1
+  with one line naming the file (and, when it is missing, `ADOPTION.md` step 8); `doctor` reports
+  it as a failed `config/agents.yaml loads` check and still runs the two checks that need no
+  config (python version, `gh auth status`).
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
@@ -33,6 +38,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   only dirty path, it is archived to `.cache/diaries/` and the dispatch proceeds. A diary whose run
   never recorded an end, any other leftover, and `resume` still refuse as before. A host's
   `info/exclude` entry or cleanup script for the file is no longer needed.
+- agent-os#17 — the mechanism's own suite passes in a host that vendors it through `git subtree`
+  whatever that host's layout: `test_agent_task.py` no longer asserts the host root holds exactly
+  one top-level package and its own `.venv`. The worktree isolation test measures the first
+  package the host's venv installs (of zero, one or several), and is skipped with its reason when
+  the host has none, as a non-Python host does; only the mechanism's own repository still requires
+  one. A host's `--deselect` workaround for the two tests can go after its next `subtree pull`.
 - agent-os#9 — `agent-os-install` no longer prints "would create" for a file it actually
   creates. Only `--dry-run` speaks in the conditional ("would create", "would overwrite
   (--force)"); a real run reports "created" and "overwritten (--force)", printed after the write.
@@ -54,6 +65,10 @@ Wave 3's other two tasks, #429 (which backend fallback rule to write down as an 
   where `[a-z]+` refused it. The anchoring on the number is unchanged, so
   `task/387-close-the-390-gap` still fails for #390, and the refusal now names the accepted shape
   (`<word>/<issue>-<slug>`) instead of "a branch naming #N".
+- agent-os#6 — `pyproject.toml` depends on `PyJWT[crypto]>=2.8` instead of a bare `PyJWT>=2.8`:
+  without the extra, the interpreter `bootstrap.sh` builds has no `cryptography`, PyJWT registers
+  no RS256 signer, and `gh_app_token` fails with `KeyError: 'RS256'` signing the App JWT. A host
+  that installed `cryptography` by hand as a workaround can drop that step.
 
 ## 2026-09-22
 
