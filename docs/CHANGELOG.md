@@ -19,6 +19,10 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
   only dirty path, it is archived to `.cache/diaries/` and the dispatch proceeds. A diary whose run
   never recorded an end, any other leftover, and `resume` still refuse as before. A host's
   `info/exclude` entry or cleanup script for the file is no longer needed.
+- agent-os#9 — `agent-os-install` no longer prints "would create" for a file it actually
+  creates. Only `--dry-run` speaks in the conditional ("would create", "would overwrite
+  (--force)"); a real run reports "created" and "overwritten (--force)", printed after the write.
+  "up to date -- skipped" and "refusing without --force" are true in both modes and unchanged.
 - #513 (this task) — the mechanism's own docs move under `agent_os/docs/`: `AGENT_OS.md` (from
   `docs/AGENT_OS.md`), its ADRs (from `docs/adr/`, dated 2026-09-14 through 2026-09-18 and
   2026-09-21), `ADOPTION.md` (the export recipe of §5 as a numbered checklist for a second host)

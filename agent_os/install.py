@@ -149,13 +149,18 @@ class Action:
             )
         )
 
-    def status(self, *, force: bool) -> str:
+    def status(self, *, force: bool, dry_run: bool) -> str:
+        """What happened to this file -- or, under `dry_run`, what would have. Only a dry run
+        speaks in the conditional: `main()` prints this after `write()`, so on a real run the
+        past tense is already true when the line appears (agent-os#9)."""
         if not self.existed:
-            return "would create" if self.content else "would create (empty)"
+            verb = "would create" if dry_run else "created"
+            return verb if self.content else f"{verb} (empty)"
         if self.unchanged:
             return "exists, up to date -- skipped"
         if force:
-            return "exists and differs -- overwriting (--force)"
+            verb = "would overwrite" if dry_run else "overwritten"
+            return f"exists and differs -- {verb} (--force)"
         return "exists and differs -- refusing without --force"
 
     def should_write(self, *, force: bool) -> bool:
@@ -248,11 +253,11 @@ def main() -> None:
 
     failed = False
     for action in actions:
-        print(f"{action.dest}: {action.status(force=args.force)}")
-        if action.existed and not action.unchanged:
-            print(action.diff)
         if not args.dry_run and action.should_write(force=args.force):
             action.write()
+        print(f"{action.dest}: {action.status(force=args.force, dry_run=args.dry_run)}")
+        if action.existed and not action.unchanged:
+            print(action.diff)
         if action.existed and not action.unchanged and not args.force:
             failed = True
 
