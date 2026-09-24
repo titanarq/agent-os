@@ -65,8 +65,10 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 
 12. **Labels** — `type:epic`, `type:feature`, `type:task`, `type:bug`; `p1`..`p4`; one
     `module:<name>` per `project.modules` entry; the six `status:*` labels self-create on the
-    first `agent_os.issues move`, but `status:ai-completed`, `status:agents-paused` and
-    `auto-ready` do not and must be created by hand on `<org>/<repo>` before the first real run.
+    first `agent_os.issues move`, but `status:ai-completed`, `status:agents-paused`,
+    `auto-ready` and `wake:planner` do not and must be created by hand on `<org>/<repo>` before
+    the first real run — they are the four `agent-os-doctor` checks for (step 21), under the
+    names `project.labels.{ai_completed,agents_paused,auto_ready,wake_planner}` give them.
 13. **A Project (v2) board** on `<org>/<repo>` with a single-select field named exactly `Status`
     (any other name falls back silently to the first single-select field found) and six options
     matching `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`,
@@ -126,7 +128,7 @@ with no console-script equivalent.)
 
 22. Arm the guard timer — the one step nothing above does for you:
     `systemctl --user enable --now <guard_unit>.timer`.
-23. Before moving any issue to `status:ready` for the first time: create the three labels that do
+23. Before moving any issue to `status:ready` for the first time: create the four labels that do
     not autocreate (step 12); make sure every issue meant for the trial is actually a Project item
     with a `Status` value set (an item can exist with no Status, or not be on the board at all);
     make sure each worker's worktree is on a fresh branch, not one left over from testing; decide

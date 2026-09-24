@@ -8,6 +8,12 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#7 — `docs/ADOPTION.md` step 12 lists `wake:planner` among the labels a host creates
+  by hand, next to `status:ai-completed`, `status:agents-paused` and `auto-ready`: those four are
+  exactly what `agent-os-doctor` checks for, and a host that followed the old list failed the
+  doctor's label check on its first run. Step 23 now says four labels, not three.
+  `tests/test_adoption_doc.py` asks `doctor.check_labels` which labels it requires and fails when
+  step 12 leaves one out.
 - agent-os#25 — the suite no longer leaves a `.cache/` in the checkout it runs from. The
   `rules` subcommands of `worker_task.sh` and `planner_task.sh` stop creating their cache
   directories. `test_agent_task.py`'s no-verdict cache moves out of the real `.cache`, and the
