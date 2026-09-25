@@ -2313,6 +2313,69 @@ def test_refine_pending_names_the_head_of_the_refine_queue(monkeypatch, tmp_path
     assert "#14, #15" in outcome.line and "#23" in outcome.line and "#24" not in outcome.line
 
 
+def _refiner_summary_comment(author, created_at):
+    return {
+        "author": {"login": author},
+        "body": "<!-- refiner-summary -->\n@someone\n\nSplit into two children.\n\n## Doubts\n...",
+        "createdAt": created_at,
+    }
+
+
+def _plain_comment(author, created_at, body="an answer"):
+    return {"author": {"login": author}, "body": body, "createdAt": created_at}
+
+
+def test_refinable_issues_drops_an_issue_whose_refiner_doubt_the_human_already_answered(
+    monkeypatch, tmp_path
+):
+    # agent-os#72: the refiner split a feature, posted its summary with a doubt and parked it; the
+    # human answered and put `status:refine` back. The feature's own body never conforms (a feature
+    # has no template shape), so without reading the comments every idle wake named it again, and
+    # the planner -- told never to refine an issue twice -- re-asked the answered question.
+    refine = [
+        {
+            "number": 84,
+            "state": "OPEN",
+            "labels": [{"name": agent_guard.REFINE_LABEL}],
+            "body": "a feature",
+            "comments": [
+                _refiner_summary_comment(_BOT, "2026-09-24T09:06:40Z"),
+                _plain_comment(_HUMAN, "2026-09-24T10:36:32Z"),
+            ],
+        },
+        # A summary nobody answered yet stays named: the planner's one doubt for the human.
+        {
+            "number": 85,
+            "state": "OPEN",
+            "labels": [{"name": agent_guard.REFINE_LABEL}],
+            "body": "a feature",
+            "comments": [
+                _plain_comment(_HUMAN, "2026-09-24T08:00:00Z", body="please refine this"),
+                _refiner_summary_comment(_BOT, "2026-09-24T09:06:40Z"),
+                _plain_comment(_BOT, "2026-09-24T11:02:06Z", body="waiting for you"),
+            ],
+        },
+        # Never refined: named as always.
+        {
+            "number": 86,
+            "state": "OPEN",
+            "labels": [{"name": agent_guard.REFINE_LABEL}],
+            "body": "x",
+            "comments": [],
+        },
+    ]
+    commands: list[list[str]] = []
+
+    def run(cmd, **kwargs):
+        commands.append(cmd)
+        return _gh_issue_list_stub(refine, [{"number": n} for n in (84, 85, 86)])(cmd, **kwargs)
+
+    monkeypatch.setattr(agent_guard.subprocess, "run", run)
+    assert agent_guard.refinable_issues(main=tmp_path) == [85, 86]
+    listing = next(cmd for cmd in commands if "--label" in cmd)
+    assert "comments" in listing[listing.index("--json") + 1].split(",")
+
+
 def test_refinable_issues_empty_when_no_issue_carries_the_refine_label(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_guard.subprocess, "run", _gh_issue_list_stub([], [{"number": 61}]))
     assert agent_guard.refinable_issues(main=tmp_path) == []
