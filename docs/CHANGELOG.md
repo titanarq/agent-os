@@ -8,9 +8,9 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
-- agent-os#72 — a refiner doubt the human already answered no longer comes back. The guard's
-  `refine_pending` named every `status:refine` issue whose body fails the template, and a feature
-  the refiner split never conforms: once the human answered its doubt and put `status:refine`
+- agent-os#72 (PR #77) — a refiner doubt the human already answered no longer comes back. The
+  guard's `refine_pending` named every `status:refine` issue whose body fails the template, and a
+  feature the refiner split never conforms: once the human answered its doubt and put `status:refine`
   back, every idle wake named it and the planner, never refining twice, parked the same answered
   question again. `refinable_issues` now lists the refine queue with its comments and drops an
   issue where the human commented after the latest `<!-- refiner-summary -->`
@@ -19,18 +19,6 @@ that closed several small issues at once name them all. This file starts on 2026
   lifting `blocked-on-human` only, never by restoring its refine label. Amends the 2026-09-15
   refiner ADR.
 
-- agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
-  the worker process it was counted in. The file now records `run_identity` (issue, start ref and
-  PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and
-  `warned_at_turn_count` and keeps `last_quota_status`, so a new dispatch or a resumed stage is no
-  longer measured from the previous run's anchor -- on Qwen that gave negative turns since commit,
-  a late warn/cut, and a cut of a worker that had just committed. A file without the field counts
-  as another run's. `turns_since_commit` also re-anchors at the process's start instead of going
-  negative when the anchor is past its turn count, and a commit no longer drops the quota memory
-  the same tick compares against. Claude's path counts from the live stream's own timestamps and
-  never had the flaw.
-
-- agent-os#27 — `issues.py move` no longer spends the user's shared GraphQL quota in
 - `docs/ADOPTION.md` step 16 points `git subtree pull` at step 25, where the pull now is, instead
   of step 22 (arming the guard timer); every other "step N" cross-reference in `docs/`, the
   prompts, the templates and the code was checked against the current numbering (1-26) and holds.
