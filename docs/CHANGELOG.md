@@ -8,19 +8,27 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- (PR #79) — `templates/ci-agent-os.yml` is path-filtered to `agent_os/**` and to itself, as the
+  2026-09-24 ADR, `AGENT_OS.md` §2.4, `ADOPTION.md` step 20, `install.py`, `doctor.py` and `lib.py`
+  already said it was: the template had a bare `pull_request:` trigger and ran the mechanism's whole
+  suite on every host PR, and `agent-os-doctor` counted it as the workflow that reports on every
+  pull request, so a host without `ci-host.yml` passed the check the ADR meant it to fail. A test
+  pins the filter and that the doctor does not count the file. `ADOPTION.md` step 20 adds: never
+  make its job a required status check, since it does not run on a host-only PR. Host follow-up: a
+  host with the old file gets the filter from `agent-os-install --force` after the subtree pull, or
+  adds the `paths:` block by hand; keep `ci-host.yml` (or an unfiltered CI of your own) in place
+  first.
 - agent-os#72 (PR #77) — a refiner doubt the human already answered no longer comes back. The
   guard's `refine_pending` named every `status:refine` issue whose body fails the template, and a
-  feature the refiner split never conforms: once the human answered its doubt and put `status:refine`
-  back, every idle wake named it and the planner, never refining twice, parked the same answered
-  question again. `refinable_issues` now lists the refine queue with its comments and drops an
-  issue where the human commented after the latest `<!-- refiner-summary -->`
+  feature the refiner split never conforms: once the human answered its doubt and put
+  `status:refine` back, every idle wake named it and the planner, never refining twice, parked the
+  same answered question again. `refinable_issues` now lists the refine queue with its comments and
+  drops an issue where the human commented after the latest `<!-- refiner-summary -->`
   (`agent_os.lib.refiner_pass_answered_by_the_human`); an unanswered summary is still named. The
-  planner prompt says so, and the control plane's Duty 2 answers a split feature's doubt by
-  lifting `blocked-on-human` only, never by restoring its refine label. Amends the 2026-09-15
-  refiner ADR.
-
-- `docs/ADOPTION.md` step 16 points `git subtree pull` at step 25, where the pull now is, instead
-  of step 22 (arming the guard timer); every other "step N" cross-reference in `docs/`, the
+  planner prompt says so, and the control plane's Duty 2 answers a split feature's doubt by lifting
+  `blocked-on-human` only, never by restoring its refine label. Amends the 2026-09-15 refiner ADR.
+- (PR #78) — `docs/ADOPTION.md` step 16 points `git subtree pull` at step 25, where the pull now is,
+  instead of step 22 (arming the guard timer); every other "step N" cross-reference in `docs/`, the
   prompts, the templates and the code was checked against the current numbering (1-26) and holds.
   `templates/ci-agent-os.yml` cites `AGENT_OS.md` §5 step 7, the step that describes
   `agent-os-install`, instead of step 6. This section is reordered newest first, each entry naming

@@ -150,7 +150,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     absent — and `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
     on every pull request with no path filter. Keep it unless your own CI already reports a check
     on every PR (then set `project.install_host_ci: false`): `ci-agent-os.yml` only fires on
-    `agent_os/**`, and the control plane never merges a PR whose head SHA reports zero checks. The
+    `agent_os/**` (and on a change to itself), and the control plane never merges a PR whose head
+    SHA reports zero checks. For the same reason, never make `ci-agent-os.yml`'s job a required
+    status check in branch protection: on a host-only PR it does not run, so it never reports. The
     rendered file is a starting point — add the setup your test command needs before its step.
     Never overwrites without `--force`, and never arms, restarts or reloads a unit — `--dry-run`
     first shows every path it would touch and its diff against what is there.
