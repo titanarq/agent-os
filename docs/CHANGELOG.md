@@ -8,6 +8,19 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#70 — a GitHub rate limit is diagnosed before it is retried, and `issues.py validate`
+  reads over REST. The "API rate limit already exceeded for user ID ..." a host read as a false
+  positive is GitHub's answer for an empty **GraphQL** bucket, a quota separate from the REST
+  `core` one that `gh api rate_limit`'s top-level `.rate` reports (read `.resources.graphql`).
+  `gh_text` now asks `gh api rate_limit` (free) on a primary rate limit: a bucket at zero exits at
+  once naming it, its limit and its reset time, instead of sleeping 31 s against a quota that
+  refills up to an hour later; with quota left the refusal is retried as before. A secondary rate
+  limit waits at least the minute GitHub asks for, and a bare 403 that is not a rate limit fails
+  on its first answer instead of being retried five times. `validate` — run by `worker_task.sh
+  start` before every dispatch — reads the issue with a REST `GET` and the open issues with the
+  paginated REST listing (pull requests left out), so an empty GraphQL bucket no longer stops
+  every dispatch. ADR `2026-09-25-a-rate-limit-is-diagnosed-against-the-logins-quotas-before-it-is-retried.md`.
+
 - agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
   the worker process it was counted in. The file now records `run_identity` (issue, start ref and
   PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and
