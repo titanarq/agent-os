@@ -100,6 +100,26 @@ def test_plan_ci_snippet_copies_to_github_workflows_if_absent(tmp_path):
         install_module.CI_SNIPPET_SOURCE = original
 
 
+def test_the_real_ci_snippet_fires_only_on_pull_requests_touching_the_mechanism():
+    """The mechanism's suite runs when a PR changes `agent_os/**` (a `subtree pull`, a fix sent
+    back) or this workflow itself, and not on every host PR: a host-only PR gets its check from
+    `ci-host.yml` (agent-os#50). `agent-os-doctor` must therefore not count this file as the
+    workflow that reports on every pull request."""
+    import yaml
+
+    from agent_os.doctor import _reports_on_every_pull_request
+
+    workflow = yaml.safe_load(install_module.CI_SNIPPET_SOURCE.read_text())
+    # PyYAML reads the bare key `on` as the boolean True.
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"pull_request"}
+    assert triggers["pull_request"]["paths"] == [
+        "agent_os/**",
+        ".github/workflows/ci-agent-os.yml",
+    ]
+    assert not _reports_on_every_pull_request(workflow)
+
+
 # --------------------------------------------------------------------------------------------
 # Host CI: `.github/workflows/ci-host.yml`, so a host-only PR reports a check (agent-os#50)
 # --------------------------------------------------------------------------------------------

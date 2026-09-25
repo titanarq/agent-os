@@ -103,6 +103,7 @@ from agent_os.lib import (
     read_events,
     read_role_run_exit_marker,
     refine_queue_rank,
+    refiner_pass_answered_by_the_human,
     render_human_message,
     role_app_slug,
     usage_failed,
@@ -1610,7 +1611,10 @@ def refinable_issues(*, main: Path = HOST_ROOT) -> list[int]:
     unresolvable budget line) -- the mechanical half of
     agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md. An
     issue whose body is otherwise template-conformant but carries an open `Blocked by #N` is NOT
-    refinable this way: that is not something the refiner wrote or can rewrite away (#356). Same
+    refinable this way: that is not something the refiner wrote or can rewrite away (#356). Nor is
+    one whose `<!-- refiner-summary -->` the human already replied to
+    (`agent_lib.refiner_pass_answered_by_the_human`, agent-os#72): its doubt is settled, and the
+    planner would only re-ask it. Same
     two-`gh`-call shape as `dispatchable_issues` above even though `needs_refinement` itself no
     longer reads `open_numbers` -- kept for the call-site's own symmetry with
     `promotable_to_ready`, which still needs it, below.
@@ -1619,7 +1623,7 @@ def refinable_issues(*, main: Path = HOST_ROOT) -> list[int]:
     then priority, then no open blocker, then oldest first -- `refine_pending` names the head of
     this list and the planner launches the refiner on the earliest of it (#32)."""
     refine = _gh_issue_list(
-        "number,state,labels,body,parent", main=main, extra=["--label", REFINE_LABEL]
+        "number,state,labels,body,parent,comments", main=main, extra=["--label", REFINE_LABEL]
     )
     if not refine:
         return []
@@ -1631,6 +1635,8 @@ def refinable_issues(*, main: Path = HOST_ROOT) -> list[int]:
         if needs_refinement(
             row, task_classes=classes, open_issue_numbers=open_numbers, labels=PROJECT.labels
         )
+        # A refiner doubt the human already answered is settled, not pending (agent-os#72).
+        and not refiner_pass_answered_by_the_human(row, PROJECT)
     ]
     # `gh issue list` answers newest first, which on a large backlog handed the refiner the
     # lowest-priority, last-milestone issues first (#32): rank by closeness to dispatch instead.
@@ -1777,7 +1783,7 @@ def promote_refined(*, main: Path = HOST_ROOT) -> list[int]:
     (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
     An issue with no parent is never promotable this way; the human promotes it by hand."""
     refine = _gh_issue_list(
-        "number,state,labels,body,parent", main=main, extra=["--label", REFINE_LABEL]
+        "number,state,labels,body,parent,comments", main=main, extra=["--label", REFINE_LABEL]
     )
     if not refine:
         return []
