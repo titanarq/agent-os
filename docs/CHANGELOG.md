@@ -8,6 +8,17 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#75 — `worker_task.sh start` and `branch` no longer refuse the next dispatch over a
+  finished run's other untracked files under `scratchpad/`, with or without a diary. #18 archived
+  the diary only when it was the one dirty path; a run that left an ad hoc script, a commit
+  message draft and a `__pycache__/` there (the shape reported, no `progress.log` at all) still
+  blocked every dispatch to that backend until a human moved the directory out. Now, when `.state`
+  records the run's ending and nothing is alive, and every dirty path is an untracked file under
+  `scratchpad/`, all of them are archived to `.cache/diaries/`: the diary under #18's name
+  `<run>.progress.log`, the rest under `<run>.scratchpad/` with their relative paths. Anything
+  dirty elsewhere, a modified tracked file under `scratchpad/`, a run with no recorded ending, and
+  `resume` still refuse and move nothing. `retire_finished_runs_diary` is renamed
+  `retire_finished_runs_scratchpad`.
 - agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
   the worker process it was counted in. The file now records `run_identity` (issue, start ref and
   PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and

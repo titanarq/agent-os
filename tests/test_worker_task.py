@@ -1797,17 +1797,159 @@ def test_start_leaves_a_finished_runs_diary_alone_when_other_work_is_also_left(t
     )
     worktree = tmp_path / "worktree"
     diary = _diary_with_an_uncommitted_line(worktree, tracked=False)
-    (worktree / "scratchpad" / "notes.md").write_text("a draft the worker never committed\n")
+    (worktree / "scratchpad" / "notes.md").write_text("scratch the run left beside its diary\n")
+    # Outside `scratchpad/`: work, not the run's scratch, whatever `.state` says.
+    (worktree / "draft.py").write_text("a module the worker never committed\n")
     _finished_previous_run(cache, "DONE")
     try:
         result = _start(environment, "347")
         assert result.returncode == 1
         assert "worktree is dirty" in result.stdout, result.stdout
-        # A refusal writes nothing: the diary stays where it was.
+        assert "draft.py" in result.stdout, result.stdout
+        # A refusal writes nothing: neither the diary nor the scratch beside it is moved.
         assert "still-working" in diary.read_text()
+        assert (worktree / "scratchpad" / "notes.md").is_file()
         assert _archived_diaries(cache) == []
+        assert _archived_scratch(cache) == []
     finally:
         _stop(environment)
+
+
+def test_start_still_refuses_a_modified_tracked_file_under_scratchpad(tmp_path):
+    # Only UNTRACKED scratch is the run's leftover: a change to a file git tracks under
+    # `scratchpad/` -- a committed deliverable -- is an edit of work, and still refuses.
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    deliverable = worktree / "scratchpad" / "report.md"
+    deliverable.parent.mkdir(exist_ok=True)
+    deliverable.write_text("the committed report\n")
+    _git("add", "scratchpad/report.md", cwd=worktree)
+    _git("commit", "-qm", "a deliverable under scratchpad/", cwd=worktree)
+    deliverable.write_text("an edit nothing committed\n")
+    (worktree / "scratchpad" / "notes.md").write_text("scratch\n")
+    _finished_previous_run(cache, "DONE")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert "scratchpad/report.md" in result.stdout, result.stdout
+        assert (worktree / "scratchpad" / "notes.md").is_file()
+        assert _archived_scratch(cache) == []
+    finally:
+        _stop(environment)
+
+
+# ---------------------------------------------------------------------------------------------
+# A FINISHED RUN'S SCRATCH IS NOT THE NEXT RUN'S DIRT EITHER (#75). The diary is not the only file
+# a run leaves in `scratchpad/`: the worker's RULES send intermediate results there, and a run that
+# ended BLOCKED on the host #75 came from left a script, a commit message draft and a
+# `__pycache__/` there -- no diary at all. `git status` reported the one collapsed `?? scratchpad/`,
+# #18's "the diary is the only dirty path" did not match, and two unrelated dispatches were refused
+# until a human moved the directory out by hand. Once `.state` records the run's end and nothing is
+# alive, every UNTRACKED file under `scratchpad/` is that run's leftover and is archived with the
+# diary; anything dirty elsewhere, or tracked, still refuses and moves nothing.
+# ---------------------------------------------------------------------------------------------
+
+
+def _archived_scratch(cache):
+    diaries = cache / "diaries"
+    if not diaries.is_dir():
+        return []
+    return sorted(
+        path.relative_to(archive).as_posix()
+        for archive in diaries.glob("*.scratchpad")
+        for path in archive.rglob("*")
+        if path.is_file()
+    )
+
+
+def _stray_scratch(worktree):
+    """The shape #75 observed: a finished run's `scratchpad/` holding no diary, only scratch."""
+    scratchpad = worktree / "scratchpad"
+    (scratchpad / "__pycache__").mkdir(parents=True, exist_ok=True)
+    (scratchpad / "check_symbols.py").write_text("print('an ad hoc check')\n")
+    (scratchpad / "commit-msg-stage6.txt").write_text("a commit message draft\n")
+    (scratchpad / "__pycache__" / "check_symbols.cpython-312.pyc").write_bytes(b"\x00bytecode")
+
+
+@pytest.mark.parametrize("ending", ["DONE", "CUT_BY_GUARD reason=stall", "BLOCKED reason=push"])
+def test_start_archives_a_finished_runs_stray_scratch_without_a_diary(tmp_path, ending):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    _stray_scratch(worktree)
+    _finished_previous_run(cache, ending)
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "worktree is dirty" not in result.stdout, result.stdout
+        assert "started pid" in result.stdout, result.stdout
+        # Archived, not deleted, under the name of the run that wrote them, paths kept.
+        [archive] = sorted((cache / "diaries").glob("*.scratchpad"))
+        assert archive.name.startswith("worker_claude-issue37-"), archive.name
+        assert _archived_scratch(cache) == [
+            "__pycache__/check_symbols.cpython-312.pyc",
+            "check_symbols.py",
+            "commit-msg-stage6.txt",
+        ]
+        assert not (worktree / "scratchpad" / "check_symbols.py").exists()
+    finally:
+        _stop(environment)
+
+
+def test_start_archives_a_finished_runs_diary_and_the_scratch_beside_it(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    _diary_with_an_uncommitted_line(worktree, tracked=False)
+    (worktree / "scratchpad" / "notes.md").write_text("scratch the run left beside its diary\n")
+    _finished_previous_run(cache, "DONE")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "started pid" in result.stdout, result.stdout
+        # The diary keeps #18's archive name; the rest lands beside it, under the same run.
+        [diary] = _archived_diaries(cache)
+        assert "still-working" in diary.read_text()
+        assert _archived_scratch(cache) == ["notes.md"]
+        [archive] = sorted((cache / "diaries").glob("*.scratchpad"))
+        assert archive.name.removesuffix(".scratchpad") == diary.name.removesuffix(".progress.log")
+    finally:
+        _stop(environment)
+
+
+def test_start_still_refuses_stray_scratch_whose_run_the_driver_never_saw_end(tmp_path):
+    environment, cache = _parallel_cap_environment(
+        tmp_path, labels_by_issue={"347": ["module:workers"]}
+    )
+    worktree = tmp_path / "worktree"
+    _stray_scratch(worktree)
+    _finished_previous_run(cache, "STARTED")
+    try:
+        result = _start(environment, "347")
+        assert result.returncode == 1
+        assert "worktree is dirty" in result.stdout, result.stdout
+        assert (worktree / "scratchpad" / "check_symbols.py").is_file()
+        assert _archived_scratch(cache) == []
+    finally:
+        _stop(environment)
+
+
+def test_branch_archives_a_finished_runs_stray_scratch_before_switching(tmp_path):
+    _remote, worktree = _worktree_with_origin(tmp_path)
+    _stray_scratch(worktree)
+    environment = _branch_environment(tmp_path, worktree)
+    cache = tmp_path / "cache"
+    _finished_previous_run(cache, "BLOCKED reason=push_rejected")
+
+    result = _branch(environment, "task/81-next-issue")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "is now on task/81-next-issue" in result.stdout, result.stdout
+    assert "check_symbols.py" in _archived_scratch(cache)
 
 
 def test_branch_archives_a_finished_runs_diary_before_switching(tmp_path):

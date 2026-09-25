@@ -162,9 +162,10 @@ spenddir=$cache/spend
 # is the one file a worker writes that NO commit may carry (#407): it is not the task's output, it
 # reached `main` inside a pull request and every worker branch after that conflicted with `main` on
 # it, and its uncommitted lines are the dirty-worktree signal `start`, `resume` and `branch` refuse
-# to relaunch over -- until `.state` records that run's end (`retire_finished_runs_diary`, #18),
-# or `resume` continues the run the guard cut (`drop_the_cut_runs_diary`, #22). Relative, so it is
-# a pathspec `git add`, `git diff` and `git log` all take.
+# to relaunch over -- until `.state` records that run's end (`retire_finished_runs_scratchpad`,
+# #18, #75, which archives the rest of the run's untracked `scratchpad/` with it), or `resume`
+# continues the run the guard cut (`drop_the_cut_runs_diary`, #22). Relative, so it is a pathspec
+# `git add`, `git diff` and `git log` all take.
 DIARY=scratchpad/progress.log
 
 # The subject every freeze this driver writes, and the ONE freeze that is not a cut (#407):
@@ -582,31 +583,51 @@ drop_the_cut_runs_diary() {
   return 0
 }
 
-# A FINISHED RUN'S DIARY IS NOT THE NEXT RUN'S DIRT (#18). No commit carries the diary (#407), so
-# the lines a run wrote stay untracked in the worktree after it ends, and the next `branch`/`start`
-# read them as work left behind: in a host with no ignore rule for the file, the first dispatch to
-# a backend after ANY completed issue was refused. What tells a finished run from one that never
-# reached its end is the driver's own `.state` line 1, not the file's existence and not a line the
-# agent may or may not have typed: `DONE`, `CUT_BY_GUARD`, `FAILED_LAUNCH` and `BLOCKED` are the
-# endings (`agent_os.guard.RUN_ENDED_STATES`). Only then, only while nothing is alive, and only when
-# the diary is the ONE thing dirty -- a refusal over anything else still writes nothing -- the file
-# is moved to `$cache/diaries/`, archived rather than deleted. A diary git tracks (a branch forked
-# before the base stopped tracking it) is left alone: moving it would leave a deletion behind.
-retire_finished_runs_diary() {
-  local previous_state entries archive
+# A FINISHED RUN'S SCRATCH IS NOT THE NEXT RUN'S DIRT (#18, #75). No commit carries the diary
+# (#407), and the RULES send a worker's intermediate results to `scratchpad/` as well, so a run
+# leaves untracked files there after it ends, and the next `branch`/`start` read them as work left
+# behind: in a host with no ignore rule for the directory, a dispatch after a completed issue was
+# refused -- over the diary alone (#18), or over an ad hoc script, a commit message draft and a
+# `__pycache__/` with no diary at all (#75), a shape #18's "the diary is the ONE thing dirty" never
+# matched. What tells a finished run from one that never reached its end is the driver's own
+# `.state` line 1, not the files' existence and not a line the agent may or may not have typed:
+# `DONE`, `CUT_BY_GUARD`, `FAILED_LAUNCH` and `BLOCKED` are the endings
+# (`agent_os.guard.RUN_ENDED_STATES`). Only then, only while nothing is alive, and only when EVERY
+# dirty path is an untracked file under the diary's directory -- a refusal over anything else, a
+# tracked file there included (a committed deliverable someone edited), still moves nothing -- the
+# files go to `$cache/diaries/`, archived rather than deleted: the diary as `<run>.progress.log`,
+# #18's name, and the rest under `<run>.scratchpad/` with their paths kept. Ignored files are not
+# dirt and stay. A diary git tracks (a branch forked before the base stopped tracking it) shows as
+# ` M`, not `??`, so it is left alone: moving it would leave a deletion behind.
+retire_finished_runs_scratchpad() {
+  local previous_state entry scratch_dir run_name path destination
+  local leftovers=()
   alive && return 0
-  [ -f "$worktree/$DIARY" ] || return 0
   previous_state=$([ -s "$statefile" ] && sed -n '1p' "$statefile" || true)
   case "${previous_state%% *}" in DONE | CUT_BY_GUARD | FAILED_LAUNCH | BLOCKED) ;; *) return 0 ;; esac
-  entries=$(git -C "$worktree" status --porcelain --untracked-files=all)
-  if [ -L "$worktree/.env" ]; then
-    entries=$(printf '%s\n' "$entries" | grep -v -x '?? \.env' || true)
-  fi
-  [ "$entries" = "?? $DIARY" ] || return 0
+  scratch_dir=${DIARY%/*}/
+  # `-z`: every entry is `XY <path>` verbatim, never quoted. Anything but an untracked path under
+  # the scratch directory -- the driver's own `.env` link aside (#404) -- leaves the tree alone.
+  while IFS= read -r -d '' entry; do
+    [ "$entry" = '?? .env' ] && [ -L "$worktree/.env" ] && continue
+    case "$entry" in
+      "?? $scratch_dir"?*) leftovers+=("${entry#?? }") ;;
+      *) return 0 ;;
+    esac
+  done < <(git -C "$worktree" status --porcelain -z --untracked-files=all)
+  [ "${#leftovers[@]}" -gt 0 ] || return 0
   mkdir -p "$cache/diaries"
-  archive="$cache/diaries/worker_$backend-issue$(cat "$issuefile" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S).progress.log"
-  mv "$worktree/$DIARY" "$archive"
-  echo "moved the finished run's diary (${previous_state%% *}) to $archive"
+  run_name="worker_$backend-issue$(cat "$issuefile" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S)"
+  for path in "${leftovers[@]}"; do
+    if [ "$path" = "$DIARY" ]; then
+      destination="$cache/diaries/$run_name.progress.log"
+    else
+      destination="$cache/diaries/$run_name.scratchpad/${path#"$scratch_dir"}"
+      mkdir -p "${destination%/*}"
+    fi
+    mv "$worktree/$path" "$destination"
+  done
+  echo "moved the finished run's ${#leftovers[@]} untracked $scratch_dir file(s) (${previous_state%% *}) to $cache/diaries/$run_name.*"
 }
 
 # What happened to work the process never committed -- the last clause of the progress comment.
@@ -919,7 +940,7 @@ branch)
   [ -n "$name" ] || { echo "usage: $0 $backend branch <name> [<from>]"; exit 2; }
   alive && { echo "a run is alive (pid $(cat "$pidfile")); stop it before switching branches"; exit 1; }
   [ -e "$worktree/.git" ] || { echo "no worktree at $worktree"; exit 1; }
-  retire_finished_runs_diary
+  retire_finished_runs_scratchpad
   dirty=$(uncommitted_work)
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
   # No explicit base: start from the remote's tip, never from whatever the shared `.git` happens
@@ -959,7 +980,7 @@ start|resume)
   [ -e "$worktree/.git" ] || { echo "no worktree at $worktree"; exit 1; }
   # `start` only: `resume` continues the SAME run, whose diary is its own -- kept on disk, and
   # left out of the dirty check when that run was cut (`drop_the_cut_runs_diary`, #22).
-  [ "$mode" = start ] && retire_finished_runs_diary
+  [ "$mode" = start ] && retire_finished_runs_scratchpad
   dirty=$(uncommitted_work "$mode")
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
 
