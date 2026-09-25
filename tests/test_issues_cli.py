@@ -284,18 +284,126 @@ def test_gh_json_returns_none_for_empty_stdout():
         assert issues.gh_json("label", "create", "x") is None
 
 
+# The exact text `gh` printed on a host under concurrent load (#70). It is GitHub's answer when the
+# GraphQL bucket of the login is empty -- a quota separate from the REST `core` one that the
+# top-level `gh api rate_limit` `.rate` reports, which is why that read `remaining: 5000` at the
+# same moment.
+GRAPHQL_EXHAUSTED = "GraphQL: API rate limit already exceeded for user ID 1234567."
+
+
+def _rate_limit_resources(*, graphql_remaining: int, core_remaining: int = 5000) -> str:
+    """What `gh api rate_limit --jq .resources` prints: one bucket per API, each its own quota."""
+    return json.dumps(
+        {
+            "core": {"limit": 5000, "remaining": core_remaining, "reset": 1790320000},
+            "graphql": {"limit": 5000, "remaining": graphql_remaining, "reset": 1790319600},
+            "search": {"limit": 30, "remaining": 30, "reset": 1790316060},
+        }
+    )
+
+
+def _fake_gh(failures: list[str], *, resources: str | None = None, stdout: str = '{"ok": true}'):
+    """A `subprocess.run` for `gh`: `gh api rate_limit` answers `resources` (fails when None);
+    every other command fails once per entry of `failures`, with that stderr, then succeeds."""
+    calls: list[list[str]] = []
+    pending = list(failures)
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[:3] == ["gh", "api", "rate_limit"]:
+            if resources is None:
+                return _completed(returncode=1, stderr="HTTP 502")
+            return _completed(stdout=resources)
+        if pending:
+            return _completed(returncode=1, stderr=pending.pop(0))
+        return _completed(stdout=stdout)
+
+    return run, calls
+
+
 def test_gh_json_retries_on_rate_limit_then_succeeds():
-    responses = [
-        _completed(returncode=1, stderr="HTTP 403: API rate limit exceeded"),
-        _completed(returncode=0, stdout='{"ok": true}'),
-    ]
+    run, calls = _fake_gh(
+        ["HTTP 403: API rate limit exceeded"], resources=_rate_limit_resources(graphql_remaining=10)
+    )
     with (
-        patch("agent_os.issues.subprocess.run", side_effect=responses) as run,
+        patch("agent_os.issues.subprocess.run", side_effect=run),
         patch("agent_os.issues.time.sleep") as sleep,
     ):
         assert issues.gh_json("issue", "list") == {"ok": True}
-        assert run.call_count == 2
-        sleep.assert_called_once()
+    assert [call for call in calls if call[:3] != ["gh", "api", "rate_limit"]] == [
+        ["gh", "issue", "list"],
+        ["gh", "issue", "list"],
+    ]
+    sleep.assert_called_once()
+
+
+def test_an_exhausted_graphql_quota_fails_at_once_naming_the_bucket_and_its_reset():
+    # #70: the host saw this error while REST kept working and read it as a false positive; the
+    # old loop slept 1+2+4+8+16 s against a quota that resets up to an hour later and then failed
+    # with gh's text alone. The failure now says which quota is empty and when it refills.
+    run, calls = _fake_gh(
+        [GRAPHQL_EXHAUSTED] * 6, resources=_rate_limit_resources(graphql_remaining=0)
+    )
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep") as sleep,
+        pytest.raises(SystemExit) as exited,
+    ):
+        issues.gh_json("issue", "view", "1", "--json", "body")
+    message = str(exited.value.code)
+    assert "graphql: 0 of 5000 left, resets at 2026-09-2" in message
+    assert "core:" not in message  # the REST bucket, full, is not blamed
+    assert GRAPHQL_EXHAUSTED in message
+    sleep.assert_not_called()
+    assert calls.count(["gh", "issue", "view", "1", "--json", "body"]) == 1
+
+
+def test_a_rate_limit_with_quota_left_is_transient_and_retried():
+    run, _ = _fake_gh([GRAPHQL_EXHAUSTED], resources=_rate_limit_resources(graphql_remaining=4000))
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep") as sleep,
+    ):
+        assert issues.gh_json("issue", "list") == {"ok": True}
+    sleep.assert_called_once()
+
+
+def test_a_rate_limit_whose_quota_cannot_be_read_is_still_retried():
+    run, _ = _fake_gh([GRAPHQL_EXHAUSTED], resources=None)
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep") as sleep,
+    ):
+        assert issues.gh_json("issue", "list") == {"ok": True}
+    sleep.assert_called_once()
+
+
+def test_a_secondary_rate_limit_waits_at_least_the_minute_github_asks_for():
+    secondary = (
+        "You have exceeded a secondary rate limit. Please wait a few minutes before you try "
+        "again. (HTTP 403)"
+    )
+    run, calls = _fake_gh([secondary], resources=_rate_limit_resources(graphql_remaining=4000))
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep") as sleep,
+    ):
+        assert issues.gh_json("issue", "list") == {"ok": True}
+    assert sleep.call_args.args[0] >= 60
+    # A secondary limit is not a quota: reading the buckets would answer nothing about it.
+    assert not [call for call in calls if call[:3] == ["gh", "api", "rate_limit"]]
+
+
+def test_a_403_that_is_not_a_rate_limit_fails_without_retrying():
+    run, calls = _fake_gh(["HTTP 403: Resource not accessible by integration"])
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep") as sleep,
+        pytest.raises(SystemExit),
+    ):
+        issues.gh_json("issue", "list")
+    sleep.assert_not_called()
+    assert len(calls) == 1
 
 
 def test_gh_json_exits_on_non_rate_limit_failure():
@@ -730,14 +838,47 @@ def test_update_without_body_file_leaves_the_body_untouched():
 
 
 def _validate(body, *, open_numbers=()):
-    """`validate_issue` with `gh issue view` mocked to return `body` and `gh issue list` to return
-    `open_numbers`. Never shells out."""
-    listing = [{"number": n} for n in open_numbers]
+    """`validate_issue` with the issue's REST read mocked to return `body` and the open-issue
+    listing to return `open_numbers`. Never shells out."""
     with (
         patch.object(issues, "gh_json_dict", return_value={"body": body}),
-        patch.object(issues, "gh_json", return_value=listing),
+        patch.object(issues, "gh_text", return_value="\n".join(map(str, open_numbers))),
     ):
         return issues.validate_issue("owner/name", 1)
+
+
+def test_validate_reads_over_rest_and_works_with_the_graphql_quota_exhausted():
+    # #70: `validate` is what `worker_task.sh start` runs before every dispatch, and it was
+    # GraphQL-only (`gh issue view --json`, `gh issue list --json`); a host whose GraphQL bucket
+    # was empty could not dispatch at all while REST had its whole quota left.
+    blocked = VALID_BODY.replace("## Dependencies\nsomething", "## Dependencies\nBlocked by #40")
+    issue = {"body": blocked, "labels": [{"name": "type:task"}], "number": 1}
+
+    def run(args, **kwargs):
+        if args[:2] in (["gh", "issue"], ["gh", "pr"], ["gh", "label"]) or "graphql" in args:
+            return _completed(returncode=1, stderr=GRAPHQL_EXHAUSTED)
+        if args[:3] == ["gh", "api", "repos/owner/name/issues/1"]:
+            return _completed(stdout=json.dumps(issue))
+        if args[:2] == ["gh", "api"] and args[2].startswith("repos/owner/name/issues?"):
+            assert "--paginate" in args
+            return _completed(stdout="40\n41\n")
+        return _completed(returncode=1, stderr=f"unexpected {args}")
+
+    with (
+        patch("agent_os.issues.subprocess.run", side_effect=run),
+        patch("agent_os.issues.time.sleep"),
+    ):
+        assert issues.validate_issue("owner/name", 1) == ["blocked by #40, which is still open"]
+
+
+def test_the_open_issue_listing_leaves_pull_requests_out():
+    # REST's issue listing also returns every open pull request; a `Blocked by #N` naming a PR is
+    # not an open issue, exactly as `gh issue list` never listed one.
+    with patch.object(issues, "gh_text", return_value="3\n7\n") as listing:
+        assert issues.open_issue_numbers("owner/name") == {3, 7}
+    args = listing.call_args.args
+    assert args[1].startswith("repos/owner/name/issues?state=open")
+    assert "select(.pull_request == null)" in args[args.index("--jq") + 1]
 
 
 def test_validate_issue_passes_on_a_template_shaped_body():
@@ -767,7 +908,7 @@ def test_validate_issue_reports_an_open_blocker_and_accepts_a_closed_one():
 def test_validate_issue_skips_the_open_listing_when_nothing_blocks():
     with (
         patch.object(issues, "gh_json_dict", return_value={"body": VALID_BODY}),
-        patch.object(issues, "gh_json") as listing,
+        patch.object(issues, "gh_text") as listing,
     ):
         assert issues.validate_issue("owner/name", 1) == []
         listing.assert_not_called()
@@ -781,7 +922,7 @@ def test_validate_issue_refuses_a_feature_or_an_epic_as_not_a_brief(type_label):
     }
     with (
         patch.object(issues, "gh_json_dict", return_value=view),
-        patch.object(issues, "gh_json") as listing,
+        patch.object(issues, "gh_text") as listing,
     ):
         assert issues.validate_issue("owner/name", 336) == [
             f"#336 is {type_label}, not a brief: only type:task and type:bug issues are validated"

@@ -77,6 +77,11 @@ if args[:2] == ["label", "list"]:
 if args[:2] == ["project", "item-list"]:
     print(json.dumps({"items": []}))
     sys.exit(0)
+issue_path = args[1].split("/") if args[:1] == ["api"] and len(args) > 1 else []
+if len(issue_path) == 5 and issue_path[0] == "repos" and issue_path[3] == "issues":
+    # `issues.py validate` reads the issue over REST since #70, not with `gh issue view`.
+    print(json.dumps({"body": os.environ.get("GH_STUB_BODY", ""), "number": int(issue_path[4])}))
+    sys.exit(0)
 if args[:1] == ["api"]:
     print(json.dumps({"number": 348}))
     sys.exit(0)
@@ -154,8 +159,8 @@ def test_start_refuses_a_supplement_that_does_not_exist(driver_environment):
 
 GH_STUB_MOVE_FAILS = """#!/usr/bin/env python3
 # Answers `issue view --json body...` (validate, brief -- which also needs `number` in the
-# response, unlike GH_STUB above) with $GH_STUB_BODY. Every `gh api` call fails
-# deterministically -- `issues.py move` reads the current labels with a REST `GET` (#27), and the
+# response, unlike GH_STUB above) with $GH_STUB_BODY, and so does the REST read of the issue
+# that `validate` makes since #70. Every other `gh api` call fails deterministically -- `issues.py move` reads the current labels with a REST `GET` (#27), and the
 # label check before it is REST too -- so `move doing` itself fails, simulating a transient gh/API
 # hiccup, which is the case this test is about: the marker must be dropped whatever the reason
 # the move failed.
@@ -164,6 +169,11 @@ import os
 import sys
 
 args = sys.argv[1:]
+issue_path = args[1].split("/") if args[:1] == ["api"] and len(args) > 1 else []
+if len(issue_path) == 5 and issue_path[0] == "repos" and issue_path[3] == "issues":
+    # `issues.py validate` reads the issue over REST since #70, not with `gh issue view`.
+    print(json.dumps({"body": os.environ.get("GH_STUB_BODY", ""), "number": int(issue_path[4])}))
+    sys.exit(0)
 if args[:1] == ["api"]:
     print("simulated gh failure", file=sys.stderr)
     sys.exit(7)
@@ -967,6 +977,11 @@ if args[:2] == ["label", "list"]:
     out(json.dumps([{"name": "status:ai-completed"}, {"name": "status:blocked-on-human"}]))
 if args[:2] == ["project", "item-list"]:
     out(json.dumps({"items": []}))
+issue_path = args[1].split("/") if args[:1] == ["api"] and len(args) > 1 else []
+if len(issue_path) == 5 and issue_path[0] == "repos" and issue_path[3] == "issues":
+    # `issues.py validate` reads the issue over REST since #70, not with `gh issue view`.
+    print(json.dumps({"body": os.environ.get("GH_STUB_BODY", ""), "number": int(issue_path[4])}))
+    sys.exit(0)
 if args[0] == "api":
     out(json.dumps({"number": 348}))
 print("unexpected gh call: " + " ".join(args), file=sys.stderr)
@@ -1403,6 +1418,11 @@ if args[:2] == ["label", "list"]:
     # The `doing` label already exists, so `move`'s `ensure_labels` creates nothing.
     out(json.dumps([{"name": "status:doing"}]))
 
+issue_path = args[1].split("/") if args[:1] == ["api"] and len(args) > 1 else []
+if len(issue_path) == 5 and issue_path[0] == "repos" and issue_path[3] == "issues":
+    # `issues.py validate` reads the issue over REST since #70, not with `gh issue view`.
+    print(json.dumps({"body": os.environ.get("GH_STUB_BODY", ""), "number": int(issue_path[4])}))
+    sys.exit(0)
 if args[:1] == ["api"]:
     out(json.dumps({}))
 
@@ -2111,6 +2131,11 @@ if args[:2] == ["pr", "create"]:
     out("https://github.com/owner/name/pull/7")
 if args[:2] == ["pr", "view"]:
     out(os.environ.get("GH_STUB_MERGEABLE", "MERGEABLE"))
+issue_path = args[1].split("/") if args[:1] == ["api"] and len(args) > 1 else []
+if len(issue_path) == 5 and issue_path[0] == "repos" and issue_path[3] == "issues":
+    # `issues.py validate` reads the issue over REST since #70, not with `gh issue view`.
+    print(json.dumps({"body": os.environ.get("GH_STUB_BODY", ""), "number": int(issue_path[4])}))
+    sys.exit(0)
 if args[:1] == ["api"]:
     out(json.dumps({"number": 347}))
 
