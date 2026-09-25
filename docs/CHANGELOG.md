@@ -8,6 +8,18 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- The JavaScript actions every workflow uses move off Node 20, which GitHub is deprecating for
+  actions: `actions/checkout@v4` -> `@v7` and `actions/setup-python@v5` -> `@v7`, both declaring
+  `runs.using: node24` at their major tag (`checkout` runs on Node 24 from v5, `setup-python` from
+  v6; v7 is the current major of each). Applies to this repository's `.github/workflows/ci.yml`
+  and to `templates/ci-agent-os.yml` and `templates/ci-host.yml`, which `agent-os-install` writes
+  into a host. Neither v7 removes anything these workflows use (`setup-python` v7 drops the
+  `pip-install` input; `checkout` v7 refuses fork PRs only under `pull_request_target` and
+  `workflow_run`). A self-hosted runner needs a runner version that ships Node 24. A host already
+  installed keeps its old copies: after the subtree pull, `agent-os-install --dry-run` shows the
+  diff, and `agent-os-install --force` rewrites them -- `--force` overwrites every file that
+  differs, so a host that adapted its `ci-host.yml` edits the two `uses:` lines by hand instead.
+
 - agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
   the worker process it was counted in. The file now records `run_identity` (issue, start ref and
   PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and
