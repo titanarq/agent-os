@@ -8,6 +8,18 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#75 (PR #80) — `worker_task.sh start` and `branch` no longer refuse the next dispatch
+  over a finished run's other untracked files under `scratchpad/`, with or without a diary. #18
+  archived the diary only when it was the one dirty path. A run that left an ad hoc script, a
+  commit message draft and a `__pycache__/` there, with no `progress.log` at all (the reported
+  case), kept every dispatch to that backend blocked until a human moved the directory out. Now,
+  when `.state` records the run's ending, nothing is alive, and every dirty path is an untracked
+  file under `scratchpad/`, all of them are archived to `.cache/diaries/`: the diary under #18's
+  name `<run>.progress.log`, the rest under `<run>.scratchpad/` with their relative paths. These
+  still refuse and move nothing: anything dirty elsewhere, a modified tracked file under
+  `scratchpad/`, a run with no recorded ending, and `resume`. `retire_finished_runs_diary` is
+  renamed `retire_finished_runs_scratchpad`. Host follow-up: nothing.
+
 - (PR #79) — `templates/ci-agent-os.yml` is path-filtered to `agent_os/**` and to itself, as the
   2026-09-24 ADR, `AGENT_OS.md` §2.4, `ADOPTION.md` step 20, `install.py`, `doctor.py` and `lib.py`
   already said it was: the template had a bare `pull_request:` trigger and ran the mechanism's whole
