@@ -162,7 +162,9 @@ small one's body in place), and it runs unattended only once the human has flipp
   launching, check the issue has no summary from a previous pass yet: `gh issue view <N> --json
   comments` -- if any comment already starts with `<!-- refiner-summary -->`, do not launch the
   refiner on it again; instead treat it as a doubt for the human (a summary with no visible
-  progress is a defect to report, not something to retry silently). This launch detaches and
+  progress is a defect to report, not something to retry silently). The tick never names an
+  issue whose summary the human has already replied to -- that doubt is settled, and asking it
+  again makes the human answer it twice (agent-os#72). This launch detaches and
   returns at once, like every one-shot role's (#400): launch it and end your run.
 - On a `refiner_finished` event: nothing for that event. The promotion is mechanical and the
   guard's tick performs it on every fire -- every refined issue whose body now validates AND whose

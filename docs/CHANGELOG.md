@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#72 (PR #77) — a refiner doubt the human already answered no longer comes back. The
+  guard's `refine_pending` named every `status:refine` issue whose body fails the template, and a
+  feature the refiner split never conforms: once the human answered its doubt and put `status:refine`
+  back, every idle wake named it and the planner, never refining twice, parked the same answered
+  question again. `refinable_issues` now lists the refine queue with its comments and drops an
+  issue where the human commented after the latest `<!-- refiner-summary -->`
+  (`agent_os.lib.refiner_pass_answered_by_the_human`); an unanswered summary is still named. The
+  planner prompt says so, and the control plane's Duty 2 answers a split feature's doubt by
+  lifting `blocked-on-human` only, never by restoring its refine label. Amends the 2026-09-15
+  refiner ADR.
+
 - `docs/ADOPTION.md` step 16 points `git subtree pull` at step 25, where the pull now is, instead
   of step 22 (arming the guard timer); every other "step N" cross-reference in `docs/`, the
   prompts, the templates and the code was checked against the current numbering (1-26) and holds.
