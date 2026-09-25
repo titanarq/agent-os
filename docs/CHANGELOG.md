@@ -8,6 +8,15 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- `templates/ci-agent-os.yml` is path-filtered to `agent_os/**` and to itself, as the 2026-09-24
+  ADR, `AGENT_OS.md` §2.4, `ADOPTION.md` step 20, `install.py`, `doctor.py` and `lib.py` already
+  said it was: the template had a bare `pull_request:` trigger and ran the mechanism's whole suite
+  on every host PR, and `agent-os-doctor` counted it as the workflow that reports on every pull
+  request, so a host without `ci-host.yml` passed the check the ADR meant it to fail. A test pins
+  the filter and that the doctor does not count the file. `ADOPTION.md` step 20 adds: never make
+  its job a required status check, since it does not run on a host-only PR. Host follow-up: a host
+  with the old file gets the filter from `agent-os-install --force` after the subtree pull, or adds
+  the `paths:` block by hand; keep `ci-host.yml` (or an unfiltered CI of your own) in place first.
 - The JavaScript actions every workflow uses move off Node 20, which GitHub is deprecating for
   actions: `actions/checkout@v4` -> `@v7` and `actions/setup-python@v5` -> `@v7`, both declaring
   `runs.using: node24` at their major tag (`checkout` runs on Node 24 from v5, `setup-python` from
