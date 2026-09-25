@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#84 (PR #85) — `worker_task.sh resume` over a run whose `.state` is `DONE` no longer
+  refuses over that run's own diary. #22 left the diary out of `resume`'s dirty check only after
+  `CUT_BY_GUARD`, on the premise that a finished run is never resumed; but a run that opened its
+  pull request and exited is `DONE`, and it is exactly the one the planner resumes with the
+  validator's request-changes review (`prompts/planner.md`, CHANGES REQUESTED). On a host with no
+  ignore rule for `scratchpad/`, every request-changes loop was refused and needed a human.
+  `drop_the_cut_runs_diary` is renamed `drop_the_resumed_runs_diary` and accepts `DONE` as well,
+  same shapes, file untouched. Still refused: any other dirty path (another scratch file
+  included), and a `.state` of `STARTED`, `RESUMED …`, `FAILED_LAUNCH …` or `BLOCKED …`. Host
+  follow-up: the `scratchpad/` entry in a worktree's `.git/info/exclude` can go.
+
 - agent-os#82 (PR #83) — `tests/test_no_host_literals.py` no longer requires `AGENT_OS_DIR` to
   hold its own `.git`. `_repository_files` demanded `root / ".git"` before ever asking git
   anything, but a host consuming this mechanism as a subtree (ADOPTION.md step 7) has no such

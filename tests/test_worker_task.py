@@ -1675,10 +1675,19 @@ def test_start_refuses_a_worktree_whose_tracked_diary_holds_uncommitted_lines(tm
 
 
 @pytest.mark.parametrize("tracked", [False, True], ids=["untracked", "tracked"])
-def test_resume_after_a_cut_starts_over_the_diary_of_the_run_it_continues(tmp_path, tracked):
+@pytest.mark.parametrize(
+    "state_line",
+    # `DONE` too (#84): a run that opened its PR and exited is the one the planner resumes with
+    # the validator's request-changes review (`prompts/planner.md`, CHANGES REQUESTED).
+    ["CUT_BY_GUARD reason=stall", "DONE"],
+    ids=["cut", "done"],
+)
+def test_resume_after_a_cut_starts_over_the_diary_of_the_run_it_continues(
+    tmp_path, tracked, state_line
+):
     # One cut commit, so the relaunch cap is not what could refuse this.
     environment, cache = _worktree_with_cut_commits(tmp_path, 1)
-    assert (cache / "worker_claude.state").read_text() == "CUT_BY_GUARD reason=stall\n"
+    (cache / "worker_claude.state").write_text(f"{state_line}\n")
     diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=tracked)
     before = diary.read_text()
     try:
@@ -1694,8 +1703,10 @@ def test_resume_after_a_cut_starts_over_the_diary_of_the_run_it_continues(tmp_pa
         _stop(environment)
 
 
-def test_resume_after_a_cut_still_refuses_other_work_beside_the_diary(tmp_path):
+@pytest.mark.parametrize("state_line", ["CUT_BY_GUARD reason=stall", "DONE"], ids=["cut", "done"])
+def test_resume_after_a_cut_still_refuses_other_work_beside_the_diary(tmp_path, state_line):
     environment, cache = _worktree_with_cut_commits(tmp_path, 1)
+    (cache / "worker_claude.state").write_text(f"{state_line}\n")
     worktree = tmp_path / "worktree"
     diary = _diary_with_an_uncommitted_line(worktree, tracked=False)
     # In the same untracked `scratchpad/`, so git still reports the one collapsed entry the diary
@@ -1709,7 +1720,7 @@ def test_resume_after_a_cut_still_refuses_other_work_beside_the_diary(tmp_path):
         # A refusal writes nothing: the state the cut left is untouched, and so is the diary.
         assert not (cache / "worker_claude.pid").exists()
         assert not (cache / "worker_claude.jsonl").exists()
-        assert (cache / "worker_claude.state").read_text() == "CUT_BY_GUARD reason=stall\n"
+        assert (cache / "worker_claude.state").read_text() == f"{state_line}\n"
         assert "still-working" in diary.read_text()
     finally:
         _stop(environment)
@@ -1735,11 +1746,17 @@ def test_resume_after_a_cut_still_refuses_a_modified_file_beside_the_tracked_dia
 
 @pytest.mark.parametrize(
     "state_line",
-    ["STARTED", "RESUMED after=guard_cut", "DONE", "FAILED_LAUNCH command=claude status=127"],
+    [
+        "STARTED",
+        "RESUMED after=guard_cut",
+        "FAILED_LAUNCH command=claude status=127",
+        "BLOCKED reason=merge_failed base=main",
+    ],
 )
 def test_resume_still_refuses_the_diary_when_the_state_is_not_a_cut(tmp_path, state_line):
-    # `resume` continues a run the guard cut. Over a run the driver never saw end, one that
-    # finished, or one that never launched, the diary is #407's signal again and still refuses.
+    # `resume` continues a run the guard cut or one that finished (#84). Over a run the driver
+    # never saw end, one that never launched, or one that blocked at `open-pr`, the diary is
+    # #407's signal again and still refuses.
     environment, cache = _worktree_with_cut_commits(tmp_path, 1)
     (cache / "worker_claude.state").write_text(f"{state_line}\n")
     diary = _diary_with_an_uncommitted_line(tmp_path / "worktree", tracked=False)
