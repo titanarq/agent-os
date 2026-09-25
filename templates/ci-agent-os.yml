@@ -1,5 +1,5 @@
 # The mechanism's own CI, copied as-is by `agent-os install` when the host has no
-# `.github/workflows/ci-agent-os.yml` yet (agent_os/docs/AGENT_OS.md §4.3, §5 step 6). A host that already
+# `.github/workflows/ci-agent-os.yml` yet (agent_os/docs/AGENT_OS.md §4.3, §5 step 7). A host that already
 # runs its own tests job can instead fold these two steps into it, the way a host whose
 # `ci.yml` already exists does -- this file exists so a fresh host has something that works
 # without hand-writing it first.
