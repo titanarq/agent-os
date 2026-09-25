@@ -126,7 +126,7 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 
 16. **The mechanism's own interpreter** — `bash agent_os/bootstrap.sh` builds `agent_os/.venv` and
     installs the package into it, editable, with `pytest` and `ruff`. Idempotent; run it again
-    after every `git subtree pull` (step 22).
+    after every `git subtree pull` (step 25).
 17. **Binaries** — `gh` (authenticated with `repo`+`project` scopes), `git`, `python3.12`, the
     backend CLI(s) a role runs (`claude`, `qwen`, or whichever the host configures), `curl`
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
