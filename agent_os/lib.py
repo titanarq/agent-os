@@ -1717,6 +1717,34 @@ def needs_refinement(
     return bool(section_failures(body) + budget_failures(body, task_classes))
 
 
+REFINER_SUMMARY_MARKER = "<!-- refiner-summary -->"
+
+
+def refiner_pass_answered_by_the_human(issue: dict, project: ProjectConfig | None = None) -> bool:
+    """Has the human already replied to the refiner's pass on this issue: it carries a
+    `<!-- refiner-summary -->` comment and the human commented after the latest one.
+
+    Such an issue is never the refiner's again (the summary is its loop safety,
+    agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md),
+    and the planner turns a summarised issue that `refine_pending` names into a doubt for the
+    human. Once the human has answered that doubt, naming the issue again only re-asks it: a split
+    feature put back in `status:refine` never conforms to the template, so every idle wake named
+    it and the planner parked the answered question twice (agent-os#72). `issue["comments"]` is a
+    `gh issue list --json comments` row's list, oldest first; a row without it has no summary."""
+    comments = issue.get("comments") or []
+    summary_positions = [
+        position
+        for position, comment in enumerate(comments)
+        if (comment.get("body") or "").lstrip().startswith(REFINER_SUMMARY_MARKER)
+    ]
+    if not summary_positions:
+        return False
+    return any(
+        is_human_comment((comment.get("author") or {}).get("login") or "", project)
+        for comment in comments[summary_positions[-1] + 1 :]
+    )
+
+
 def promotable_to_ready(
     issue: dict,
     *,

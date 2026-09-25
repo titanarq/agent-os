@@ -1853,6 +1853,38 @@ def test_with_no_human_configured_anyone_but_the_mechanism_counts():
     assert agent_lib.is_human_comment(f"{project.planner_app}[bot]", project) is False
 
 
+def _comment(author: str, body: str) -> dict:
+    return {"author": {"login": author}, "body": body, "createdAt": "2026-09-24T10:00:00Z"}
+
+
+def test_a_refiner_pass_counts_as_answered_only_after_a_human_reply_to_the_latest_summary():
+    # agent-os#72: an answered refiner doubt must not be named for refining again.
+    project = agent_lib.load_project()
+    human, bot = project.human_login, f"{project.planner_app}[bot]"
+    summary = f"{agent_lib.REFINER_SUMMARY_MARKER}\n@{human}\n\nSplit in two."
+    answered = agent_lib.refiner_pass_answered_by_the_human
+    assert answered({"comments": [_comment(bot, summary), _comment(human, "(c)")]}, project)
+    # No summary at all, whoever commented.
+    assert not answered({"comments": [_comment(human, "please refine")]}, project)
+    assert not answered({}, project)
+    # The human spoke only before the summary; the mechanism's own reply is not an answer.
+    assert not answered(
+        {
+            "comments": [
+                _comment(human, "please refine"),
+                _comment(bot, summary),
+                _comment(bot, "waiting for you"),
+            ]
+        },
+        project,
+    )
+    # A second summary reopens the question: only a reply after the latest one counts.
+    assert not answered(
+        {"comments": [_comment(bot, summary), _comment(human, "(c)"), _comment(bot, summary)]},
+        project,
+    )
+
+
 # -------------------------------------------------------------------------------------------------
 # The role-launch gate (#425): which backend a role runs on is decided from the guard's OWN
 # persisted quota verdict, never from an agent's claim about its own quota, and a class that

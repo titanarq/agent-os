@@ -51,6 +51,9 @@ stay in the repository's language (English).
 - Answer **only** when an ADR, a module doc, the issue body, or a dated decisions comment settles
   the question; cite it in the answer. Reply on the same thread, in the human's language, then
   `issues.py move N ready` (or `doing` if a worker still holds it — check `.cache/worker_*.issue`).
+  A doubt the refiner raised in its `<!-- refiner-summary -->` on a feature it split is answered
+  by removing `<labels.blocked_on_human>` only: the refiner took the feature's own refine label
+  off on purpose, its children carry the work, and a feature never moves to `ready`.
 - If the record does not settle it, do not guess: leave the label, post a one-paragraph summary of
   the question and the options to the human (`scripts/notify.sh` plus a comment on the tracking
   epic), and say so in your report. A wrong answer here costs a whole worker run.
