@@ -8,6 +8,17 @@ mechanism into `agent_os/` — nothing from before that date describes this dire
 
 ## Unreleased
 
+- agent-os#72 — a refiner doubt the human already answered no longer comes back. The guard's
+  `refine_pending` named every `status:refine` issue whose body fails the template, and a feature
+  the refiner split never conforms: once the human answered its doubt and put `status:refine`
+  back, every idle wake named it and the planner, never refining twice, parked the same answered
+  question again. `refinable_issues` now lists the refine queue with its comments and drops an
+  issue where the human commented after the latest `<!-- refiner-summary -->`
+  (`agent_os.lib.refiner_pass_answered_by_the_human`); an unanswered summary is still named. The
+  planner prompt says so, and the control plane's Duty 2 answers a split feature's doubt by
+  lifting `blocked-on-human` only, never by restoring its refine label. Amends the 2026-09-15
+  refiner ADR.
+
 - agent-os#52 — the guard's stall bookkeeping (`.cache/agent_guard_<backend>.json`) is scoped to
   the worker process it was counted in. The file now records `run_identity` (issue, start ref and
   PID of the live run); a tick whose run differs resets `commit_count`, `turn_count_at_commit` and
