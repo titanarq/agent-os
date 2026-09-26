@@ -15,8 +15,8 @@ from agent_os.streams.interface import (
 def turn_context_tokens(usage: dict) -> int:
     """Context size of one turn = everything it read: uncached input plus what came from the
     prompt cache. A warm turn reports `input_tokens: 2, cache_read_input_tokens: 18919`; reading
-    `input_tokens` alone would call a 19k-token turn a 2-token one. Qwen reports the full figure in
-    `input_tokens` alone, so summing is right for both."""
+    `input_tokens` alone would call a 19k-token turn a 2-token one. Right for Claude only, whose three
+    counters are disjoint: Qwen's parser overrides `context_tokens` (#92)."""
     return sum(
         usage.get(k) or 0
         for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
@@ -41,6 +41,9 @@ def result_total_tokens(result: dict) -> int:
 class ClaudeJsonlStreamParser:
     name = "claude_jsonl"
 
+    def context_tokens(self, usage: dict) -> int:
+        return turn_context_tokens(usage)
+
     def turn_usage(self, events: list[dict]) -> UsageSummary:
         context = out = turns = 0
         session_id = ""
@@ -48,7 +51,7 @@ class ClaudeJsonlStreamParser:
         for event in events:
             session_id = event.get("session_id") or session_id
             usage = event_message(event).get("usage") or event.get("usage") or {}
-            size = turn_context_tokens(usage)
+            size = self.context_tokens(usage)
             if event.get("type") == "assistant" and size:
                 context = max(context, size)
                 turns += 1

@@ -8,6 +8,12 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#92 — Qwen's context was double-counted. Current Qwen builds report
+  `cache_read_input_tokens` as a part of `input_tokens`, and the shared Claude parser added the two,
+  so the guard read every Qwen turn at about twice its size and cut Qwen stages on `max_context` at
+  half their class budget (roedor's `369` stage 2: 337,636 read, 169,529 real). Qwen's parser now
+  reads context from `input_tokens` alone. Hosts: a `subtree pull`; nothing to configure.
+
 - agent-os#88 — the control plane's merge method is a host config key. `agents/control-plane.md`
   Duty 4 hardcoded `gh pr merge N --merge --delete-branch`, so a host that squashes had to
   hand-edit its installed `.claude/agents/control-plane.md`, and `agent-os-install --force` then

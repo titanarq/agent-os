@@ -2,8 +2,10 @@
 every answer is read the same way, and so this parser inherits all three methods rather than
 copying them -- what differs is what the stream CARRIES, not how it is read:
 
-- `turn_usage`: Qwen reports each turn's full context in `input_tokens` alone, and summing the
-  cache counters (absent on Qwen) is right for both shapes.
+- `turn_usage`: Qwen reports each turn's full context in `input_tokens`, and its
+  `cache_read_input_tokens` is a PART of that figure, not an addition to it (`total_tokens` ==
+  input + output). Summing the counters as Claude's parser does read every Qwen turn at about twice
+  its size, and the guard cut Qwen stages on `max_context` at half their class budget (#92).
 - `result_usage`: the terminal `result` carries `usage.total_tokens` and no `total_cost_usd`, so
   `cost_usd` reads None (#387) -- the reason a Qwen class is cut on tokens, not dollars.
 - `quota_verdict`: the stream carries no `rate_limit_event`, so the verdict reads `allowed` unless
@@ -21,3 +23,6 @@ from agent_os.streams.claude_jsonl import ClaudeJsonlStreamParser
 
 class QwenJsonlStreamParser(ClaudeJsonlStreamParser):
     name = "qwen_jsonl"
+
+    def context_tokens(self, usage: dict) -> int:
+        return usage.get("input_tokens") or 0
