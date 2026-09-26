@@ -32,6 +32,14 @@
 #   agent_os/bin/worker_task.sh <qwen|claude> launch-stage  # the next stage, no gates -- chaining only
 #     Both are called by the run's own subshell, never by hand: `start` and `resume` are the doors.
 #
+#   Every subcommand takes `--slot <n>` (#90): which of the backend's `project.backends.<name>.slots`
+#   concurrent workers it addresses. Slot 1 is the backend's own worktree and `.cache/worker_<name>.*`
+#   files; slot n > 1 is `<worktree>-<n>` and `.cache/worker_<name>-<n>.*`. A backend with one slot
+#   needs no `--slot`. With several: `start` and `branch` pick a free slot themselves (one whose
+#   branch already names the issue first), `resume --issue <N>` the slot that recorded issue N,
+#   `status` and `init` without one cover every slot, and every other subcommand refuses to guess.
+#   The run's own subshell carries its slot, so `stage-exit`, `open-pr` and the chain stay on it.
+#
 # ONE STAGE PER PROCESS (#375, agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-
 # runs-in-a-fresh-process.md). An issue's `## Stages` checklist is its plan; a branch's
 # `stage N/M: <title>` commits are what has actually been done, and nothing else is ever consulted
@@ -48,7 +56,8 @@
 # under `## Supplement` -- and moves the issue to `doing`. `resume` reuses that same file and the
 # issue recorded by the `start` it is resuming.
 #
-# One worktree per backend, so both can run at once without touching each other's tree; the paths
+# One worktree per worker slot -- per backend, unless it declares `slots:` (#90) -- so every worker
+# can run at once without touching another's tree; the paths
 # and the GitHub App slugs come from config/agents.yaml's `project:` section, never from here
 # (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 # The database is NOT per backend. It is one Postgres for everyone, and a worker's own connection
@@ -98,7 +107,7 @@ main_checkout() {
 
 backend=${1:-}
 case "$backend" in
-  '' | -*) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
+  '' | -*) sed -n '2,43p;45,52p' "$0"; exit 2 ;;
 esac
 # The backend CLI this driver launches, resolved from `project.executables` rather than from
 # whatever PATH the process that launched the driver happened to carry: a dispatch from the
@@ -114,7 +123,7 @@ backend_bin=$(agent_executable "$backend") || exit 1
 backend_stream=$(backend_value "$backend" stream)
 case $? in
   0) ;;
-  2) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
+  2) sed -n '2,43p;45,52p' "$0"; exit 2 ;;
   *) exit 1 ;;
 esac
 case "$backend_stream" in
@@ -128,28 +137,79 @@ esac
 # class of any role on it -- read off the classes, never a per-backend literal here (#514). Left
 # empty when no class runs on the backend; `launch_stage` refuses to start on an empty one.
 model=${WORKER_MODEL:-$("$agent_python" -m agent_os.lib backend-model "$backend" 2>/dev/null)}
-worktree=${WORKER_WORKTREE:-$(backend_value "$backend" worktree --path)}
 shift
+
+# ----------------------------------------------------------------------------------------------
+# SLOTS (#90, agent_os/docs/adr/2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md).
+# A backend is a CLI and its quota; a slot is one concurrent worker on it -- a PID, a worktree, a
+# branch. `--slot <n>` may sit anywhere after the backend, and `WORKER_SLOT` is how the run's own
+# subshell and the guard's cut name it: read once here and then UNSET, so nothing this driver
+# launches -- the backend CLI, the guard's exit hook, the planner that hook may wake -- inherits a
+# slot it would then be pinned to. Every internal call passes the slot explicitly instead.
+# `--issue <N>` is `resume`'s way to name the run it continues when the backend has several slots.
+# ----------------------------------------------------------------------------------------------
+requested_slot=${WORKER_SLOT:-}
+unset WORKER_SLOT
+resume_issue=""
+remaining_arguments=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --slot) shift; requested_slot=${1:-} ;;
+    --slot=*) requested_slot=${1#--slot=} ;;
+    --issue) shift; resume_issue=${1:-} ;;
+    *) remaining_arguments+=("$1") ;;
+  esac
+  shift
+done
+set -- ${remaining_arguments[@]+"${remaining_arguments[@]}"}
+
+# One `<backend> <slot> <key> <worktree>` line per slot of THIS backend, derived by `agent_os.lib`
+# -- the same derivation the guard reads, so the two can never name a slot's files differently. A
+# backend with no worktree has no slot line at all, and is slot 1 on an empty worktree, which is
+# what every refusal below has always said about it (`no worktree at`).
+slot_keys=("")
+slot_worktrees=("")
+while IFS=$'\t' read -r _ slot_number slot_key slot_worktree; do
+  [ -n "$slot_number" ] || continue
+  slot_keys[slot_number]=$slot_key
+  slot_worktrees[slot_number]=$slot_worktree
+done < <("$agent_python" -m agent_os.lib worker-slots "$backend" 2>/dev/null)
+slot_count=$((${#slot_keys[@]} - 1))
+if [ "$slot_count" -lt 1 ]; then
+  slot_count=1
+  slot_keys[1]=$backend
+  slot_worktrees[1]=$(backend_value "$backend" worktree --path)
+fi
 
 # `WORKER_CACHE_DIR` moves every one of these at once, and `agent_guard.py`'s `cache_dir()` reads
 # the same variable for the paths IT derives -- `worker_paths()`, `planner_events/`, `wake`'s
 # `planner.lock` -- so one value isolates the driver and the guard together and a test can drive
 # this script, exit hook included, without writing over the state of a run that is actually alive.
 cache=${WORKER_CACHE_DIR:-$main/.cache}
-pidfile=$cache/worker_$backend.pid
-logfile=$cache/worker_$backend.log
-events=$cache/worker_$backend.jsonl
-startref=$cache/worker_$backend.startref
-sidfile=$cache/worker_$backend.session
-statefile=$cache/worker_$backend.state
-issuefile=$cache/worker_$backend.issue
-brieffile=$cache/worker_$backend.brief.md
-# The issue's own body, written out because `agent_lib stage-titles` reads the stages off a file,
-# and `N/M` -- stages already committed when THIS process was launched, out of the total the issue
-# declares. `stage-exit` compares the count it derives from git against that N to tell a stage
-# that landed from a process that produced nothing (#375).
-bodyfile=$cache/worker_$backend.body.md
-stagefile=$cache/worker_$backend.stage
+# Every per-run path belongs to ONE SLOT, named `worker_<key>.*` -- `<key>` is the backend's own
+# name for slot 1, so a backend with one slot keeps exactly the files it always had (#90). Set by
+# `use_slot`, which the dispatch below calls before any subcommand runs. `WORKER_WORKTREE` still
+# overrides the chosen slot's worktree: the run's own subshell and the guard's cut pass it, and so
+# does a test that drives a throwaway tree.
+use_slot() {
+  slot=$1
+  slot_key=${slot_keys[slot]}
+  worktree=${WORKER_WORKTREE:-${slot_worktrees[slot]}}
+  pidfile=$cache/worker_$slot_key.pid
+  logfile=$cache/worker_$slot_key.log
+  events=$cache/worker_$slot_key.jsonl
+  startref=$cache/worker_$slot_key.startref
+  sidfile=$cache/worker_$slot_key.session
+  statefile=$cache/worker_$slot_key.state
+  issuefile=$cache/worker_$slot_key.issue
+  brieffile=$cache/worker_$slot_key.brief.md
+  # The issue's own body, written out because `agent_lib stage-titles` reads the stages off a
+  # file, and `N/M` -- stages already committed when THIS process was launched, out of the total
+  # the issue declares. `stage-exit` compares the count it derives from git against that N to
+  # tell a stage that landed from a process that produced nothing (#375).
+  bodyfile=$cache/worker_$slot_key.body.md
+  stagefile=$cache/worker_$slot_key.stage
+}
 # One finished stage process's event stream, per issue, kept where #367's spend report will read
 # it: .cache/spend/<issue>/<ts>-<backend>-stage<N>.jsonl.
 spenddir=$cache/spend
@@ -651,7 +711,7 @@ retire_finished_runs_scratchpad() {
   done < <(git -C "$worktree" ls-files --others -z -- "$scratch_dir")
   [ "${#leftovers[@]}" -gt 0 ] || return 0
   mkdir -p "$cache/diaries"
-  run_name="worker_$backend-issue$(cat "$issuefile" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S)"
+  run_name="worker_$slot_key-issue$(cat "$issuefile" 2>/dev/null || echo unknown)-$(date +%Y%m%d-%H%M%S)"
   for path in "${leftovers[@]}"; do
     if [ "$path" = "$DIARY" ]; then
       destination="$cache/diaries/$run_name.progress.log"
@@ -855,7 +915,10 @@ and then stop. The driver launches the next stage in a new process."
   fi
 
   export WORKER_EVENTS="$events" WORKER_MAIN="$main" WORKER_BACKEND_BIN="$backend_bin"
-  export WORKER_BACKEND="$backend"
+  # The slot rides along as `WORKER_RUN_SLOT`, a name this driver never reads as an override, and
+  # is handed on per command as `WORKER_SLOT` / `--slot` -- see SLOTS above for why it is never
+  # exported under the name the driver reads.
+  export WORKER_BACKEND="$backend" WORKER_RUN_SLOT="$slot"
   # setsid so the run outlives this shell and can be stopped as one process group. The rules go
   # through the environment rather than the command line, so no quoting can mangle them.
   #
@@ -880,10 +943,11 @@ and then stop. The driver launches the next stage in a new process."
         # The end of ONE STAGE, which is only sometimes the end of the run: when another stage
         # remains and the gates pass, `stage-exit` has already launched it in a process group of
         # its own and this one must stop here without publishing anything.
-        WORKER_WORKTREE="$1" WORKER_BACKEND_STATUS=$backend_status \
+        WORKER_WORKTREE="$1" WORKER_SLOT="$WORKER_RUN_SLOT" WORKER_BACKEND_STATUS=$backend_status \
           "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" stage-exit && exit 0
-        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
-        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND"
+        WORKER_WORKTREE="$1" WORKER_SLOT="$WORKER_RUN_SLOT" \
+          "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
+        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND" --slot "$WORKER_RUN_SLOT"
       ' _ "$worktree" >>"$logfile" 2>&1 &
     ;;
   claude_jsonl)
@@ -899,10 +963,11 @@ and then stop. The driver launches the next stage in a new process."
              "$WORKER_FIRST_INSTRUCTION" \
              >>"$WORKER_EVENTS"
         backend_status=$?
-        WORKER_WORKTREE="$1" WORKER_BACKEND_STATUS=$backend_status \
+        WORKER_WORKTREE="$1" WORKER_SLOT="$WORKER_RUN_SLOT" WORKER_BACKEND_STATUS=$backend_status \
           "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" stage-exit && exit 0
-        WORKER_WORKTREE="$1" "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
-        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND"
+        WORKER_WORKTREE="$1" WORKER_SLOT="$WORKER_RUN_SLOT" \
+          "$AGENT_OS_DIR/bin/worker_task.sh" "$WORKER_BACKEND" open-pr
+        "$AGENT_OS_PYTHON" -m agent_os.guard check "$WORKER_BACKEND" --slot "$WORKER_RUN_SLOT"
       ' _ "$worktree" >>"$logfile" 2>&1 &
     ;;
   esac
@@ -931,7 +996,155 @@ and then stop. The driver launches the next stage in a new process."
   exit 0
 }
 
-case "${1:-status}" in
+# ----------------------------------------------------------------------------------------------
+# WHICH SLOT THIS CALL ADDRESSES (#90). An explicit one (`--slot`, `WORKER_SLOT`) is honoured as
+# long as the backend has it; a backend with one slot is always slot 1, which is every call this
+# driver took before slots existed. Otherwise the subcommand says how the slot is found, and none
+# of them guesses: a wrong guess stops, freezes or publishes another run's work.
+# ----------------------------------------------------------------------------------------------
+
+# Every slot's recorded issue and whether it is alive, for a refusal that has to say which slot to
+# name. Leaves the slot variables on the last slot listed; every caller exits right after.
+list_slots() {
+  local n
+  for n in $(seq 1 "$slot_count"); do
+    use_slot "$n"
+    printf '  --slot %s  %s  %s, issue %s\n' "$n" "$worktree" \
+      "$(alive && echo "running pid $(cat "$pidfile")" || echo idle)" \
+      "$(cat "$issuefile" 2>/dev/null | sed 's/^/#/' || true)"
+  done
+}
+
+# A slot `start` or `branch` may take: not alive, and a worktree there to work in. Leaves the slot
+# variables on the last slot looked at.
+slot_is_free() {
+  use_slot "$1"
+  ! alive && [ -e "$worktree/.git" ]
+}
+
+# THE FREE SLOT A DISPATCH TAKES, most specific first: one whose worktree is already on the branch
+# this work belongs on (`branch_wanted`, the exact name `branch` was asked for, or `issue_wanted`,
+# the planner's `<word>/<issue>-<slug>` shape `start`'s base gate accepts) -- which is what makes
+# the planner's `branch task/<N>-<slug>` and the `start <N>` after it land on the SAME slot; then a
+# clean one holding no cut run awaiting its relaunch; then any clean one; then the first free one,
+# whose refusal (`worktree is dirty`) then says what is wrong with it. No free slot at all is a
+# refusal of its own, written before anything else is -- the third dispatch onto two busy slots
+# must leave every file exactly as it was.
+pick_free_slot() {
+  local issue_wanted=$1 branch_wanted=$2 n current free=() clean_uncut="" clean="" any_worktree=""
+  for n in $(seq 1 "$slot_count"); do
+    use_slot "$n"
+    [ -e "$worktree/.git" ] && any_worktree=yes
+    slot_is_free "$n" || continue
+    free+=("$n")
+    current=$(git -C "$worktree" branch --show-current 2>/dev/null || true)
+    if [ -n "$branch_wanted" ] && [ "$current" = "$branch_wanted" ]; then
+      use_slot "$n"; return 0
+    fi
+    if [ -n "$issue_wanted" ] \
+      && printf '%s\n' "$current" | grep -qE "(^|/)[a-z][a-z0-9-]*/$issue_wanted([-/]|$)"; then
+      use_slot "$n"; return 0
+    fi
+    hide_scratchpad_from_git
+    [ -z "$(uncommitted_work)" ] || continue
+    [ -n "$clean" ] || clean=$n
+    if [ -z "$clean_uncut" ] && ! grep -q '^CUT_BY_GUARD' "$statefile" 2>/dev/null; then
+      clean_uncut=$n
+    fi
+  done
+  if [ "${#free[@]}" -eq 0 ]; then
+    # No worktree in any slot is the refusal every subcommand has always given: slot 1's own.
+    if [ -z "$any_worktree" ]; then use_slot 1; return 0; fi
+    echo "refusing to dispatch: every slot of backend '$backend' is busy" \
+      "($slot_count of $slot_count running) -- wait for one to finish"
+    list_slots
+    exit 1
+  fi
+  use_slot "${clean_uncut:-${clean:-${free[0]}}}"
+}
+
+# THE SLOT WHOSE RECORDED ISSUE IS THIS ONE, for `resume --issue <N>`: a relaunch continues the
+# run that recorded the issue, in the worktree that holds its branch. The newest record wins when
+# two slots have run the same issue at different times.
+pick_slot_of_issue() {
+  local wanted=$1 n found="" found_file=""
+  for n in $(seq 1 "$slot_count"); do
+    use_slot "$n"
+    [ "$(cat "$issuefile" 2>/dev/null || true)" = "$wanted" ] || continue
+    if [ -z "$found" ] || [ "$issuefile" -nt "$found_file" ]; then
+      found=$n
+      found_file=$issuefile
+    fi
+  done
+  if [ -z "$found" ]; then
+    echo "resume refused: no slot of backend '$backend' recorded issue #$wanted"
+    list_slots
+    exit 1
+  fi
+  use_slot "$found"
+}
+
+subcommand=${1:-status}
+if [ -n "$requested_slot" ]; then
+  case "$requested_slot" in
+    '' | *[!0-9]*) requested_slot=0 ;;
+  esac
+  if [ "$requested_slot" -lt 1 ] || [ "$requested_slot" -gt "$slot_count" ]; then
+    echo "usage: backend '$backend' has no slot ${requested_slot} -- it has $slot_count (project.backends.$backend.slots)"
+    exit 2
+  fi
+  use_slot "$requested_slot"
+elif [ "$slot_count" -eq 1 ]; then
+  use_slot 1
+else
+  case "$subcommand" in
+    rules) use_slot 1 ;;
+    status | init)
+      # Every slot, one after the other, each through its own call -- the report and the idempotent
+      # creation are the two things that are the same question asked of every slot.
+      worst=0
+      for n in $(seq 1 "$slot_count"); do
+        use_slot "$n"
+        echo "=== $backend slot $n ($worktree) ==="
+        "$agent_os_dir/bin/worker_task.sh" "$backend" "$subcommand" --slot "$n" || worst=$?
+      done
+      exit "$worst"
+      ;;
+    start)
+      issue_argument=""
+      for argument in "${@:2}"; do
+        case "$argument" in -*) ;; *) issue_argument=$argument; break ;; esac
+      done
+      pick_free_slot "$issue_argument" ""
+      ;;
+    branch) pick_free_slot "" "${2:-}" ;;
+    resume)
+      if [ -z "$resume_issue" ]; then
+        echo "usage: backend '$backend' has $slot_count slots -- name the run to resume with" \
+          "--issue <N> (or --slot <n>):"
+        list_slots
+        exit 2
+      fi
+      pick_slot_of_issue "$resume_issue"
+      ;;
+    *)
+      echo "usage: backend '$backend' has $slot_count slots -- name one with --slot <n>:"
+      list_slots
+      exit 2
+      ;;
+  esac
+fi
+
+# `--issue` on a slot named some other way, or on a one-slot backend: the relaunch must still be
+# of that issue, never of whatever this slot happens to have recorded instead.
+if [ "$subcommand" = resume ] && [ -n "$resume_issue" ] \
+  && [ "$(cat "$issuefile" 2>/dev/null || true)" != "$resume_issue" ]; then
+  echo "resume refused: slot $slot of backend '$backend' recorded" \
+    "issue #$(cat "$issuefile" 2>/dev/null || echo none), not #$resume_issue"
+  exit 1
+fi
+
+case "$subcommand" in
 
 rules)
   # The resolved block, for reading and for a test -- no worktree touched, no backend called.
@@ -952,7 +1165,7 @@ init)
   # a worktree cannot check out a branch another worktree (this one) already has checked out.
   git -C "$main" fetch -q origin main \
     || { echo "could not fetch origin/main -- refusing to init a worktree from a base nobody can name"; exit 1; }
-  init_branch="agent-os/init-$backend"
+  init_branch="agent-os/init-$slot_key"
   git -C "$main" worktree add -q -b "$init_branch" "$worktree" origin/main \
     || { echo "git worktree add failed for $worktree"; exit 1; }
   echo "created $worktree on $init_branch @ $(git -C "$worktree" rev-parse --short HEAD) (from origin/main)"
@@ -1078,14 +1291,17 @@ start|resume)
     fi
 
     # PARALLELISM CAP AND MODULE EXCLUSION, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#374,
-    # agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md). This backend
-    # is not alive or `start` would already have refused above -- so every alive backend found
-    # here is an OTHER one, and the count below is exactly how many issues are already running.
+    # agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md). This slot
+    # is not alive or `start` would already have refused above -- so every alive slot found here
+    # is an OTHER one, and the count below is exactly how many issues are already running. Every
+    # other SLOT, of this backend as much as of the others (#90): a slot is a worker, and the cap
+    # and the module exclusion are about workers, not about backend names.
     other_backends_alive=()
-    for other in $("$agent_python" -m agent_os.lib worktree-backends); do
-      [ "$other" = "$backend" ] && continue
+    while IFS=$'\t' read -r _ _ other _; do
+      [ -n "$other" ] || continue
+      [ "$other" = "$slot_key" ] && continue
       alive_pidfile "$cache/worker_$other.pid" && other_backends_alive+=("$other")
-    done
+    done < <("$agent_python" -m agent_os.lib worker-slots)
     max_parallel_issues=$("$agent_python" -m agent_os.lib planner-value max_parallel_issues)
     if [ "${#other_backends_alive[@]}" -ge "$max_parallel_issues" ]; then
       echo "refusing to dispatch: ${#other_backends_alive[@]} worker(s) already running" \
@@ -1094,8 +1310,8 @@ start|resume)
     fi
     # Below the cap on count alone, two running issues must still never share a `module:` label:
     # a worker editing one module's code and its docs/modules/*.md produces a conflict the other
-    # worker cannot see. Compared against every OTHER backend that is actually alive, never
-    # against this one's own past run.
+    # worker cannot see. Compared against every OTHER slot that is actually alive, never against
+    # this one's own past run.
     issue_modules=$(gh issue view "$issue" --json labels -q '.labels[].name' 2>/dev/null \
       | grep '^module:' || true)
     for other in "${other_backends_alive[@]}"; do
@@ -1155,7 +1371,7 @@ start|resume)
     if [ "$after" = manual ] && [ -s "$statefile" ] && grep -q '^CUT_BY_GUARD' "$statefile"; then
       after=guard_cut
     fi
-    [ -s "$issuefile" ] || echo "WARNING: no recorded issue for this worker (.cache/worker_$backend.issue); resuming without one"
+    [ -s "$issuefile" ] || echo "WARNING: no recorded issue for this worker (.cache/worker_$slot_key.issue); resuming without one"
 
     # THE RELAUNCH CAP, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#362, agent_os/docs/adr/2026-09-14-a-
     # cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md, amended 2026-09-15). A
@@ -1333,7 +1549,7 @@ stage-exit)
   # a process that no longer exists. The new process writes its own `.pid` and `.state`; this one
   # must touch neither of them after this point.
   echo "stage-exit: $stages_done/$stages_total done -- launching stage $((stages_done + 1)) in a new process group"
-  setsid -w "$agent_os_dir/bin/worker_task.sh" "$backend" launch-stage
+  setsid -w "$agent_os_dir/bin/worker_task.sh" "$backend" launch-stage --slot "$slot"
   ;;
 
 open-pr)
@@ -1812,5 +2028,5 @@ freeze)
   fi
   ;;
 
-*) sed -n '2,35p;37,44p' "$0"; exit 2 ;;
+*) sed -n '2,43p;45,52p' "$0"; exit 2 ;;
 esac

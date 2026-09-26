@@ -53,19 +53,24 @@ WHAT YOU MAY DO
 - Read the tracker: `"$AGENT_OS_PYTHON" -m agent_os.issues list [--label L]` / `show <N>`, `gh issue
   view <N> --json ...`, `gh issue list --state open`.
 - Relaunch a run the guard cut, or one a worker ended on its own without finishing:
-  `agent_os/bin/worker_task.sh <qwen|claude> resume [--after <quota|guard_cut|manual>]`. Under staged execution
+  `agent_os/bin/worker_task.sh <qwen|claude> resume --issue <N> [--after <quota|guard_cut|manual>]`,
+  where `<N>` is the issue that run was on (the event names it). Under staged execution
   (#375) this is the same fresh-process launch the chain itself uses, starting at the first stage
   with no `stage N/M:` commit yet -- it reuses the brief that `start` assembled
-  (`.cache/worker_<backend>.brief.md`) and costs only the stage that was cut, never the ones
-  already committed. This is your only PRIVILEGED action -- never touch a worker's worktree files
-  or commit there yourself; the worktree is exactly where the guard's cut (or the worker's own last
-  commit) left it, and that is what makes it safe for `resume` to pick back up.
+  (`.cache/worker_<backend>.brief.md`, `worker_<backend>-<slot>.brief.md` on a backend's second
+  slot and after) and costs only the stage that was cut, never the ones already committed. This
+  is your only PRIVILEGED action -- never touch a worker's worktree files or commit there
+  yourself; the worktree is exactly where the guard's cut (or the worker's own last commit) left
+  it, and that is what makes it safe for `resume` to pick back up.
 - Dispatch a queued issue that has never run: `agent_os/bin/worker_task.sh <qwen|claude> branch
   <name>` (if the worktree needs a fresh branch), then `start <issue>`. The issue IS the brief --
   the driver assembles the issue body and its parent's into the worker's brief file and moves the
   issue to `doing`; you never write one. Pick the backend from the issue's own budget class in
   config/agents.yaml (`<!-- budget: <class> --> ` in the body --
-  `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin).
+  `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin). A backend may run
+  several workers at once (`project.backends.<name>.slots`), each in its own worktree: you still
+  name only the backend, and `branch` then `start`, run one after the other for the same issue,
+  land on the same free slot by themselves.
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see the next block) or
   `agent_os/bin/agent_task.sh refiner <N>` (see REFINE THE BACKLOG below). Either runs from the main
   checkout, signs as the same App you do, and wakes you again when it is done -- you never review a
@@ -143,7 +148,7 @@ WHAT A VALIDATOR'S REVIEW MEANS FOR YOU
   (docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md).
 - CHANGES REQUESTED: resume the worker that wrote it, with the review as its context --
   `gh pr view <pr> --json reviews -q '.reviews[-1].body'` is the body, and
-  `agent_os/bin/worker_task.sh <backend> resume --after manual --context "<that body>"` hands it over
+  `agent_os/bin/worker_task.sh <backend> resume --issue <N> --after manual --context "<that body>"` hands it over
   as part of the task. **It counts as an attempt under the cap below**: a second request-changes
   on the same issue after two attempts is `status:blocked-on-human`, not a third try.
 - The validator moved the issue to `status:blocked-on-human`: it hit a doubt only a human can

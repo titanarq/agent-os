@@ -135,7 +135,12 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per
     `project.backends` entry that sets a `worktree`: idempotent `git worktree add` on a fresh
     branch from `origin/main` when the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
-    either is missing.
+    either is missing. A backend that should run more than one worker at once sets
+    `project.backends.<name>.slots: N` (agent-os#90, ADR
+    `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`): slot 1 is `worktree`,
+    slot N is `<worktree>-N`, and the same `init` creates every missing one. Raise
+    `planner.max_parallel_issues` with it -- that stays the cap across every slot of every
+    backend -- and give the issues `module:` labels, which keep two slots off the same area.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App
     `.json`/`.pem` pairs from step 15, if not already placed there; `<host>/.env` at the repo root
     for any credential a worker's backend process needs — both are written by hand, nothing in the

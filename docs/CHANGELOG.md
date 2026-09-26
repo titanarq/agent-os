@@ -8,6 +8,31 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#90 — a backend runs more than one worker at once: slots, separate from backends. The
+  backend's name was the only key a run's state was kept under, so the real ceiling was one worker
+  per `project.backends` entry whatever `planner.max_parallel_issues` said. New
+  `project.backends.<name>.slots` (integer, default 1, validated at load). Slot 1 is exactly what a
+  backend had -- `worktree`, `.cache/worker_<name>.*`, `agent_guard_<name>.json` -- so a host that
+  sets nothing sees byte-identical paths, events and prompts; slot N > 1 is `<worktree>-N` and
+  `.cache/worker_<name>-N.*`, with its own stall bookkeeping `agent_guard_<name>-N.json`. A derived
+  name or worktree another slot already has (a backend literally named `claude-2`, say) fails the
+  load. `worker_task.sh <backend> start` picks a free slot itself (one already on a branch naming
+  the issue first, so the planner's `branch` + `start` land on the same one) and refuses, writing
+  nothing, when every slot is busy; the cap and the `module:` exclusion now count every other slot,
+  this backend's included. Every subcommand takes `--slot N`; `resume --issue N` finds the slot that
+  recorded issue N (and, on a one-slot backend, refuses when the recorded issue is another);
+  `status`/`init` without a slot cover every slot; the rest refuse to guess. The run's subshell
+  carries its slot to `stage-exit`, `open-pr`, the chain and the exit hook (`agent_os.guard check
+  <backend> --slot N`). The guard ticks (backend, slot) pairs; the quota verdict stays per backend,
+  read as exhausted when any live slot's stream says so, so an exhausted window cuts every live slot
+  and is reported once. The tick's `worker_cut` event names the issue it cut. `agent-os-doctor`
+  checks every slot's worktree, `planner_task.sh` adds every slot's worktree to the planner's
+  `--add-dir`, `worker_progress.sh` reports per slot. `prompts/planner.md` resumes with
+  `--issue <N>` and says a backend may have several slots (ADR
+  `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`). Host follow-up: none to keep
+  today's behaviour. To run two workers on one backend: set `slots: 2` on it, raise
+  `planner.max_parallel_issues`, and run `worker_task.sh <backend> init` to create `<worktree>-2`.
+
 - agent-os#88 — the control plane's merge method is a host config key. `agents/control-plane.md`
   Duty 4 hardcoded `gh pr merge N --merge --delete-branch`, so a host that squashes had to
   hand-edit its installed `.claude/agents/control-plane.md`, and `agent-os-install --force` then
