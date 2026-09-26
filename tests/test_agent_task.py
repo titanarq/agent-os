@@ -287,7 +287,7 @@ def test_the_planner_is_told_to_launch_the_validator_and_what_a_review_means():
     rules = (PROMPTS_DIR / "planner.md").read_text()
     assert "agent_os/bin/agent_task.sh validator <pr>" in rules
     assert "status:ai-completed" in rules
-    assert "resume --after manual --context" in rules
+    assert "resume --issue <N> --after manual --context" in rules
     assert "counts as an attempt under the cap below" in rules
 
 
