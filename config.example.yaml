@@ -136,6 +136,13 @@ project:
   #             it also picks the command line the drivers launch it with. Unknown fails at load.
   #   quota:    the detector whose `exhausted` verdict cuts a live run (claude_rate_limit), or
   #             `none` -- the verdict is recorded and nothing is cut on it.
+  #   slots:    how many workers may run on it at once, each in a worktree and on a branch of its
+  #             own (default 1). Slot 1 is `worktree` and `.cache/worker_<name>.*`, exactly as a
+  #             backend without this key; slot N is `<worktree>-N` and `.cache/worker_<name>-N.*`
+  #             (`worker_task.sh <name> init` creates every missing one). The quota verdict and
+  #             the App stay the backend's, shared by its slots: an exhausted window cuts every
+  #             live slot. `planner.max_parallel_issues` still caps workers across every slot of
+  #             every backend, and two of them never share a `module:` label.
   # DEPRECATED, for one release: `worktrees:` + `worker_apps:` (+ `executables:` for the command)
   # in place of this section still load, with one warning, and are ignored when this is present.
   backends:
@@ -205,8 +212,8 @@ planner:
   # `WIP: cut by guard` commits since a branch's fork point at or above which a relaunch is
   # refused: a run that has been cut this many times is not making progress.
   relaunch_cap: 3
-  # How many issues may have a worker alive at once, across every backend. Enforced by the worker
-  # driver, not by the planner.
+  # How many issues may have a worker alive at once, across every slot of every backend. Enforced
+  # by the worker driver, not by the planner.
   max_parallel_issues: 1
   # How far back the tick looks for a closed issue still carrying a state label.
   reconcile_closed_lookback_days: 30

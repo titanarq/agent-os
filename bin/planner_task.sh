@@ -46,16 +46,18 @@ runs_tsv=$planner_dir/runs.tsv
 # Worktrees, identities and every other project-specific value come from config/agents.yaml's
 # `project:` section -- agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-
 # configured-not-coded.md.
-# One `--add-dir` per configured backend worktree, so the planner can read every worker's tree --
-# the backends' own list, never a hardcoded pair of names (#514). `WORKER_WORKTREE_<BACKEND>`
-# overrides one of them, as `WORKER_WORKTREE_QWEN` / `WORKER_WORKTREE_CLAUDE` always did.
+# One `--add-dir` per worker slot's worktree, so the planner can read every worker's tree -- the
+# backends' own list, never a hardcoded pair of names (#514), and every slot of a backend that
+# runs several (#90). `WORKER_WORKTREE_<KEY>` overrides one of them -- `<KEY>` is the backend's
+# name for its first slot, as `WORKER_WORKTREE_QWEN` / `WORKER_WORKTREE_CLAUDE` always did, and
+# `<BACKEND>_<N>` for slot N.
 planner_worktree_dirs=()
-while IFS= read -r worktree_backend; do
-  [ -n "$worktree_backend" ] || continue
-  worktree_override=WORKER_WORKTREE_$(printf '%s' "$worktree_backend" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')
-  worktree_dir=${!worktree_override:-$(cd "$main" && "$python" -m agent_os.lib worktree-path "$worktree_backend")}
+while IFS=$'\t' read -r _ _ worktree_key worktree_path; do
+  [ -n "$worktree_key" ] || continue
+  worktree_override=WORKER_WORKTREE_$(printf '%s' "$worktree_key" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')
+  worktree_dir=${!worktree_override:-$worktree_path}
   planner_worktree_dirs+=(--add-dir "$worktree_dir")
-done < <(cd "$main" && "$python" -m agent_os.lib worktree-backends)
+done < <(cd "$main" && "$python" -m agent_os.lib worker-slots)
 
 # The backend CLI, from `project.executables` when the project configures one and from PATH
 # otherwise (#380) -- wrapped so a stub `claude` first on PATH (echoing its argv and emitting one

@@ -37,6 +37,9 @@ from agent_os.lib import (
     ProjectConfig,
     config_load_failure,
     load_project,
+    worker_slot_key,
+    worker_slot_worktree,
+    worker_slots,
 )
 
 REQUIRED_GH_SCOPES = ("repo", "project")
@@ -231,7 +234,14 @@ def check_executables(project: ProjectConfig) -> Check:
 
 
 def check_worktrees(project: ProjectConfig, root: pathlib.Path) -> Check:
-    worktrees = {name: b.worktree for name, b in project.backends.items() if b.worktree}
+    """Every worker slot's worktree (#90): slot 1 is the backend's `worktree`, and a backend with
+    `slots: N` needs `<worktree>-2` .. `<worktree>-N` as well -- `worker_task.sh <backend> init`
+    creates every one of them that is missing. Named by the slot's key, the backend's own name
+    for slot 1."""
+    worktrees = {
+        worker_slot_key(name, slot): worker_slot_worktree(project.backends[name], slot)
+        for name, slot in worker_slots(project)
+    }
     if not worktrees:
         return Check("worktrees exist", True, "none configured")
     missing = [

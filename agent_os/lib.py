@@ -36,10 +36,14 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
     python -m agent_os.lib project-value --path secrets_dir
         # one field of config/agents.yaml's `project:` section, for the shell drivers; `a.b`
         # reaches into a mapping and `--path` resolves it against the repository root.
-    python -m agent_os.lib backend-value <backend> command|worktree|app|stream|quota [--path]
+    python -m agent_os.lib backend-value <backend> command|worktree|app|stream|quota|slots [--path]
         # one capability of one `project.backends` entry (#514) -- what a driver reads instead of
         # branching on a backend's name. Exits 2 for a name that is not a configured backend, 1
         # for a config that does not load.
+    python -m agent_os.lib worker-slots [<backend>]
+        # one `<backend> <slot> <key> <worktree>` line (tab-separated) per worker slot (#90):
+        # every slot of every backend with a worktree, or of the one named. `<key>` is what the
+        # slot's `.cache/worker_<key>.*` files are named after, `<worktree>` its resolved path.
     python -m agent_os.lib backend-model <backend>
         # the model a worker on that backend runs when the dispatch names none: the first worker
         # class on it, else the first class of any role on it.
@@ -399,13 +403,19 @@ class BackendConfig(Strict):
       picks the command-line dialect the drivers launch it with, because the flags that produce a
       stream-json log belong to the CLI that writes that shape. An unregistered name fails here.
     - `quota`: the detector whose `exhausted` verdict cuts a live run of this backend
-      (`agent_os.streams.QUOTA_DETECTORS`); `none` records the verdict and never cuts on it."""
+      (`agent_os.streams.QUOTA_DETECTORS`); `none` records the verdict and never cuts on it.
+    - `slots`: how many workers may run on this backend at once (#90). Slot 1 is `worktree` and
+      the backend's own `.cache/worker_<name>.*` files, exactly what a backend had before this
+      key; slot N > 1 is `<worktree>-N` and `.cache/worker_<name>-N.*` (`worker_slot_key`,
+      `worker_slot_worktree`). The quota verdict and the App stay per backend, shared by its
+      slots. More than one needs a worktree to derive the others from."""
 
     command: str = ""
     worktree: str = ""
     app: str = ""
     stream: str
     quota: str = QUOTA_DETECTOR_NONE
+    slots: int = 1
 
     @field_validator("stream")
     @classmethod
@@ -417,6 +427,46 @@ class BackendConfig(Strict):
     @classmethod
     def a_registered_quota_detector(cls, value: str) -> str:
         return check_quota_detector(value)
+
+    @field_validator("slots")
+    @classmethod
+    def at_least_one_slot(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(f"slots must be at least 1, not {value}")
+        return value
+
+    @model_validator(mode="after")
+    def several_slots_need_a_worktree(self) -> BackendConfig:
+        if self.slots > 1 and not self.worktree:
+            raise ValueError(
+                f"slots: {self.slots} needs a worktree to derive the other slots' worktrees from"
+            )
+        return self
+
+
+def worker_slot_key(backend: str, slot: int) -> str:
+    """What one worker slot's `.cache/worker_<key>.*` files -- and its guard-side stall bookkeeping
+    and planner events -- are named after (#90): the backend's own name for slot 1, which is every
+    path a backend had before slots existed, and `<backend>-<slot>` for the others."""
+    return backend if slot == 1 else f"{backend}-{slot}"
+
+
+def worker_slot_worktree(backend: BackendConfig, slot: int) -> str:
+    """One slot's worktree, relative to the host's root exactly as `worktree` is: `worktree` itself
+    for slot 1 and `<worktree>-<slot>` for the others -- the sibling-directory shape a host already
+    gives its backends' worktrees (`../host-claude`, `../host-claude-2`)."""
+    return backend.worktree if slot == 1 else f"{backend.worktree}-{slot}"
+
+
+def worker_slots(project: ProjectConfig) -> list[tuple[str, int]]:
+    """Every (backend, slot) a worker can run in: each slot of each backend with a worktree, in
+    declaration order and slot order -- the unit the guard ticks and the driver counts (#90)."""
+    return [
+        (name, slot)
+        for name, backend in project.backends.items()
+        if backend.worktree
+        for slot in range(1, backend.slots + 1)
+    ]
 
 
 class DeprecatedBackendMapsWarning(UserWarning):
@@ -682,6 +732,34 @@ class ProjectConfig(Strict):
         return _backends_from_deprecated_maps(data) if isinstance(data, dict) else data
 
     @model_validator(mode="after")
+    def worker_slots_never_share_a_name_or_a_worktree(self) -> ProjectConfig:
+        """A slot's derived key and worktree must not be another slot's (#90): `claude` with
+        `slots: 2` derives `claude-2`, which is also what a backend NAMED `claude-2` is called, and
+        two runs writing one `.cache/worker_claude-2.pid` -- or checking out branches in one
+        worktree -- is the clobbering slots exist to prevent. Refused at load, naming both."""
+        # Every backend's own name is taken, a role-only one's too: its quota verdict is
+        # `agent_guard_<name>.json`, which is where a slot keyed the same would keep its stall
+        # bookkeeping.
+        keys = {name: f"backend '{name}'" for name in self.backends}
+        worktrees: dict[str, str] = {}
+        for name, slot in worker_slots(self):
+            key = worker_slot_key(name, slot)
+            owner = f"slot {slot} of backend '{name}'"
+            if slot > 1 and key in keys:
+                raise ValueError(
+                    f"{owner} and {keys[key]} would both keep their state as worker_{key}.* -- "
+                    "rename the backend"
+                )
+            keys[key] = owner
+            worktree = os.path.normpath(worker_slot_worktree(self.backends[name], slot))
+            if worktree in worktrees:
+                raise ValueError(
+                    f"{owner} and {worktrees[worktree]} would share the worktree {worktree}"
+                )
+            worktrees[worktree] = owner
+        return self
+
+    @model_validator(mode="after")
     def deprecated_maps_mirror_the_backends(self) -> ProjectConfig:
         self.worktrees = {name: b.worktree for name, b in self.backends.items() if b.worktree}
         self.worker_apps = {name: b.app for name, b in self.backends.items() if b.app}
@@ -866,6 +944,22 @@ def backend_executable(name: str, *, project: ProjectConfig | None = None) -> st
     if backend is not None and backend.command:
         return backend.command
     return project.executables.get(name, name)
+
+
+def worker_slot_worktree_path(
+    backend: str,
+    slot: int,
+    *,
+    main: pathlib.Path = HOST_ROOT,
+    project: ProjectConfig | None = None,
+) -> pathlib.Path:
+    """`worker_slot_worktree`, resolved against the repository root the way `worktree_path`
+    resolves slot 1's. A KeyError for a backend with no worktree, or a slot it does not have."""
+    project = project or load_project()
+    config = project.backends[backend]
+    if not config.worktree or not 1 <= slot <= config.slots:
+        raise KeyError(f"{backend} slot {slot}")
+    return (main / worker_slot_worktree(config, slot)).resolve()
 
 
 def backend_config(name: str, *, project: ProjectConfig | None = None) -> BackendConfig:
@@ -2266,7 +2360,29 @@ def _print_worktree_backends() -> None:
             print(name)
 
 
-BACKEND_FIELDS = ("command", "worktree", "app", "stream", "quota")
+def _print_worker_slots(backend: str | None) -> int:
+    """`<backend> <slot> <key> <worktree>` per worker slot, tab-separated (#90) -- how
+    `worker_task.sh` finds a free slot for `start` and counts every live worker for
+    `planner.max_parallel_issues`, with no derivation of its own to drift from the guard's. Exits
+    2 for a backend that is not configured with a worktree, 1 for a config that does not load."""
+    try:
+        project = load_project()
+    except CONFIG_LOAD_ERRORS as error:
+        print(config_load_failure(error), file=sys.stderr)
+        return 1
+    slots = worker_slots(project)
+    if backend is not None:
+        slots = [(name, slot) for name, slot in slots if name == backend]
+        if not slots:
+            print(f"'{backend}' is not a configured backend with a worktree", file=sys.stderr)
+            return 2
+    for name, slot in slots:
+        worktree = worker_slot_worktree_path(name, slot, project=project)
+        print(f"{name}\t{slot}\t{worker_slot_key(name, slot)}\t{worktree}")
+    return 0
+
+
+BACKEND_FIELDS = ("command", "worktree", "app", "stream", "quota", "slots")
 
 
 def _print_backend_value(name: str, field: str, *, as_path: bool) -> int:
@@ -2387,6 +2503,8 @@ def main() -> None:
         help="a placeholder only the run knows: MAIN_CHECKOUT, WORKTREE, REVIEW_BACKEND_LINE",
     )
     sub.add_parser("worktree-backends")
+    slots = sub.add_parser("worker-slots")
+    slots.add_argument("backend", nargs="?", default=None, help="only this backend's slots")
     worktree = sub.add_parser("worktree-path")
     worktree.add_argument("backend", help="a key of project.backends that has a worktree")
     backend_value = sub.add_parser("backend-value")
@@ -2485,6 +2603,8 @@ def main() -> None:
             sys.exit(str(error.args[0]))
     elif args.command == "worktree-backends":
         _print_worktree_backends()
+    elif args.command == "worker-slots":
+        sys.exit(_print_worker_slots(args.backend))
     elif args.command == "worktree-path":
         try:
             print(worktree_path(args.backend))
