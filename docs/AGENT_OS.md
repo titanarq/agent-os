@@ -78,7 +78,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | Open issue carries `project.labels.wake_planner` → label removed + `nudged` event | Guard (`tick`) | the label found on an OPEN issue — the tick removes it every time it sees it, whoever set it (a timeline it cannot read leaves it for the next tick). A `nudged` event is written only when the timeline says the human login (`project.human_login`, via `agent_lib.is_human_comment`) set it; a mechanism identity setting it is removed and ignored, so the planner cannot wake itself in a loop. While the tracking epic carries `status:agents-paused` the tick returns before ever reaching this check, so the label stays put until unpaused. **Not** rate-limited: an edge happens once (`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`, #413) | removes `project.labels.wake_planner`; one event file, subject = issue number, detail names who set it and when, and points the planner at the latest human comment on that issue for the reason | `agent_os.guard` `_write_nudged_events`; `project.labels.wake_planner` in `config/agents.yaml`; the label is also the sanctioned lever `.claude/agents/control-plane.md` uses to wake the planner early |
 | `status:review` → `done` (close) | Human, or the control plane acting in the human's name under its five merge conditions (§2.4, "Duty 4") | human decision, or the control plane verifying all five conditions itself against GitHub and the diff | the human's own merge, or the control plane's REST merge pinned to the verified head with `project.merge_method` (§2.4; no script does this) + `issues.py move N done` closes the issue | confirmed by grep: no script contains `pr merge`; `docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md`; `agent_os/docs/adr/2026-09-17-the-control-plane-merges-a-pr-in-the-humans-name-under-five-conditions.md`; `agent_os.issues:1102-1122` |
 | closed by GitHub's own `Closes #N`, still carrying `status:*` → `done` | Guard (`tick`) | every tick, for every closed issue that still holds a state label (#365) | `issues.py move N done` — strips the label, leaves the closed issue closed, mirrors the board column | `agent_os.guard` `closed_issues_with_status_label`/`reconcile_closed_issues`, through `_move_issue` |
-| Claude quota exhausted → fallback to Qwen | Planner | `CUT_BY_GUARD reason=quota` or `quota_changed`; class allows `qwen_fallback_eligible: true` | redispatch on Qwen (prompt instruction) | `agent_os/bin/planner_task.sh:181-187`; mechanical detection `agent_os.lib:518-533`. **Inert since 2026-09-16**: no worker class runs on Claude, so no worker run can hit a Claude quota wall |
+| Claude quota exhausted → fallback to Qwen | Planner | `CUT_BY_GUARD reason=quota` or `quota_changed`; class allows `qwen_fallback_eligible: true`, or a worker launch was refused because the class declares `fallback:` (§3, #95) | redispatch on Qwen (prompt instruction) | `agent_os/bin/planner_task.sh:181-187`; mechanical detection `agent_os.lib:518-533`. **Inert since 2026-09-16**: no worker class runs on Claude, so no worker run can hit a Claude quota wall |
 | Quota exhausted, no eligible fallback | Guard, mechanically | `_tick_backend` sees `quota` and the class disallows Qwen | `notify.sh` (ntfy) | `agent_os.guard:724-728` |
 | Nothing dispatchable, everything blocked/capped | Planner's own judgment | after acting on its events, everything named is `blocked-on-human` or at its relaunch cap | `notify.sh` (ntfy) | `agent_os/bin/planner_task.sh:199-205` |
 | Daily planner-run cap reached | Guard (`wake`), mechanically | `planner.max_runs_per_day` (40) | one ntfy page (`paged-<date>`); events wait for tomorrow | `agent_os.guard:531-541, 560-578` |
@@ -237,13 +237,44 @@ and never removes: **`status:agents-paused` on the tracking epic** (`project.tra
 **Where it is set.** The issue template ends with `<!-- budget: <class> -->`
 (`.github/ISSUE_TEMPLATE/task.md:26`, `bug.md:27`, default `mechanical-qwen`); the class resolves
 against `config/agents.yaml`'s `classes:` (`backend`, `model`, `max_context`, `max_cost_usd`,
-`max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`). These are
+`max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, and for a worker the optional `fallback` and `escalate`, below). These are
 **placeholder numbers today** — the file says so (`config/agents.yaml:6-7`) — real tuning from
 recorded runs is a separate, open task in the host project (#342). The five `max_total_tokens`
 values are placeholders resting on one measurement rather than guesses: #363, the first real
 dispatch, spent 49,526,715 tokens on `mechanical-qwen`, and `mechanical-qwen`'s 80 M ceiling is
 1.6× that worst measured case (#390 spent 14,405,623 over four stages, #387 14,265,855 over four of
 its five — both re-derived with `agent_lib.py cumulative-tokens .cache/spend/<issue>/*.jsonl`).
+
+**A worker class's launch gate (#95).** `worker_task.sh` asks `agent_lib worker-launch <class>
+--backend <its own>` when it launches a stage (`start`, `resume`; a chained stage reads only the
+model), on the class the issue's budget line names, and acts on two optional declarations:
+
+- **`fallback: {backend, model, ceilings}`**, the same field a role declares. When the guard's
+  persisted verdict on the class's backend reads `exhausted` inside `mechanism.quota_verdict_ttl_minutes`
+  (older reads as unknown, exactly as for the roles), the driver **refuses** the launch before any
+  side effect (no brief, no `doing` label, no state) and prints the fallback backend, model and
+  ceilings. It does not swap the CLI in place: a worker runs in a per-backend worktree with a
+  per-backend branch, pidfile, state file, event stream and stream parser, and the branch the
+  planner cut for the issue is checked out in that worktree, so the only safe route is the
+  planner's redispatch onto the fallback backend's own worktree — the route `qwen_fallback_eligible`
+  already uses, now driven by the class's declared `backend`/`model`. `allows_backend_fallback` is
+  true for a worker class exactly when it declares `fallback:` (or `qwen_fallback_eligible`), which
+  is when a refusal names a way round, so the guard's `quota_exhausted_no_fallback` page stays
+  quiet only for a class something can reroute. Only a backend with a `quota:` detector ever has an
+  `exhausted` verdict, so a `fallback:` on a `quota: none` backend never triggers.
+- **`escalate: {model, after: [commit_cut, stage_failed]}`**, a stronger model on the **same**
+  backend for the process `resume` launches after a stage that did not land. The trigger is read
+  off the state file the previous process left: `stage_failed` is `CUT_BY_GUARD
+  reason=no_stage_commit` (it ran and committed nothing), `commit_cut` is any other
+  `CUT_BY_GUARD` except `quota` (a stronger model on an exhausted window is the wrong answer),
+  `paused` and `issue_unreadable`. The launch prints `model: <stronger> (ESCALATED: ...)`. A fresh
+  `start` and the stages the run chains after a green one run the class's own model again; an
+  operator's `WORKER_MODEL` pins the model and outranks both. Escalation is not a way round a
+  quota wall and does not count for `allows_backend_fallback`.
+
+Whatever the declarations, the launched model is now the issue's class's own `model` when that class
+runs on the backend the driver was dispatched for (before, it was the first worker class on the
+backend, whichever class the issue named).
 
 **Unit and who measures it.** Tokens and dollars, never wall-clock time
 (`agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md`). A turn's size
@@ -476,7 +507,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `planner.idle_wake_minutes` | rate limit on the `idle_dispatchable`/`refine_pending` events; `pr_merged` and `nudged` are edges and bypass it (§1) | `120` |
 | `planner.max_runs_per_day` | hard cap on planner runs, across every event kind | `40` (12 once a round completes unattended) |
 | `planner.refiner_unattended` | gates whether `tick` ever writes `refine_pending` | `true` (after a human reviewed a dry run) |
-| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` | see §3 |
+| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role`, optional `fallback` / `escalate` (worker launch gate, §3) | see §3 |
 
 ### 4.3 Things to create in GitHub
 
