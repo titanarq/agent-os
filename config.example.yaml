@@ -67,6 +67,16 @@ project:
   # `.claude/agents/control-plane.md`. The mechanism needs none in particular (merge condition 4
   # compares content, not ancestry). Any other value fails the load. Default `merge`.
   merge_method: merge
+  # The `model:` of each agent definition `agent_os.install` writes into `.claude/agents/`
+  # (agent-os#96). A definition has ONE model, which is why task writing is its own agent
+  # (`task-writer`) and not a duty of the control plane. A value is whatever `claude --model`
+  # accepts -- an alias or a full id -- and is opaque to the mechanism. The one-shot roles
+  # (planner, validator, refiner) are not here: their model is `classes.<name>.model` below.
+  # Every key is optional; these are the defaults.
+  agent_models:
+    control_plane: sonnet
+    worker_runner: sonnet
+    task_writer: opus
   # How a fresh worktree -- a worker's on `init`, a validator's throwaway one -- is made runnable,
   # since it carries tracked files only. Each `worktree_links` path (relative to the repository
   # root) is symlinked from this checkout when it exists here; then `worktree_setup_command`, when
@@ -224,6 +234,23 @@ planner:
 # guard's own persisted quota verdict on its own backend reads exhausted (`RoleFallback`,
 # `agent_lib.role_launch_plan`). A worker class declares none: the planner's own redispatch of a
 # worker onto Qwen (`qwen_fallback_eligible`) is the only route around an exhausted worker backend.
+#
+# A class's `model` is an opaque string the mechanism hands to the backend's CLI: it keeps no
+# allowlist and no price table, and the cost of a run is whatever the CLI reports in its result
+# event (`total_cost_usd`). Moving a class to another model is editing this one line.
+#
+# A worker on Claude Sonnet is one more class, and nothing else (no worker class runs on Claude by
+# default -- agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md):
+#
+#   complex-sonnet:
+#     backend: claude
+#     model: claude-sonnet-5-5
+#     max_context: 400000
+#     max_cost_usd: 10.0
+#     max_total_tokens: 40000000
+#     commit_warn_turns: 25
+#     commit_cut_turns: 90
+#     qwen_fallback_eligible: false
 classes:
   mechanical-qwen:
     backend: qwen
@@ -248,7 +275,7 @@ classes:
   planner:
     role: planner
     backend: claude
-    model: claude-opus-5
+    model: claude-sonnet-5-5
     max_context: 40000
     max_cost_usd: 2.0
     max_total_tokens: 2000000
@@ -263,7 +290,7 @@ classes:
   validator:
     role: validator
     backend: claude
-    model: claude-opus-5
+    model: claude-sonnet-5-5
     max_context: 200000
     max_cost_usd: 5.0
     max_total_tokens: 10000000

@@ -51,6 +51,9 @@ def test_token_values_covers_every_token_the_issue_names():
         "__MODULE_DOCS__": "docs/modules",
         "__REPO__": "owner/name",
         "__MERGE_METHOD__": "merge",
+        "__CONTROL_PLANE_MODEL__": "sonnet",
+        "__WORKER_RUNNER_MODEL__": "sonnet",
+        "__TASK_WRITER_MODEL__": "opus",
     }
 
 
@@ -104,7 +107,7 @@ def test_render_agent_template_refuses_a_typo_of_a_known_token(tmp_path):
 AGENT_TEMPLATES_DIR = AGENT_OS_DIR / "agents"
 
 
-@pytest.mark.parametrize("name", ["control-plane.md", "worker-runner.md"])
+@pytest.mark.parametrize("name", ["control-plane.md", "task-writer.md", "worker-runner.md"])
 def test_the_real_agent_templates_render_clean_against_the_example_config(name):
     # `config.example.yaml` is the one file every key of §4.2 is filled in on, with no real
     # repository, identity or topic -- exactly the config a fresh adopter's first `agent-os
@@ -158,3 +161,58 @@ def test_an_unknown_merge_method_in_agents_yaml_is_refused_by_load_agents_config
     broken.write_text(example.replace("\n  merge_method: merge\n", "\n  merge_method: octopus\n"))
     with pytest.raises(ValidationError, match="merge_method"):
         load_agents_config(broken)
+
+
+# ---- #96: each agent definition's model is a config key, not a literal --------------------------
+
+
+def _frontmatter_model(rendered: str) -> str:
+    frontmatter = rendered.split("---\n")[1]
+    (line,) = [line for line in frontmatter.splitlines() if line.startswith("model:")]
+    return line.removeprefix("model:").strip()
+
+
+@pytest.mark.parametrize(
+    ("name", "default"),
+    [("control-plane.md", "sonnet"), ("worker-runner.md", "sonnet"), ("task-writer.md", "opus")],
+)
+def test_an_agent_definition_renders_the_default_model_of_its_role(name, default):
+    rendered = render_agent_template((AGENT_TEMPLATES_DIR / name).read_text(), _project())
+    assert _frontmatter_model(rendered) == default
+
+
+def test_the_configured_agent_models_reach_each_definition_s_frontmatter():
+    project = _project(
+        agent_models={
+            "control_plane": "claude-sonnet-5-5",
+            "worker_runner": "haiku",
+            "task_writer": "claude-opus-5",
+        }
+    )
+    rendered = {
+        name: _frontmatter_model(
+            render_agent_template((AGENT_TEMPLATES_DIR / name).read_text(), project)
+        )
+        for name in ("control-plane.md", "worker-runner.md", "task-writer.md")
+    }
+    assert rendered == {
+        "control-plane.md": "claude-sonnet-5-5",
+        "worker-runner.md": "haiku",
+        "task-writer.md": "claude-opus-5",
+    }
+
+
+def test_an_unknown_agent_models_key_is_refused_when_the_config_loads():
+    with pytest.raises(ValidationError, match="validator"):
+        _project(agent_models={"validator": "sonnet"})
+
+
+def test_the_control_plane_routes_task_writing_to_the_task_writer_and_does_not_write_tasks():
+    rendered = _rendered_control_plane(_project())
+    assert "task-writer" in rendered
+    assert "scripts/issues.py create" not in rendered
+    task_writer = render_agent_template(
+        (AGENT_TEMPLATES_DIR / "task-writer.md").read_text(), _project()
+    )
+    assert "scripts/issues.py create" in task_writer
+    assert "issues.py validate N" in task_writer

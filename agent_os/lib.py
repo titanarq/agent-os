@@ -507,6 +507,18 @@ def _backends_from_deprecated_maps(data: dict) -> dict:
     return {**data, "backends": backends}
 
 
+class AgentModels(Strict):
+    """The `model:` of each installed `.claude/agents/*.md` definition, rendered as
+    `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`. A definition
+    has exactly one model, so a duty that needs a different one is its own definition
+    (`task-writer`, split out of the control plane). The value is opaque to the tool: whatever
+    `claude --model` accepts, an alias (`sonnet`, `opus`) or a full id (agent-os#96)."""
+
+    control_plane: str = "sonnet"
+    worker_runner: str = "sonnet"
+    task_writer: str = "opus"
+
+
 class ProjectConfig(Strict):
     """Everything that belongs to *this* project rather than to the mechanism: the repository,
     the board, the tracking epic, where the identities and the notify topic live, and one
@@ -565,6 +577,10 @@ class ProjectConfig(Strict):
     # `agent-os-install --force` would overwrite (agent-os#88). A value outside the three GitHub
     # accepts fails the load rather than reaching a merge.
     merge_method: Literal["merge", "squash", "rebase"] = "merge"
+    # The model of each `.claude/agents/*.md` definition `agent_os.install` writes (agent-os#96):
+    # a host that moves a role to another model sets it here instead of hand-editing generated
+    # files that the next install overwrites. The one-shot roles' models are `classes.<name>.model`.
+    agent_models: AgentModels = AgentModels()
     # How a freshly added worktree -- a worker's, on `init`, and a validator's throwaway one -- is
     # made runnable, since a new worktree carries tracked files only (agent-os#41,
     # agent_os/docs/adr/2026-09-24-a-fresh-worktree-is-provisioned-the-way-the-host-configures.md).

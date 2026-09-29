@@ -1,5 +1,5 @@
 """`agent_os.install`'s stage 3: copying `.github/ISSUE_TEMPLATE/{task,bug}.md`,
-`.github/workflows/ci-agent-os.yml` and the `.claude/agents/{control-plane,worker-runner}.md`
+`.github/workflows/ci-agent-os.yml` and the `.claude/agents/{control-plane,task-writer,worker-runner}.md`
 prompts (rendered from `agent_os/agents/*.md` via `agent_os.render`), all copy-if-absent
 (agent_os/docs/AGENT_OS.md §7 row (h), issue #511).
 
@@ -157,7 +157,7 @@ def test_the_real_host_ci_workflow_carries_no_host_literal(tmp_path):
 
 
 # --------------------------------------------------------------------------------------------
-# `.claude/agents/{control-plane,worker-runner}.md`, rendered from `agent_os/agents/*.md`
+# `.claude/agents/{control-plane,task-writer,worker-runner}.md`, rendered from `agent_os/agents/*.md`
 # --------------------------------------------------------------------------------------------
 
 
@@ -172,10 +172,11 @@ def test_plan_agent_templates_reports_no_templates_dir_when_agent_os_agents_is_a
         install_module.AGENT_TEMPLATES_DIR = original
 
 
-def test_plan_agent_templates_renders_control_plane_and_worker_runner(tmp_path):
+def test_plan_agent_templates_renders_control_plane_task_writer_and_worker_runner(tmp_path):
     source_dir = tmp_path / "agents"
     source_dir.mkdir()
     (source_dir / "control-plane.md").write_text("guard: __GUARD_UNIT__\n")
+    (source_dir / "task-writer.md").write_text("model: __TASK_WRITER_MODEL__\n")
     (source_dir / "worker-runner.md").write_text("human: __HUMAN_LOGIN__\n")
     original = install_module.AGENT_TEMPLATES_DIR
     install_module.AGENT_TEMPLATES_DIR = source_dir
@@ -185,6 +186,7 @@ def test_plan_agent_templates_renders_control_plane_and_worker_runner(tmp_path):
         rendered = {action.dest.name: action.content for action in actions}
         assert rendered == {
             "control-plane.md": "guard: acme-guard\n",
+            "task-writer.md": "model: opus\n",
             "worker-runner.md": "human: octocat\n",
         }
         for action in actions:

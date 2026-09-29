@@ -5,7 +5,8 @@ templates turn out to name inside them -- this module owns the mapping from a to
 
 The token vocabulary is fixed by #510's templates, not invented here: `__GUARD_UNIT__`,
 `__WORKTREES__`, `__HUMAN_LOGIN__`, `__TEST_COMMAND__`, `__MODULE_DOCS__`, and, for the control
-plane's REST merge step (agent-os#88), `__REPO__` and `__MERGE_METHOD__`. A template naming a
+plane's REST merge step (agent-os#88), `__REPO__` and `__MERGE_METHOD__`, and, for each definition's `model:` frontmatter (agent-os#96),
+`__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`. A template naming a
 token outside that set is refused after substitution -- whatever is left over that still looks
 like a token (`__[A-Z][A-Z0-9_]*__`) is an unknown one, because every known token has already been
 replaced by then, so what remains is either a typo in the template or a token this renderer has
@@ -48,6 +49,9 @@ def token_values(project: ProjectConfig) -> dict[str, str]:
         "__MODULE_DOCS__": project.module_docs_dir,
         "__REPO__": project.repo,
         "__MERGE_METHOD__": project.merge_method,
+        "__CONTROL_PLANE_MODEL__": project.agent_models.control_plane,
+        "__WORKER_RUNNER_MODEL__": project.agent_models.worker_runner,
+        "__TASK_WRITER_MODEL__": project.agent_models.task_writer,
     }
 
 
