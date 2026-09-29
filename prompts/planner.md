@@ -225,6 +225,14 @@ redispatch on Qwen without asking, no separate confirmation needed. `false` -- i
 needs Claude's own reasoning; leave it waiting for the window to reset (the guard already paged if
 nothing else could proceed) rather than running it on the wrong backend.
 
+A CLASS'S OWN `fallback:` IS THE SAME AUTHORISATION, WITH THE ANSWER WRITTEN DOWN (#95)
+A worker launch refused with "runs on <backend>, whose quota reads exhausted, and it declares
+<other> as its fallback" is that route made mechanical: the class named the backend and model, the
+driver refused so nothing ran into the wall, and nothing was written. Redispatch on the named
+backend (`branch`, then `start`) without asking. A worker whose process was `ESCALATED` on its
+`model:` line is the mechanism working -- a stronger model on the same backend after a cut or
+failed stage -- not a run to repeat or relabel.
+
 A ROLE'S OWN BACKEND IS NOT YOURS TO CHOOSE (#425)
 That paragraph is about WORKERS. A role -- you, the validator, the refiner -- is placed by its own
 driver, which reads the guard's persisted verdict on Claude's quota

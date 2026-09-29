@@ -32,6 +32,11 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # one older than `mechanism.quota_verdict_ttl_minutes` reads as unknown -- which launches
         # the class's own backend, because a start the quota refuses costs one page while a
         # substitution on a stale verdict costs a review the merge gate rests on.
+    python -m agent_os.lib worker-launch <class> --backend B [--after commit_cut|stage_failed]
+        # a worker driver's stage launch gate (#95), one TAB-separated line: backend, model,
+        # `yes`/`no` for "substituted" (the class's `fallback:` on an exhausted quota -- another
+        # backend, so the driver refuses), `yes`/`no` for "escalated" (the class's `escalate:`
+        # model after a cut or failed stage), the ceilings and the sentence saying why.
     python -m agent_os.lib project-value notify_topic_file
     python -m agent_os.lib project-value --path secrets_dir
         # one field of config/agents.yaml's `project:` section, for the shell drivers; `a.b`
@@ -221,6 +226,41 @@ class RoleFallback(Strict):
         return value
 
 
+EscalationTrigger = Literal["commit_cut", "stage_failed"]
+ESCALATION_TRIGGERS: tuple[str, ...] = ("commit_cut", "stage_failed")
+
+
+class ClassEscalation(Strict):
+    """A stronger model on the SAME backend for the process that follows a stage that did not land
+    (#95): a class defaults to a cheap model and names the one a retry deserves, so a failed or
+    cut stage is retried on it without a second class and without a human relabelling the issue's
+    budget line.
+
+    `after` says which endings trigger it, read by the worker driver off the state file the
+    previous process left, never off anything an agent wrote:
+
+    - `commit_cut`: the previous process was cut by the guard or by the stage gate (a stall, the
+      turn ceiling, the quota, a spend ceiling...) and froze its work in a `WIP: cut by guard`
+      commit -- the next process builds on that commit;
+    - `stage_failed`: the previous process ended without the stage's commit
+      (`CUT_BY_GUARD reason=no_stage_commit`) -- it ran and produced nothing that landed.
+
+    Only the process launched by `resume` after such an ending escalates. The stages a run chains
+    on its own after a green one run the class's own model again, and so does a fresh `start`."""
+
+    model: str
+    after: list[EscalationTrigger] = list(ESCALATION_TRIGGERS)
+
+    @field_validator("after")
+    @classmethod
+    def non_empty_and_unrepeated(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("must name at least one trigger")
+        if len(set(value)) != len(value):
+            raise ValueError(f"names a trigger twice: {value}")
+        return value
+
+
 class TaskClass(Strict):
     # Which of the four headless roles this class configures (agent_os/docs/adr/2026-09-14-a-pr-is-
     # validated-by-a-validator-agent-against-the-issues-acceptance-criteria.md). A worker's class
@@ -247,6 +287,23 @@ class TaskClass(Strict):
     # keeps the guard's `quota_exhausted_no_fallback` page meaningful (#425). Absent means the
     # launch behaves exactly as it did before this field existed.
     fallback: RoleFallback | None = None
+    # The stronger model a WORKER class runs on its own backend after a stage that was cut or did
+    # not land (#95), or None for a class that always runs `model`. See `ClassEscalation`.
+    escalate: ClassEscalation | None = None
+
+    @model_validator(mode="after")
+    def escalation_is_a_stronger_model_of_a_worker(self) -> TaskClass:
+        if self.escalate is None:
+            return self
+        if self.role != "worker":
+            # A one-shot role has no stage to retry: nothing would ever read the field.
+            raise ValueError(f"escalate is for a worker class; this one is role '{self.role}'")
+        if self.escalate.model == self.model:
+            raise ValueError(
+                f"escalate names '{self.escalate.model}', already the class's own model; "
+                "an escalation has to be a different one"
+            )
+        return self
 
     @model_validator(mode="after")
     def fallback_names_another_backend(self) -> TaskClass:
@@ -263,8 +320,12 @@ class TaskClass(Strict):
     @property
     def allows_backend_fallback(self) -> bool:
         """Whether anything authorises running this class on a backend other than its own: the
-        planner's redispatch of a worker (`qwen_fallback_eligible`, the 2026-09-14 ADR) or a role's
-        own declared fallback (#425). ONE predicate behind the guard's page and the launch gate, so
+        planner's redispatch of a worker (`qwen_fallback_eligible`, the 2026-09-14 ADR) or a
+        class's own declared fallback -- a role's launch gate (#425) or, for a worker, the driver's
+        (`worker_launch`, #95), which refuses the exhausted backend and names the fallback for the
+        planner to redispatch on, because a worker cannot change backend inside its own worktree
+        and state. Same-backend `escalate` is not a way round an exhausted window and does not
+        count. ONE predicate behind the guard's page and the launch gate, so
         "could this have run somewhere else?" is never answered two ways: the
         `quota_exhausted_no_fallback` page exists for the case where nothing can proceed without a
         human, and a class with a way round it is not that case."""
@@ -2087,6 +2148,99 @@ def role_launch(
     return class_name, plan, verdict
 
 
+@dataclass(frozen=True)
+class WorkerLaunch:
+    """What a worker driver's stage launch acts on (#95). `model` is empty when the class does not
+    run on the backend the driver was dispatched for: the driver keeps whatever model it resolved
+    before this gate existed. `substituted` means `backend` is NOT the driver's, so the launch
+    cannot go ahead in this worktree."""
+
+    backend: str
+    model: str
+    substituted: bool
+    escalated: bool
+    ceilings: tuple[str, ...]
+    reason: str
+
+
+def worker_launch(
+    task_class: TaskClass,
+    driver_backend: str,
+    after: str | None,
+    quota_verdict: str,
+    verdict_age_seconds: float | None,
+    *,
+    verdict_ttl_seconds: float,
+) -> WorkerLaunch:
+    """(worker class, backend it was dispatched on, how the previous process ended, quota verdict)
+    -> what the launch does (#95). Two independent declarations, in this order:
+
+    1. `fallback:` -- the same `role_launch_plan` the roles use: a fresh `exhausted` verdict on the
+       class's backend plus a declared fallback substitutes it, with the fallback's ceilings.
+       Always another backend, so the driver cannot honour it in place (a worker's worktree, state
+       file, event stream and stream parser are all per backend) and refuses instead, naming it.
+    2. `escalate:` -- when `after` (`commit_cut` / `stage_failed`) is one the class lists, the
+       stronger model on the same backend.
+
+    Neither applies when the class is not on `driver_backend`: a dispatch that names another
+    backend's worktree for the class is the operator's call, and this gate reads nothing of it."""
+    if task_class.backend != driver_backend:
+        return WorkerLaunch(
+            driver_backend,
+            "",
+            False,
+            False,
+            tuple(CEILING_NAMES),
+            f"the class runs on {task_class.backend} and was dispatched on {driver_backend} -- "
+            "no launch gate applies",
+        )
+    plan = role_launch_plan(
+        task_class, quota_verdict, verdict_age_seconds, verdict_ttl_seconds=verdict_ttl_seconds
+    )
+    if plan.substituted:
+        return WorkerLaunch(plan.backend, plan.model, True, False, plan.ceilings, plan.reason)
+    escalation = task_class.escalate
+    if escalation is not None and after in escalation.after:
+        return WorkerLaunch(
+            task_class.backend,
+            escalation.model,
+            False,
+            True,
+            plan.ceilings,
+            f"the previous process ended as {after}, which the class escalates on -- running "
+            f"{escalation.model} instead of {task_class.model}",
+        )
+    return WorkerLaunch(
+        task_class.backend, task_class.model, False, False, plan.ceilings, plan.reason
+    )
+
+
+def worker_launch_for(
+    class_name: str,
+    driver_backend: str,
+    after: str | None,
+    *,
+    path: pathlib.Path | str | None = None,
+    cache_dir: pathlib.Path | str | None = None,
+    now: datetime | None = None,
+) -> WorkerLaunch:
+    """`worker_launch` resolved end to end for the driver: the class by name, the guard's persisted
+    verdict on the class's backend, the configured TTL. The thin composition `worker-launch`
+    prints, the worker-side twin of `role_launch`."""
+    path = DEFAULT_AGENTS_CONFIG if path is None else path
+    task_class = load_task_classes(path)[class_name]
+    verdict = read_persisted_quota_verdict(task_class.backend, cache_dir=cache_dir, now=now)
+    ttl_seconds = load_mechanism(path).quota_verdict_ttl_minutes * 60
+    return worker_launch(
+        task_class,
+        driver_backend,
+        after,
+        verdict.status,
+        verdict.age_seconds,
+        verdict_ttl_seconds=ttl_seconds,
+    )
+
+
 RUNS_TSV_HEADER = "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
 
 # A role run's exit marker (#429): `<stamp>.log.exited`, one ISO-8601 UTC timestamp, written by the
@@ -2263,6 +2417,35 @@ def _print_role_backend(role: str, *, cache_dir: str | None) -> int:
     return 0
 
 
+def _print_worker_launch(
+    class_name: str, backend: str, after: str | None, *, cache_dir: str | None
+) -> int:
+    """One TAB-separated line for a worker driver's stage launch: backend, model, `yes`/`no` for
+    "substituted", `yes`/`no` for "escalated", the ceilings that bind the run and the sentence
+    saying why (#95). Exits 1 with the reason on stderr for a config that does not load or a class
+    it does not define, so the driver can tell "no gate to apply" from "the gate said no"."""
+    try:
+        plan = worker_launch_for(class_name, backend, after, cache_dir=cache_dir)
+    except (KeyError, ValidationError, yaml.YAMLError, OSError) as error:
+        print(f"cannot resolve the launch of class '{class_name}': {error}", file=sys.stderr)
+        return 1
+    print(
+        "\t".join(
+            (
+                plan.backend,
+                # `-` for "none": a TAB is whitespace to `read`, so an empty field would let the
+                # ones after it shift left.
+                plan.model or "-",
+                "yes" if plan.substituted else "no",
+                "yes" if plan.escalated else "no",
+                ",".join(plan.ceilings),
+                " ".join(plan.reason.split()),
+            )
+        )
+    )
+    return 0
+
+
 def _print_worker_environment() -> None:
     """One `KEY<TAB>VALUE` line per `project.worker_environment` entry, for `worker_task.sh` to
     `export` before it launches the backend CLI -- never a literal environment variable name or
@@ -2367,6 +2550,20 @@ def main() -> None:
         default=None,
         help="where the guard's bookkeeping lives (default: $WORKER_CACHE_DIR, else .cache)",
     )
+    worker_launch_cmd = sub.add_parser("worker-launch")
+    worker_launch_cmd.add_argument("class_name", help="the worker class the issue's budget names")
+    worker_launch_cmd.add_argument("--backend", required=True, help="the driver's own backend")
+    worker_launch_cmd.add_argument(
+        "--after",
+        default="",
+        choices=("", *ESCALATION_TRIGGERS),
+        help="how the previous process ended, when it did not land its stage",
+    )
+    worker_launch_cmd.add_argument(
+        "--cache-dir",
+        default=None,
+        help="where the guard's bookkeeping lives (default: $WORKER_CACHE_DIR, else .cache)",
+    )
     project = sub.add_parser("project-value")
     project.add_argument(
         "key", help="a field of the project: section, dotted into a mapping: worktrees.claude"
@@ -2442,6 +2639,12 @@ def main() -> None:
         print(name if args.field == "name" else getattr(task_class, args.field))
     elif args.command == "role-app":
         print(role_app_slug(args.role))
+    elif args.command == "worker-launch":
+        sys.exit(
+            _print_worker_launch(
+                args.class_name, args.backend, args.after or None, cache_dir=args.cache_dir
+            )
+        )
     elif args.command == "role-backend":
         sys.exit(_print_role_backend(args.role, cache_dir=args.cache_dir))
     elif args.command == "project-value":

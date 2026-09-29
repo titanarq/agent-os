@@ -464,6 +464,68 @@ class_ceiling() {
     | "$agent_python" -m agent_os.lib resolve-budget --field "$1" 2>/dev/null
 }
 
+# HOW THE PREVIOUS PROCESS ENDED, for a class's `escalate: {after: [...]}` (#95): read off the
+# state file that process left, which is the driver's own record and never an agent's claim.
+# `stage_failed` is a process that ran and ended without its stage's commit; `commit_cut` is any
+# other cut that froze its work in a `WIP: cut by guard` commit -- except the ones a stronger
+# model cannot help: an exhausted quota (it would spend more of the window that is gone), the
+# human's stop, and an issue the driver could not read. Prints nothing for every other ending,
+# `FAILED_LAUNCH` included: nothing was tried, so nothing failed.
+previous_ending() {
+  local state
+  state=$(head -n 1 "$statefile" 2>/dev/null || true)
+  case "$state" in
+    "CUT_BY_GUARD reason=no_stage_commit"*) echo stage_failed ;;
+    "CUT_BY_GUARD reason=quota"* | "CUT_BY_GUARD reason=paused"* | "CUT_BY_GUARD reason=issue_unreadable"*) ;;
+    CUT_BY_GUARD*) echo commit_cut ;;
+  esac
+}
+
+# THE LAUNCH GATE OF A WORKER CLASS (#95): the class's own `fallback:` and `escalate:`, read by
+# `agent_lib worker-launch` from the same decision the one-shot roles' launch takes. Two answers:
+#
+# - the class's backend reads exhausted (the guard's fresh persisted verdict) and the class
+#   declares a fallback: REFUSED, returning 1 with the redispatch named. A worker cannot change
+#   backend in place -- its worktree, branch, pidfile, state, event stream and stream parser are
+#   all per backend -- so the answer is the planner's redispatch onto the fallback's own worktree
+#   (`qwen_fallback_eligible`'s route), and what this gate adds is that no exhausted run is
+#   launched into the wall first;
+# - the previous process ended as one of the class's `escalate.after` endings: the stronger model
+#   on this same backend, into `model`, with the substitution printed by the caller.
+#
+# Sets `gate_note` (a sentence for the identity line, empty when nothing was decided). No class
+# (an unstaged `--force` run) or a class the config cannot answer for changes nothing: this gate
+# only ever adds a refusal or a model to a launch that would have happened anyway. `$3` is `refuse`
+# for the modes that may refuse; a chained stage has passed the quota gate in `stage-exit` already.
+gate_note=""
+apply_worker_launch_gate() {
+  local class=$1 ending=$2 may_refuse=$3 line
+  local gate_backend gate_model gate_substituted gate_escalated gate_ceilings gate_reason
+  gate_note=""
+  [ -n "$class" ] || return 0
+  line=$("$agent_python" -m agent_os.lib worker-launch "$class" --backend "$backend" \
+    ${ending:+--after "$ending"} --cache-dir "$cache" 2>/dev/null) || return 0
+  IFS=$'\t' read -r gate_backend gate_model gate_substituted gate_escalated gate_ceilings gate_reason <<<"$line"
+  if [ "$gate_substituted" = yes ]; then
+    [ "$may_refuse" = refuse ] || return 0
+    echo "refusing to launch: class '$class' runs on $backend, whose quota reads exhausted, and it"
+    echo "  declares $gate_backend as its fallback ($gate_model, ceilings $gate_ceilings)."
+    echo "  $gate_reason"
+    echo "  a worker cannot change backend inside its own worktree: dispatch it on $gate_backend --"
+    echo "  $0 $gate_backend branch <name>, then $0 $gate_backend start <issue> -- nothing was launched"
+    return 1
+  fi
+  [ "$gate_model" = "-" ] && return 0
+  if [ -n "${WORKER_MODEL:-}" ]; then
+    # An operator's explicit pin outranks the class, escalation included.
+    [ "$gate_escalated" = yes ] && gate_note="escalation to $gate_model not applied: WORKER_MODEL pins $model"
+    return 0
+  fi
+  model=$gate_model
+  [ "$gate_escalated" = yes ] && gate_note="ESCALATED: $gate_reason"
+  return 0
+}
+
 # `spent >= cap` on two strings, one of them a float: awk reads both, and bash arithmetic reads
 # neither. `awk` rather than a python call because the gate runs this twice per stage exit.
 ceiling_passed() {
@@ -760,6 +822,15 @@ launch_stage() {
   # before #375: the gate refuses to dispatch one, so the only way here is a human's `--force`,
   # and refusing to launch it at all would be a worse answer than launching it unstaged.
   resolve_stage_context "$issue" || true
+  # BEFORE the label and every write below: a refused launch leaves nothing behind. Only a
+  # `resume` looks at how the previous process ended -- a fresh `start` and the stages a run
+  # chains after a green one run the class's own model.
+  local launch_class launch_ending="" may_refuse=refuse
+  launch_class=$(printf '%s\n' "$stage_issue_body" \
+    | "$agent_python" -m agent_os.lib resolve-budget 2>/dev/null) || launch_class=""
+  [ "$mode" = resume ] && launch_ending=$(previous_ending)
+  [ "$mode" = chain ] && may_refuse=no
+  apply_worker_launch_gate "$launch_class" "$launch_ending" "$may_refuse" || return 1
   if [ "$stages_total" -gt 0 ] && [ "$stages_done" -ge "$stages_total" ]; then
     # A refusal, not a finish: nothing ran, so this must not write `worker_finished` -- that event
     # reads exactly like the genuine completion `agent_os.guard:888` writes and woke the
@@ -796,7 +867,7 @@ launch_stage() {
 
   echo "brief:     $brief"
   echo "worktree:  $worktree ($(git -C "$worktree" rev-parse --abbrev-ref HEAD) @ $(git -C "$worktree" rev-parse --short HEAD))"
-  echo "model:     $model"
+  echo "model:     $model${gate_note:+ ($gate_note)}"
   [ "$stages_total" -gt 0 ] && echo "stage:     $((stages_done + 1))/$stages_total of issue #$issue"
 
   # Project-specific environment for the worker's own backend process -- a common example is a
@@ -1130,6 +1201,9 @@ start|resume)
     budget_class=$(echo "$body" | "$agent_python" -m agent_os.lib resolve-budget) \
       || { echo "refusing to dispatch: issue #$issue"; exit 1; }
     echo "budget:    class '$budget_class' (issue #$issue)"
+    # The class's own `fallback:` on an exhausted quota, BEFORE the brief is written and the issue
+    # is moved to `doing`: a refusal must leave the tracker as it found it (#95).
+    apply_worker_launch_gate "$budget_class" "" refuse || exit 1
 
     # The brief is assembled from the tracker, never written by hand: issue body, parent body, and
     # the optional supplement under `## Supplement`.

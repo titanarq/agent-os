@@ -8,6 +8,24 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#95 — a worker class's launch reads its own `fallback:`, and can escalate its model. A
+  worker class could declare `fallback:` (it parsed on every class) but only the one-shot roles'
+  drivers read it, so it was inert for the launch and still silenced the guard's
+  `quota_exhausted_no_fallback` page. Now `worker_task.sh` asks the new `agent_lib worker-launch`
+  (the roles' `role_launch_plan`, applied to the issue's class) at `start`/`resume`: a fresh
+  `exhausted` verdict plus a declared `fallback:` **refuses** the launch before any side effect and
+  names the backend/model/ceilings for the planner to redispatch on — it cannot swap the CLI in
+  place, because the worker's worktree, branch, state and event stream are per backend (the
+  premise "substitutes at launch" does not hold for a worker, `docs/AGENT_OS.md` §3). New optional
+  class field `escalate: {model, after: [commit_cut, stage_failed]}`: the process `resume` launches
+  after a cut or commitless stage runs the stronger model on the same backend, logged as
+  `model: <m> (ESCALATED: ...)`; validated at load (worker classes only, a different model, a
+  non-empty list of known triggers). The launched model is now the issue's class's own when it runs
+  on the driver's backend (it was the first worker class on the backend). Left for a follow-up:
+  direction rules beyond the existing default (a class without `fallback:` never leaves its
+  backend; `qwen_fallback_eligible` remains the Claude to Qwen switch). Hosts: a `subtree pull`;
+  add `escalate:`/`fallback:` to a class when wanted.
+
 - agent-os#96 — agent models are config, and Claude roles default to Sonnet 5.5. The `model:` of
   `agents/*.md` was a literal (`opus` in the control plane), so moving a role to another model
   meant editing a generated file that `agent-os-install --force` overwrites. New
