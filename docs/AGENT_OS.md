@@ -17,11 +17,11 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 |---|---|---|---|
 | Human | Writes/approves issues, flips `auto-ready`, answers `blocked-on-human`, merges PRs | the one collaborator account (e.g. `MatillaM`) | — |
 | Guard | Deterministic tick: budget, liveness, stall, quota, drift-logging, event-writing | acts through whichever identity a driver already minted; posts no comments of its own except the ntfy page | no LLM — pure Python (`agent_os.guard`) |
-| Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, `claude-opus-5`, 40k ctx / $2 |
+| Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, model per `classes.planner.model` (example: `claude-sonnet-5-5`), 40k ctx / $2 |
 | Worker (qwen) | Writes code for one issue, in its own worktree — **every** worker task runs here | its own App (`project.backends.qwen.app`) | classes `mechanical-qwen` (400k ctx / $5) and `complex-qwen` (400k ctx / $20), both `qwen3.8-max` |
 | Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
-| Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, `claude-opus-5`, 200k ctx / $5 |
-| Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, `claude-opus-5`, 200k ctx / $5 |
+| Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
+| Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -154,9 +154,12 @@ something an agent applies to itself.
 ### 2.4 The control-plane role
 
 The human's side of the flow (§2.1–§2.3) is delegable in part. The **control plane**, defined in
-`.claude/agents/control-plane.md`, is the human's delegate over this mechanism: it writes issues,
-answers doubts, grooms the backlog, approves and merges validated PRs, and reports on progress and
-spend. It never runs a worker or the planner itself — the mechanism still does that. Every `gh`
+`.claude/agents/control-plane.md`, is the human's delegate over this mechanism: it answers doubts, grooms the backlog, approves and merges validated PRs, and reports on progress and
+spend. It does not write issues: an agent definition has one model, and task writing is the
+duty that stays on the stronger one, so it is its own definition, `.claude/agents/task-writer.md`
+(`project.agent_models.task_writer`, default `opus`); asked to write a task, the control plane
+says the main thread should use `task-writer`. It never runs a worker or the planner itself — the
+mechanism still does that. Every `gh`
 call it makes is authenticated as the human (`project.human_login` in `config/agents.yaml`) and
 signed with their name, so the bar for any write it makes is *would they do exactly this, given what
 is written down?*
@@ -338,6 +341,19 @@ sums by feature (via `gh issue view --json parent`) and nothing reports spend to
 (#367 owns that, and it must read TOKENS — a report built on `cumulative_cost_usd` prints 0.00 USD
 for every worker issue, because every worker runs on the backend that reports no cost).
 
+### Quota is per backend, not per model
+
+The guard's quota verdict (`project.backends.<name>.quota`, e.g. `claude_rate_limit`, persisted
+under `.cache/`) belongs to a **backend**, never to a backend plus a model. Two classes on the same
+backend with different models — the refiner on `claude-opus-5` beside the planner, the validator and
+a Sonnet worker class on `claude-sonnet-5-5` — read and write the same verdict. Anthropic's usage
+windows may be counted per model family, so it can happen that Opus is exhausted while Sonnet still
+has room; the mechanism cannot tell, and an `exhausted` verdict cut on one family parks every role
+and worker on `claude` until the verdict expires (`mechanism.quota_verdict_ttl_minutes`), each falling back
+per its own `fallback:` where it declares one. This is deliberate and errs safe: a host that wants
+the families isolated declares a second backend for the other model (its own `command`, `worktree`
+and `quota` entry) and points those classes at it. Nothing else changes: model ids stay opaque.
+
 ## 4. What the mechanism consists of
 
 ### 4.1 The one directory, and the host's shims
@@ -368,8 +384,9 @@ agent_os/
 │   ├── issues.py                  tracker CLI over gh: list/show/create/update/validate/move/…
 │   ├── lib.py                     config models, dispatch/budget predicates, jsonl event reading
 │   └── render.py                  __TOKEN__ substitution for the agents/*.md templates
-├── agents/                      templates for the two .claude/agents/*.md prompts
+├── agents/                      templates for the .claude/agents/*.md prompts
 │   ├── control-plane.md
+│   ├── task-writer.md
 │   └── worker-runner.md
 ├── bin/                         the shell drivers
 │   ├── agent_task.sh              one-shot driver for validator/refiner
@@ -412,7 +429,8 @@ and `gh`/backend/`git` stubs only, no database, no network — except `test_agen
 | File | Role | Agnostic? |
 |---|---|---|
 | `.claude/agents/worker-runner.md` | Prompt for the subagent that operates `worker_task.sh` from Claude Code | Yes |
-| `.claude/agents/control-plane.md` | Prompt for the subagent that acts as the human's delegate over the mechanism (§2.4) | Yes |
+| `.claude/agents/control-plane.md` | Prompt for the subagent that acts as the human's delegate over the mechanism (§2.4), without task writing | Yes |
+| `.claude/agents/task-writer.md` | Prompt for the subagent that writes template-conformant task issues (§2.4); its own definition because it runs on its own model | Yes |
 | `.github/workflows/ci.yml` | Lint (touched files only), the host's `pytest -m "not db"`, and — since #508 — `bash agent_os/bootstrap.sh` followed by `agent_os/.venv/bin/pytest agent_os/tests -q`; since #512 a further step copies `agent_os/` to a directory outside this checkout, makes that copy a git repository with the copied files committed (`git init`, `git add -A`, one commit — the mechanism assumes git throughout, so a bare `cp -r` is not yet the reproduction `host_root()`'s own fallback expects, and an empty commit checks out nothing for the launch-path tests that cut a real worktree off HEAD), bootstraps it and runs `pytest tests -q` there, proving the suite passes with no roedor checkout on `sys.path` | Yes |
 | `.github/ISSUE_TEMPLATE/task.md`, `bug.md` | Issue templates, already carry `<!-- budget: mechanical-qwen -->` | Yes |
 
@@ -440,6 +458,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `project.modules` | the project's own module names, one per `docs/modules/*.md`; the `module:<name>` half of the fixed label set `issues.py` creates | `ingest`, `metrics`, `workers`, … |
 | `project.test_command` | the project's own compact test wrapper, injected as `__TEST_COMMAND__` | `scripts/test.sh` |
 | `project.merge_method` | how the control plane merges a verified PR: `merge`, `squash` or `rebase`, the `merge_method` of GitHub's REST merge endpoint, rendered into `.claude/agents/control-plane.md` as `__MERGE_METHOD__` (§2.4). Any other value fails the config load (agent-os#88) | `merge` (the default) |
+| `project.agent_models` | the `model:` of each `.claude/agents/*.md` definition, rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__` (agent-os#96): `control_plane` (default `sonnet`), `worker_runner` (default `sonnet`), `task_writer` (default `opus`). A value is whatever `claude --model` accepts, an alias or a full id, and is opaque to the mechanism: it keeps no allowlist and no price table, and a run's cost is the `total_cost_usd` the CLI reports in its result event. An unknown key fails the config load. The one-shot roles are not here: their model is `classes.<name>.model` | `agent_models: {task_writer: claude-opus-5}` |
 | `project.worktree_links` | paths (relative to the host root) symlinked from the main checkout into a fresh worktree — the validator's throwaway one and a worker's on `init` — when the checkout has them and the worktree does not (agent-os#41) | `[.venv, .env]` |
 | `project.worktree_setup_command` | a command run by `bash -c` inside a fresh worktree after the links and before any backend starts; non-zero refuses the run (no validator launched, `init` removes the tree and its branch). For a host whose environment is not a root `.venv` — a monorepo's `uv sync`, an `npm ci` (agent-os#41) | empty: nothing runs |
 | `project.lint_commands` | the linters the validator runs on the files a PR touches, each with the file list appended, rendered as `__LINT_RULES__`; empty renders no lint bullet (agent-os#41) | empty (`config.example.yaml`: `.venv/bin/ruff check`, `.venv/bin/ruff format --check`) |
@@ -506,7 +525,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   `ExecStart=` on the mechanism's own interpreter and never the host's `.venv` (#51); never
   overwrites an existing file without `--force`, and never arms, restarts or reloads a unit —
   `systemctl --user enable --now` stays a human decision (`docs/runbooks/agent_monitor.md`). The
-  same command also copies `.claude/agents/{control-plane,worker-runner}.md` (rendered from
+  same command also copies `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from
   `agent_os/agents/*.md`, #510, absent until that PR lands — `install` reports "no templates dir,
   skipped" and does nothing else for that step), `.github/ISSUE_TEMPLATE/{task,bug}.md` and
   `.github/workflows/ci-agent-os.yml`, copied as-is if absent, and `.github/workflows/ci-host.yml`,
@@ -589,7 +608,7 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
    §7r): the two worktrees (`init`, idempotent, one call per backend); the systemd units, from
    `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, never
    overwritten without `--force` and never armed (`systemctl --user enable --now` stays §6's own
-   human step, below); `.claude/agents/{control-plane,worker-runner}.md` rendered from
+   human step, below); `.claude/agents/{control-plane,task-writer,worker-runner}.md` rendered from
    `agent_os/agents/*.md` (#510) if that directory exists yet; `.github/ISSUE_TEMPLATE/{task,bug}.md`
    and `.github/workflows/ci-agent-os.yml`, copied as-is if absent, plus `.github/workflows/ci-host.yml`
    running `project.test_command` on every pull request. `--dry-run` prints every path

@@ -1858,7 +1858,7 @@ def test_the_validators_review_names_the_backend_that_wrote_it_either_way(tmp_pa
     # of 2026-09-18), so what the substitution must not lose is the record of itself -- and the
     # record lives in the review's own body, which is the one thing the tracker keeps.
     own = _flattened(_rules("validator"))
-    assert "Reviewed by the validator on claude (claude-opus-5)." in own
+    assert "Reviewed by the validator on claude (claude-sonnet-5-5)." in own
     assert "__REVIEW_BACKEND_LINE__" not in own
 
     verdicts = tmp_path / "verdicts"

@@ -8,6 +8,23 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- agent-os#96 — agent models are config, and Claude roles default to Sonnet 5.5. The `model:` of
+  `agents/*.md` was a literal (`opus` in the control plane), so moving a role to another model
+  meant editing a generated file that `agent-os-install --force` overwrites. New
+  `project.agent_models` (`control_plane` `sonnet`, `worker_runner` `sonnet`, `task_writer` `opus`),
+  rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`; an
+  unknown key fails the load. An agent definition has a single model, so task writing (Duty 1) is
+  split out of the control plane into the new `agents/task-writer.md` (default `opus`), which
+  `agent-os-install` now writes too; the control plane keeps the other duties and routes "escribe la
+  tarea X" to it. `config.example.yaml`: planner and validator classes move to `claude-sonnet-5-5`,
+  the refiner stays on `claude-opus-5`, a commented Sonnet worker class is added, and it states
+  that model ids are opaque and cost is CLI-reported. `docs/AGENT_OS.md` documents that the quota
+  verdict is per backend, not per model. Golden: `tests/golden/validator.md` now reads "Reviewed by
+  the validator on claude (claude-sonnet-5-5)." (the example config's class model, one line).
+  ADR `2026-09-29-claude-roles-default-to-sonnet-5-5-and-agent-models-are-config.md`. Hosts: after
+  the `subtree pull`, run `agent-os-install --force` to regenerate `.claude/agents/`, and set
+  `classes.<role>.model` / `project.agent_models` to keep any model you do not want moved.
+
 - agent-os#92 — Qwen's context was double-counted. Current Qwen builds report
   `cache_read_input_tokens` as a part of `input_tokens`, and the shared Claude parser added the two,
   so the guard read every Qwen turn at about twice its size and cut Qwen stages on `max_context` at

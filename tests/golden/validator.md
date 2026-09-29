@@ -101,7 +101,7 @@ Exactly one call, and it is the only thing you publish:
 The body's FIRST line names the backend that wrote it, verbatim and on its own line, then a blank
 line:
 
-Reviewed by the validator on claude (claude-opus-5).
+Reviewed by the validator on claude (claude-sonnet-5-5).
 
 (When there is a `## Doubts` block, the `@` mention described below is the first line and this one
 comes right after it.) A review that does not say which backend wrote it is one nobody can

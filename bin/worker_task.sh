@@ -57,7 +57,7 @@
 # `project.test_command` (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-and-reach-the-
 # owner-only-through-the-test-runner.md). The main thread is the only writer.
 #
-# The Claude worker spends the SAME Anthropic subscription window as the main thread. A long Opus
+# The Claude worker spends the SAME Anthropic subscription window as the main thread. A long Claude
 # run is not free just because it is not in this terminal: check `status` before starting a second.
 set -uo pipefail
 
