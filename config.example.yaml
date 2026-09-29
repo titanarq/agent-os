@@ -257,6 +257,7 @@ planner:
 # that escalates to Opus after a cut or failed stage and can fall back to Qwen:
 #
 #   complex-sonnet:
+#     description: work that needs Claude-level judgement across modules
 #     backend: claude
 #     model: claude-sonnet-5-5
 #     max_context: 400000
