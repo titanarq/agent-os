@@ -45,9 +45,11 @@ from agent_os.lib import (
     load_mechanism,
     load_project,
     load_role_class,
+    load_task_classes,
     never_run_rules,
     read_persisted_quota_verdict,
     read_role_run_exit_marker,
+    render_worker_classes,
     role_app_slug,
     role_launch,
     role_run_exit_marker,
@@ -506,8 +508,16 @@ def test_no_roles_rendered_prompt_names_anything_of_this_project(tmp_path):
         ).parent
     )
 
+    # The worker-class list (#97) is config rendered into the prompt -- a class's name and
+    # description are the host's own text, like the main checkout's path -- so it is subtracted too.
+    worker_classes = render_worker_classes(load_task_classes(config))
+    assert worker_classes
     for role in ROLES_WITH_A_PROMPT:
-        rules = _role_rules(role, config).replace(main_checkout, "<the host checkout>")
+        rules = (
+            _role_rules(role, config)
+            .replace(main_checkout, "<the host checkout>")
+            .replace(worker_classes, "")
+        )
         known = LITERALS_A_TEMPLATE_STILL_CARRIES.get(role, ())
         for literal in HOST_LITERALS:
             if literal in known:

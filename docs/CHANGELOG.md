@@ -43,6 +43,16 @@ that closed several small issues at once name them all. This file starts on 2026
   the `subtree pull`, run `agent-os-install --force` to regenerate `.claude/agents/`, and set
   `classes.<role>.model` / `project.agent_models` to keep any model you do not want moved.
 
+- agent-os#97 — the refiner and planner see the worker classes from config. New optional
+  `classes.<name>.description` (one line: when to choose the class), and `prompts/refiner.md` and
+  `prompts/planner.md` carry a `__WORKER_CLASSES__` block rendered from `classes:` (worker classes
+  only: name, backend, model, description). A host no longer names a model in its
+  `prompt_extras.refiner`, so changing the model behind a class cannot leave the prompt lying;
+  `config.example.yaml` describes its two classes. `agent-os-doctor` gains a warning (exit status
+  untouched) when a `prompt_extras` file names a class that `classes:` does not define. Hosts: a
+  `subtree pull`, then add `description:` to each worker class and drop model names from the
+  prompt_extras file. `tier`/`cost_hint` were not added: nothing reads them.
+
 - agent-os#92 — Qwen's context was double-counted. Current Qwen builds report
   `cache_read_input_tokens` as a part of `input_tokens`, and the shared Claude parser added the two,
   so the guard read every Qwen turn at about twice its size and cut Qwen stages on `max_context` at

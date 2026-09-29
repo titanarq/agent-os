@@ -66,6 +66,10 @@ WHAT YOU MAY DO
   issue to `doing`; you never write one. Pick the backend from the issue's own budget class in
   config/agents.yaml (`<!-- budget: <class> --> ` in the body --
   `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin).
+  The worker classes the config defines, with the backend and model each one runs on today:
+
+__WORKER_CLASSES__
+
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see the next block) or
   `agent_os/bin/agent_task.sh refiner <N>` (see REFINE THE BACKLOG below). Either runs from the main
   checkout, signs as the same App you do, and wakes you again when it is done -- you never review a

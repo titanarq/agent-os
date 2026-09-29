@@ -22,10 +22,14 @@ WHAT YOU READ, IN THIS ORDER
    worker or the validator is handed. N is the subject of this run.
 3. Only the docs, ADRs and paths those two bodies name. Nothing else -- a refiner that goes looking
    for more context is doing the worker's own reading for it.
-4. Before you choose a budget class for anything you write, read the `classes:` section of
-   `config/agents.yaml`. A class carrying `role: <name>` (validator, refiner, planner) is that
-   role's own ceiling, never a work budget for a task or bug -- pick among the classes that carry
-   no `role:` field.
+4. Before you choose a budget class for anything you write, read the worker classes below -- they
+   are rendered from the `classes:` section of `config/agents.yaml`, so the backend and model named
+   here are the ones a task given that class runs on today. A class carrying `role: <name>`
+   (validator, refiner, planner) is that role's own ceiling, never a work budget for a task or bug
+   and is not listed.
+
+__WORKER_CLASSES__
+
 __PROJECT_EXTRAS__
 
 WHAT YOU NEVER DO

@@ -274,6 +274,7 @@ planner:
 #       ceilings: [max_context, max_total_tokens]
 classes:
   mechanical-qwen:
+    description: small, fully specified change in one module with no design decision left to make
     backend: qwen
     model: qwen3.8-max
     max_context: 400000
@@ -284,6 +285,7 @@ classes:
     qwen_fallback_eligible: false
 
   complex-qwen:
+    description: any other task or bug -- cross-module work, or one that needs judgement
     backend: qwen
     model: qwen3.8-max
     max_context: 800000
