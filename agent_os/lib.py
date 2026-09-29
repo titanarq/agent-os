@@ -287,6 +287,11 @@ class TaskClass(Strict):
     # keeps the guard's `quota_exhausted_no_fallback` page meaningful (#425). Absent means the
     # launch behaves exactly as it did before this field existed.
     fallback: RoleFallback | None = None
+    # One line saying WHEN to choose this class ("small, fully specified change"). Rendered with the
+    # class's name, backend and model into the refiner's and planner's prompts (`__WORKER_CLASSES__`),
+    # so the choice rule lives next to the model it describes and a host's `prompt_extras` never
+    # has to name a model (#97). Empty renders the class without a rule.
+    description: str = ""
     # The stronger model a WORKER class runs on its own backend after a stage that was cut or did
     # not land (#95), or None for a class that always runs `model`. See `ClassEscalation`.
     escalate: ClassEscalation | None = None
@@ -1427,8 +1432,25 @@ def prompt_extras_path(role: str, project: ProjectConfig | None = None) -> pathl
     return HOST_ROOT / configured if configured else None
 
 
+def render_worker_classes(classes: dict[str, TaskClass]) -> str:
+    """One bullet per WORKER class -- name, backend, model and the class's own `description` -- for
+    the refiner's and planner's prompts (#97). The validator, refiner and planner classes are role
+    ceilings, never a budget an issue can carry, so they are left out."""
+    lines = []
+    for name, task_class in classes.items():
+        if task_class.role != "worker":
+            continue
+        line = f"- `{name}` -- backend {task_class.backend}, model {task_class.model}"
+        if task_class.description:
+            line += f": {task_class.description}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def prompt_substitutions(
-    project: ProjectConfig | None = None, mechanism: MechanismConfig | None = None
+    project: ProjectConfig | None = None,
+    mechanism: MechanismConfig | None = None,
+    classes: dict[str, TaskClass] | None = None,
 ) -> dict[str, str]:
     """Every placeholder a role's prompt carries that config alone answers, keyed WITHOUT the
     surrounding underscores. What is missing here is what only the run knows -- the main checkout's
@@ -1441,6 +1463,7 @@ def prompt_substitutions(
     `worker_task.sh` applied before the drivers stopped rendering their own prompts."""
     project = project or load_project()
     mechanism = mechanism or load_mechanism()
+    classes = load_task_classes() if classes is None else classes
     both_lists_configured = bool(forbidden_paths_regex(project)) and bool(
         mechanism_paths_regex(mechanism)
     )
@@ -1453,6 +1476,7 @@ def prompt_substitutions(
         "MECHANISM_PATHS_RULES": mechanism_paths_rules(mechanism) if both_lists_configured else "",
         "NEVER_RUN_RULES": never_run_rules(project),
         "WORKER_ENVIRONMENT_RULES": worker_environment_rules(project),
+        "WORKER_CLASSES": render_worker_classes(classes),
     }
 
 

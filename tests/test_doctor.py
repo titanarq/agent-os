@@ -506,7 +506,7 @@ def test_run_checks_turns_a_gh_failure_into_a_failed_check_and_keeps_going(tmp_p
         checks = doctor.run_checks(_project(), tmp_path, "owner/name")
 
     by_name = {check.name: check for check in checks}
-    assert len(checks) == 10, [c.line() for c in checks]
+    assert len(checks) == 11, [c.line() for c in checks]
     labels = by_name["labels that do not autocreate"]
     assert not labels.ok
     assert "Could not resolve to a Repository" in labels.detail
@@ -523,7 +523,7 @@ def test_run_checks_reports_a_missing_binary_as_a_failed_check(tmp_path):
         checks = doctor.run_checks(_project(), tmp_path, "owner/name")
 
     by_name = {check.name: check for check in checks}
-    assert len(checks) == 10, [c.line() for c in checks]
+    assert len(checks) == 11, [c.line() for c in checks]
     for name in (
         "gh auth status",
         "labels that do not autocreate",
@@ -596,3 +596,54 @@ def test_main_reports_an_invalid_config_as_a_failed_check(tmp_path):
         line.startswith("[FAIL] config/agents.yaml") and "does not load" in line
         for line in result.stdout.splitlines()
     ), result.stdout
+
+
+# --- prompt_extras naming a class that config does not have (#97) ---
+
+
+def _worker_class(**overrides):
+    from agent_os.lib import TaskClass
+
+    fields = {
+        "backend": "claude",
+        "model": "claude-sonnet-5-5",
+        "max_context": 1,
+        "max_cost_usd": 1.0,
+        "max_total_tokens": 1,
+        "commit_warn_turns": 1,
+        "commit_cut_turns": 2,
+    }
+    fields.update(overrides)
+    return TaskClass(**fields)
+
+
+def test_check_prompt_extras_classes_warns_on_a_class_config_does_not_have(tmp_path):
+    (tmp_path / "refiner.md").write_text("Use `complex-claude` for hard work.\n")
+    project = _project(prompt_extras={"refiner": "refiner.md"})
+    classes = {"complex-qwen": _worker_class(backend="qwen")}
+    check = doctor.check_prompt_extras_classes(project, classes, tmp_path)
+    assert check.ok and check.warning
+    assert "complex-claude" in check.detail and "refiner" in check.detail
+    assert check.line().startswith("[warn]")
+
+
+def test_check_prompt_extras_classes_passes_when_every_named_class_exists(tmp_path):
+    (tmp_path / "refiner.md").write_text(
+        "Use `complex-qwen`; the `auto-ready` label is not a class.\n"
+    )
+    project = _project(prompt_extras={"refiner": "refiner.md"})
+    classes = {"complex-qwen": _worker_class(backend="qwen")}
+    check = doctor.check_prompt_extras_classes(project, classes, tmp_path)
+    assert check.ok and not check.warning
+
+
+def test_check_prompt_extras_classes_reads_budget_lines(tmp_path):
+    (tmp_path / "planner.md").write_text("<!-- budget: gone-class -->\n")
+    project = _project(prompt_extras={"planner": "planner.md"})
+    check = doctor.check_prompt_extras_classes(project, {"complex-qwen": _worker_class()}, tmp_path)
+    assert check.warning and "gone-class" in check.detail
+
+
+def test_check_prompt_extras_classes_passes_with_no_extras(tmp_path):
+    check = doctor.check_prompt_extras_classes(_project(), {}, tmp_path)
+    assert check.ok and not check.warning

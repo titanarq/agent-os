@@ -221,3 +221,55 @@ def test_no_template_names_a_script_under_the_hosts_own_scripts_directory(role):
 def test_an_unknown_role_has_no_template_and_says_so():
     with pytest.raises(KeyError):
         render_prompt("archivist", {})
+
+
+# --- the worker class list rendered from `classes:` (#97) ---
+
+
+def _class_fields(**overrides):
+    fields = {
+        "backend": "claude",
+        "model": "claude-sonnet-5-5",
+        "max_context": 1,
+        "max_cost_usd": 1.0,
+        "max_total_tokens": 1,
+        "commit_warn_turns": 1,
+        "commit_cut_turns": 2,
+    }
+    fields.update(overrides)
+    return fields
+
+
+def test_task_class_accepts_a_one_line_description():
+    from agent_os.lib import TaskClass
+
+    assert TaskClass(**_class_fields(description="hard work")).description == "hard work"
+    assert TaskClass(**_class_fields()).description == ""
+
+
+def test_worker_classes_block_lists_worker_classes_only():
+    from agent_os.lib import TaskClass, render_worker_classes
+
+    classes = {
+        "complex-claude": TaskClass(**_class_fields(description="cross-module work")),
+        "bare": TaskClass(**_class_fields(backend="qwen", model="qwen3.8-max")),
+        "refiner": TaskClass(**_class_fields(role="refiner")),
+    }
+    block = render_worker_classes(classes)
+    assert "`complex-claude` -- backend claude, model claude-sonnet-5-5: cross-module work" in block
+    assert "`bare` -- backend qwen, model qwen3.8-max" in block
+    assert "model qwen3.8-max:" not in block
+    assert "refiner" not in block
+
+
+@pytest.mark.parametrize("role", ["refiner", "planner"])
+def test_the_template_carries_the_worker_classes_placeholder(role):
+    assert "__WORKER_CLASSES__" in (PROMPTS_DIR / f"{role}.md").read_text()
+
+
+def test_every_example_worker_class_has_a_description():
+    from agent_os.lib import load_task_classes
+
+    for name, task_class in load_task_classes(EXAMPLE_CONFIG).items():
+        if task_class.role == "worker":
+            assert task_class.description, name
