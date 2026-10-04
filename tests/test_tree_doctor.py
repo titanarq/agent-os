@@ -8,6 +8,7 @@ or that fires on the wrong file, or that is silent, fails here. Pure filesystem 
 from __future__ import annotations
 
 import pathlib
+import typing
 
 import pytest
 from tree_helpers import (
@@ -20,6 +21,13 @@ from tree_helpers import (
 
 from agent_os.tree.checks import CHECKS, check_tree
 from agent_os.tree.loader import TreeRootError, load_tree
+from agent_os.tree.models import (
+    BODY_FIELD_BY_TYPE,
+    ID_PREFIX_BY_TYPE,
+    NODE_TYPES,
+    RECORD_TYPES,
+    Node,
+)
 
 
 def found(root: pathlib.Path) -> list[tuple[str, str]]:
@@ -49,6 +57,13 @@ def test_a_root_that_is_a_file_is_an_error(tmp_path):
     stray.write_text("x")
     with pytest.raises(TreeRootError):
         load_tree(stray)
+
+
+def test_the_vocabularies_the_checks_and_the_schema_use_are_one_vocabulary():
+    # `Node.type` is a `Literal` the models spell out; the constants the checks read must say the
+    # same thing, or a type could pass the schema and miss a prefix or a body field.
+    assert typing.get_args(Node.model_fields["type"].annotation) == NODE_TYPES
+    assert set(ID_PREFIX_BY_TYPE) == set(RECORD_TYPES) == set(BODY_FIELD_BY_TYPE)
 
 
 def test_every_code_the_doctor_can_emit_is_listed_in_checks():

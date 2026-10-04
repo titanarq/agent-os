@@ -45,10 +45,6 @@ PARENT_TYPE_BY_TYPE = {"functional-requirement": "goal", "use-case": "functional
 # of the plan (the first agent that needs it resolves it and writes it back into the node).
 MECHANISM_PENDING = "pending"
 
-NODE_STATES = ("pending", "improvised", "hardened")
-DECISION_STATES = ("in-force", "under-review", "superseded")
-SPIKE_OUTCOMES = ("feasible", "infeasible", "inconclusive")
-
 # The fields that make a node a work item. A goal is a lighthouse, not something to build, and
 # carries none of them (`goal-carries-work-fields`).
 WORK_FIELDS = ("mechanism", "implementation", "verification", "spikes", "foundation", "state")

@@ -87,7 +87,6 @@ class Tree:
     # so the reference checks stay quiet about it instead of reporting the same fault twice.
     unusable_ids: set[str] = field(default_factory=set)
     defects: list[Defect] = field(default_factory=list)
-    file_count: int = 0
 
 
 def require_tree_root(root: pathlib.Path | str) -> pathlib.Path:
@@ -237,7 +236,6 @@ def load_tree(root: pathlib.Path | str) -> Tree:
     files_by_id: dict[str, list[pathlib.Path]] = {}
     records: dict[pathlib.Path, Node | Decision] = {}
     for path in _walk_files(tree.root):
-        tree.file_count += 1
         outcome = _read_file(path)
         tree.defects += outcome.defects
         if outcome.record is None:
