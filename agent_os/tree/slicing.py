@@ -1,0 +1,293 @@
+"""The slice of one node: what an agent needs to work on it, and nothing else.
+
+Cost and quality degrade with the context of a call, not with the number of calls, so the unit an
+agent is handed is never the tree. A slice is the node itself, its ancestors up to the goal, and
+the decisions in force on that chain -- and by construction nothing of its siblings, its
+descendants or any decision that does not bind it. Its size is bounded by the length of one chain
+of ancestors, however large the tree grows (`tests/test_tree_slice.py` pins that).
+
+A decision that is `under-review` is in the slice and labelled as such: it is still obeyed while it
+is challenged. A superseded decision is never in a slice; a node still pointing at one is a defect
+the slice refuses to paper over.
+
+The output is deterministic: the same tree gives the same bytes, whatever order the files were
+written or listed in, so a brief built from a slice is diffable and cacheable.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+
+from agent_os.tree.checks import check_tree
+from agent_os.tree.loader import Defect, Tree
+from agent_os.tree.models import MECHANISM_PENDING, Decision, Node
+
+MECHANISM_PENDING_NOTE = (
+    f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "
+    "(spiking first if feasibility is in doubt) and writes it back into this node's file in the "
+    "same pull request; it is never left in a transcript."
+)
+UNDER_REVIEW_NOTE = "UNDER REVIEW -- still obeyed while it is challenged"
+IN_FORCE_NOTE = "in force"
+
+
+class SliceError(Exception):
+    """The slice cannot be cut honestly. `defects` are the doctor's own lines about the files it
+    would have been made of, when that is why."""
+
+    def __init__(self, message: str, defects: tuple[Defect, ...] = ()) -> None:
+        super().__init__(message)
+        self.defects = defects
+
+
+@dataclass(frozen=True)
+class SliceDecision:
+    decision: Decision
+    # The node or ancestor whose `decisions` pointer brings it into the slice: the nearest one,
+    # when several do.
+    attached_to: str
+
+
+@dataclass(frozen=True)
+class Slice:
+    node: Node
+    # The node's file relative to the tree root, so the slice reads the same on every machine.
+    relative_path: str
+    # Parent first, goal last.
+    ancestors: tuple[Node, ...]
+    decisions: tuple[SliceDecision, ...]
+
+    @property
+    def chain(self) -> tuple[Node, ...]:
+        return (self.node, *self.ancestors)
+
+
+def assemble_slice(tree: Tree, node_id: str) -> Slice:
+    """The slice of `node_id`, assuming nothing about the rest of the tree beyond what the walk
+    itself needs to terminate. `build_slice` is the one that also asks the doctor."""
+    node = tree.nodes.get(node_id)
+    if node is None:
+        if node_id in tree.decisions:
+            raise SliceError(f"{node_id!r} is a decision, not a node; a slice is cut around a node")
+        if node_id in tree.unusable_ids:
+            raise SliceError(
+                f"node {node_id!r} cannot be loaded; `agent-os-tree validate` says why"
+            )
+        raise SliceError(f"no node {node_id!r} under {tree.root}")
+    ancestors: list[Node] = []
+    seen = {node.id}
+    current = node
+    while current.parent is not None:
+        parent = tree.nodes.get(current.parent)
+        if parent is None:
+            raise SliceError(
+                f"{current.id!r} has parent {current.parent!r}, which is not a usable node "
+                "(dangling-parent; `agent-os-tree validate` says more)"
+            )
+        if parent.id in seen:
+            raise SliceError(
+                f"the parent chain of {node_id!r} loops at {parent.id!r} (parent-cycle)"
+            )
+        ancestors.append(parent)
+        seen.add(parent.id)
+        current = parent
+    decisions: list[SliceDecision] = []
+    taken: set[str] = set()
+    for member in (node, *ancestors):
+        for decision_id in sorted(set(member.decisions)):
+            if decision_id in taken:
+                continue
+            decision = tree.decisions.get(decision_id)
+            if decision is None or decision.state == "superseded":
+                raise SliceError(
+                    f"{member.id!r} points at decision {decision_id!r}, which is not a decision "
+                    "in force (dangling-decision or superseded-decision-in-use)"
+                )
+            taken.add(decision_id)
+            decisions.append(SliceDecision(decision=decision, attached_to=member.id))
+    return Slice(
+        node=node,
+        relative_path=tree.paths[node.id].relative_to(tree.root).as_posix(),
+        ancestors=tuple(ancestors),
+        decisions=tuple(decisions),
+    )
+
+
+def build_slice(tree: Tree, node_id: str) -> Slice:
+    """The slice of `node_id`, or a `SliceError` when any file it is made of is defective.
+
+    The doctor is the single authority on "is this file sound", so the slice asks it rather than
+    carrying a second copy of the rules, and looks only at the files it is made of: a defect in
+    another branch of the tree never stops an agent from getting its own slice."""
+    cut = assemble_slice(tree, node_id)
+    files = {tree.paths[member.id] for member in cut.chain}
+    files |= {tree.paths[entry.decision.id] for entry in cut.decisions}
+    own_defects = tuple(defect for defect in check_tree(tree) if defect.path in files)
+    if own_defects:
+        raise SliceError(
+            f"the slice of {node_id!r} is made of files that fail the doctor", own_defects
+        )
+    return cut
+
+
+def _heading(level: int, text: str) -> str:
+    return f"{'#' * level} {text}"
+
+
+def _bullets(items: list[str]) -> list[str]:
+    return [f"- {item}" for item in items]
+
+
+def _yes_no(flag: bool) -> str:
+    return "yes" if flag else "no"
+
+
+def render_node(
+    cut: Slice, *, level: int, with_description: bool = True, with_verification: bool = True
+) -> str:
+    node = cut.node
+    lines = [
+        _heading(level, f"Node `{node.id}`"),
+        "",
+        f"- type: {node.type}",
+        f"- title: {node.title}",
+        f"- state: {node.state}",
+        f"- foundation: {_yes_no(node.foundation)}",
+        f"- parent: {f'`{node.parent}`' if node.parent else 'none (a goal is the root)'}",
+        f"- file: `{cut.relative_path}` (relative to the tree root)",
+    ]
+    if with_description:
+        lines += ["", _heading(level + 1, "Description"), "", node.description]
+    if node.mechanism is not None:
+        text = MECHANISM_PENDING_NOTE if node.mechanism == MECHANISM_PENDING else node.mechanism
+        lines += ["", _heading(level + 1, "Mechanism"), "", text]
+    if node.implementation is not None:
+        lines += ["", _heading(level + 1, "Implementation"), "", node.implementation]
+    if with_verification and node.type != "goal":
+        shown = _bullets(
+            [
+                f"`{check.command}`" + (f" -- {check.expects}" if check.expects else "")
+                for check in node.verification
+            ]
+        )
+        lines += ["", _heading(level + 1, "Verification"), "", *(shown or ["none"])]
+    if node.spikes:
+        lines += ["", _heading(level + 1, "Spike results"), ""]
+        lines += _bullets(
+            [
+                f"{spike.date.isoformat()}, {spike.outcome}: {spike.question} -- {spike.finding}"
+                for spike in node.spikes
+            ]
+        )
+    lines += ["", _heading(level + 1, "Sources"), "", *_bullets(node.sources)]
+    return "\n".join(lines)
+
+
+def render_ancestors(cut: Slice, *, level: int) -> str:
+    heading = _heading(level, "Ancestors")
+    if not cut.ancestors:
+        return f"{heading}\n\nnone"
+    blocks = []
+    for ancestor in cut.ancestors:
+        block = [
+            _heading(level + 1, f"`{ancestor.id}` ({ancestor.type}): {ancestor.title}"),
+            "",
+            ancestor.description,
+            "",
+            "Sources:",
+            *_bullets(ancestor.sources),
+        ]
+        blocks.append("\n".join(block))
+    return "\n\n".join([heading, *blocks])
+
+
+def render_decisions(cut: Slice, *, level: int) -> str:
+    heading = _heading(level, "Decisions in force")
+    if not cut.decisions:
+        return f"{heading}\n\nnone"
+    blocks = []
+    for entry in cut.decisions:
+        decision = entry.decision
+        standing = UNDER_REVIEW_NOTE if decision.state == "under-review" else IN_FORCE_NOTE
+        block = [
+            _heading(level + 1, f"`{decision.id}`: {decision.title}"),
+            "",
+            f"- standing: {standing}",
+            f"- decided: {decision.decided.isoformat()}",
+            f"- binds this node through: `{entry.attached_to}`",
+            "",
+            decision.statement,
+            "",
+            "Premises:",
+            *_bullets(decision.premises),
+            "",
+            "Rejected alternatives:",
+            *_bullets(
+                [
+                    f"{alternative.option} -- {alternative.reason}"
+                    f"{' (implied, not argued at approval)' if alternative.basis == 'implied' else ''}"
+                    for alternative in decision.rejected_alternatives
+                ]
+            ),
+            "",
+            "Review triggers:",
+            *_bullets(decision.review_triggers),
+            "",
+            f"Friction entries logged against it: {len(decision.friction)}",
+        ]
+        blocks.append("\n".join(block))
+    return "\n\n".join([heading, *blocks])
+
+
+def render_slice_markdown(cut: Slice) -> str:
+    """The slice as a Markdown brief: the node, its ancestors, the decisions in force."""
+    parts = [
+        _heading(1, f"Slice of `{cut.node.id}`"),
+        render_node(cut, level=2),
+        render_ancestors(cut, level=2),
+        render_decisions(cut, level=2),
+    ]
+    return "\n\n".join(parts) + "\n"
+
+
+def slice_as_data(cut: Slice) -> dict:
+    """The slice as plain data, for `--json` and for the callers that would rather not parse
+    Markdown."""
+    return {
+        "node": {**cut.node.model_dump(mode="json"), "file": cut.relative_path},
+        "ancestors": [
+            {
+                "id": ancestor.id,
+                "type": ancestor.type,
+                "title": ancestor.title,
+                "description": ancestor.description,
+                "sources": ancestor.sources,
+            }
+            for ancestor in cut.ancestors
+        ],
+        "decisions": [
+            {
+                "id": entry.decision.id,
+                "title": entry.decision.title,
+                "state": entry.decision.state,
+                "attached_to": entry.attached_to,
+                **entry.decision.model_dump(
+                    mode="json",
+                    include={
+                        "decided",
+                        "statement",
+                        "premises",
+                        "rejected_alternatives",
+                        "review_triggers",
+                    },
+                ),
+                "friction_count": len(entry.decision.friction),
+            }
+            for entry in cut.decisions
+        ],
+    }
+
+
+def render_slice_json(cut: Slice) -> str:
+    return json.dumps(slice_as_data(cut), indent=2, ensure_ascii=False) + "\n"
