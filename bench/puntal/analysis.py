@@ -183,7 +183,7 @@ class Replay:
 
     def run(self, trace: list[dict]) -> CoherenceReport:
         for record in sorted(trace, key=lambda r: r["seq"]):
-            if record["action"] != "calibrate":
+            if not record["action"].startswith("calibrate"):
                 self.check(record)
         self.report.contradictions.extend(self.invariants_seen.values())
         return self.report

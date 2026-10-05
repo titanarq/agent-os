@@ -404,6 +404,25 @@ class StreamObserver:
             for m in self.messages.values()
         )
 
+    def first_turn_usage(self) -> dict:
+        """The four counters of the very first turn, before any tool result existed: what the call
+        carried before it did anything -- system prompt, tool definitions, brief -- and, split into
+        cache-created, cache-read and uncached, how it was paid for."""
+        usage = self.messages[self.message_order[0]].usage if self.message_order else {}
+        return {
+            name: usage.get(name) or 0
+            for name in (
+                "input_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+                "output_tokens",
+            )
+        }
+
+    def first_turn_context_tokens(self) -> int:
+        """The context floor of the call: what its first turn read. The number the calibration is for."""
+        return _context_tokens(self.first_turn_usage())
+
     def violations(self) -> list[str]:
         return [call.violation for call in self.tool_calls.values() if call.violation]
 
@@ -628,6 +647,8 @@ def _usage_totals(observer: StreamObserver) -> dict:
     return {
         **fields,
         "total_tokens": total,
+        "first_turn": observer.first_turn_usage(),
+        "context_tokens_first_turn": observer.first_turn_context_tokens(),
         "context_tokens_peak": observer.peak_context_tokens(),
         "turns": (result or {}).get("num_turns"),
     }

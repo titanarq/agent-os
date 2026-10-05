@@ -180,6 +180,11 @@ def test_an_answered_run_prints_only_the_response_and_logs_everything(environmen
     assert record["usage"]["total_tokens"] > 0 and record["cost_usd"] > 0
     assert [c["command"].split()[1] for c in record["tool_calls"]][:2] == ["next-id", "put"]
     assert record["init"]["tools"] == ["Bash"]
+    first = record["usage"]["first_turn"]
+    assert record["usage"]["context_tokens_first_turn"] == sum(
+        first[k] for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    )
+    assert 0 < record["usage"]["context_tokens_first_turn"] < record["usage"]["context_tokens_peak"]
     assert record["scratch_extra_entries"] == []
 
     # Time-to-first-signal is measured from the click's arrival, and the milestones are in order.
@@ -211,6 +216,16 @@ def test_the_guard_reads_a_puntal_run_log_like_any_roles(environment, tmp_path):
     assert drive(environment, payload={"title": "x"}).returncode == 0
     (log,) = (tmp_path / "cache").glob("*.log")
     assert agent_guard.role_run_quota_status(log) == "allowed"
+
+
+def test_the_guard_counts_a_puntal_run_among_the_role_runs_it_reads_quota_from(
+    environment, tmp_path, monkeypatch
+):
+    assert drive(environment, payload={"title": "x"}).returncode == 0
+    monkeypatch.setenv("AGENT_CACHE_DIR", str(tmp_path / "cache"))
+    observations = agent_guard.role_log_quota_observations(main=tmp_path)
+    assert observations["claude"].status == "allowed"
+    assert observations["claude"].log.parent == tmp_path / "cache"
 
 
 def test_a_gap_note_is_split_from_the_response_and_kept_in_the_telemetry(environment, tmp_path):

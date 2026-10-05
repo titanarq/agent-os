@@ -705,7 +705,7 @@ change.
 | `outcome`, `outcome_detail` | `ok`, `error`, `timeout`, `contract_violation` or `ceiling_cut`, and why |
 | `exit_code` | the backend process's, null if it never started |
 | `latency_s` | `total` (entry to response complete); `python_startup` (entry to the interpreter being ready: shell, imports); `launch_overhead` (entry to the backend being spawned); `first_event` (first stream line, the CLI's init); `first_message` (first `message_start`); `first_tool_call`; **`first_text_delta`**: the first assistant text delta of any message, which is the **time-to-first-signal** -- the first thing a UI could show; `final_answer_first_delta` (the first delta of the message that carries the answer, after the tool calls); `backend_reported` (the CLI's own `duration_ms`, `duration_api_ms` and `ttft_ms` when it reports them, a cross-check). A milestone that never happened is null |
-| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `context_tokens_peak` (the largest single turn) and `turns` (null for a run that was cut before its `result`) |
+| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `first_turn` (the four counters of the very first turn, before any tool result) and `context_tokens_first_turn` (their context sum: **the context floor of the call**, system prompt, tool definitions and brief), `context_tokens_peak` (the largest single turn) and `turns` (null for a run that was cut before its `result`) |
 | `cost_usd` | the CLI's `total_cost_usd`; under a subscription it is notional (API-equivalent). Null when the run produced no `result` |
 | `tool_calls` | per call: `name`, `command` (Bash only), `at_s`, `violation`, `is_error`, `result_chars` |
 | `tool_violations` | the audit's findings; empty means the puntal ran only `./state` |
@@ -733,7 +733,7 @@ of their rules (`domain.py`), a fake `claude` that plays a perfect or a faulty p
 (`fake_claude.py`), and `measure.py`:
 
 ```
-measure.py calibrate --dry-run             # 2 calls: the smallest prompt, cold then warm cache -> the context floor
+measure.py calibrate --dry-run             # 2 calls -> the context floor: the smallest brief, cold cache; then warm cache + ONE read through the persistence tool
 measure.py main --session 1 --dry-run      # 3 sessions of 8 over ONE store, a fresh process per call
 measure.py main --session 2                #   (replace --dry-run by --allow-real-calls to spend)
 measure.py main --session 3
@@ -752,8 +752,11 @@ made, and the 31st is refused -- `REAL_CALL_CAP` is a constant, not a setting; a
 fit in what remains is refused whole before it starts; a dry run never touches the counter. Before
 a real stage's first call it runs `claude --help` and `claude <the driver's flags> --version` -- the
 only other commands it ever runs on the real CLI -- to check that every flag is still listed and
-every value still accepted, and two failed invocations in a row stop a stage (one stops the
-calibration), so a setup that fails systematically does not burn the cap. The tests stub the backend
+every value still accepted; the calibration's second call makes one read through the persistence
+tool and the stage stops if that call did not run (a denied or missing tool would fail every action
+of every session the same way), and no real session starts before the calibration passed; two
+failed invocations in a row stop a stage (one stops the calibration), so a setup that fails
+systematically does not burn the cap. The tests stub the backend
 and fail if a trap `claude` on PATH is ever reached.
 
 `summarize` reports p50/p95 of full-response latency and of time-to-first-signal (and the other

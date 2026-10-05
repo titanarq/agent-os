@@ -244,6 +244,7 @@ def test_every_node_the_actions_are_bound_to_exists_and_the_gap_action_shares_a_
     for action in domain.ACTIONS:
         assert (BENCH / "nodes" / f"{domain.NODE_FOR_ACTION[action]}.md").is_file()
     assert (BENCH / "nodes" / "calibration.md").is_file()
+    assert (BENCH / "nodes" / "calibration-tool.md").is_file()
     (gap,) = domain.GAP_ACTIONS
     assert domain.NODE_FOR_ACTION[gap] == domain.NODE_FOR_ACTION["show_board"]
     node = (BENCH / "nodes" / f"{domain.NODE_FOR_ACTION[gap]}.md").read_text()
@@ -662,6 +663,13 @@ def test_the_script_refuses_at_the_cap_before_it_launches_anything(tmp_path):
 
 def test_a_stage_that_does_not_fit_in_what_is_left_is_refused_whole(tmp_path):
     seed_counter(tmp_path / "counter.json", 25)
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / "trace.jsonl").write_text(
+        "".join(
+            json.dumps({"stage": "calibration", "driver_exit_code": 0, "step": i}) + "\n"
+            for i in (1, 2)
+        )
+    )
     ran = run_measure(
         tmp_path, "main", "--session", "1", "--allow-real-calls", strip_pytest_marker=True
     )
@@ -767,7 +775,8 @@ def test_the_stages_run_end_to_end_and_the_summary_is_computed_from_the_raw_file
         and "nearest-rank" in text
         and "Sample sizes: calibration 2, main 16, reserve 2" in text
     )
-    assert "cold cache" in text and "warm cache" in text
+    assert "cold cache" in text and "warm cache" in text and "FIRST-TURN CONTEXT" in text
+    assert "(calibrate_tool)" in text and "tool calls 1" in text
     assert "no contradictions found" in text
     assert "gap notes: 2/2" in text
     assert "zero contradictions over persisted state: PASS" in text
@@ -901,3 +910,40 @@ def test_the_calibration_stops_at_its_first_failure(tmp_path):
     ran = run_measure(tmp_path, "calibrate", "--dry-run", "--fake-fault", "crash")
     assert ran.returncode != 0 and "stopping after 1 failed invocation(s)" in ran.stderr
     assert len((tmp_path / "work" / "trace.jsonl").read_text().splitlines()) == 1
+
+
+def test_the_calibration_proves_the_persistence_tool_ran_and_stops_when_it_was_denied(tmp_path):
+    ran = run_measure(tmp_path, "calibrate", "--dry-run", "--fake-fault", "deny_tool")
+    assert ran.returncode != 0 and "the calibration's tool call did not run" in ran.stderr
+    assert "1 denied by the CLI" in ran.stderr
+    assert len((tmp_path / "work" / "trace.jsonl").read_text().splitlines()) == 2
+
+
+def test_a_real_session_does_not_start_before_the_calibration_passed(tmp_path):
+    ran = run_measure(
+        tmp_path, "main", "--session", "1", "--allow-real-calls", strip_pytest_marker=True
+    )
+    assert ran.returncode != 0 and "run `calibrate` first" in ran.stderr
+    assert not (tmp_path / "counter.json").exists()
+
+
+def test_the_first_turn_is_the_context_floor_and_never_more_than_the_peak(tmp_path):
+    assert run_measure(tmp_path, "calibrate", "--dry-run").returncode == 0
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "work" / "telemetry.jsonl").read_text().splitlines()
+    ]
+    cold, warm = (r["usage"] for r in records)
+    assert (
+        cold["first_turn"]["cache_creation_input_tokens"]
+        > 0
+        == cold["first_turn"]["cache_read_input_tokens"]
+    )
+    assert (
+        warm["first_turn"]["cache_read_input_tokens"]
+        > 0
+        == warm["first_turn"]["cache_creation_input_tokens"]
+    )
+    for usage in (cold, warm):
+        assert 0 < usage["context_tokens_first_turn"] <= usage["context_tokens_peak"]
+    assert records[1]["tool_calls"][0]["command"] == "./state list tickets"

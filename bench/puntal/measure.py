@@ -122,7 +122,11 @@ SESSIONS: dict[str, list[Step]] = {
     ],
 }
 SESSION_NUMBERS = {"1": "s1", "2": "s2", "3": "s3"}
-CALIBRATION_CALLS = 2
+# The calibration's two calls. The first carries the smallest brief and no tool call: the context
+# floor, cold. The second, warm, makes ONE read through the persistence tool: it proves the tool is
+# reachable and permitted before a session is spent finding out, and costs one tool round trip.
+CALIBRATION_STEPS = (("calibrate", "calibration"), ("calibrate_tool", "calibration-tool"))
+CALIBRATION_CALLS = len(CALIBRATION_STEPS)
 
 
 class Refusal(SystemExit):
@@ -219,8 +223,7 @@ class Context:
         """`config.example.yaml` with the puntal's own settings filled in for this bench: the
         persistence API text, and whatever `--class-override` / `--puntal-override` changed."""
         config = yaml.safe_load(EXAMPLE_CONFIG.read_text())
-        host_root = pathlib.Path(os.environ.get("AGENT_OS_HOST_ROOT") or REPO_ROOT)
-        config["puntal"]["persistence_api_file"] = os.path.relpath(PERSISTENCE_API, host_root)
+        config["puntal"]["persistence_api_file"] = os.path.relpath(PERSISTENCE_API, host_root())
         config["puntal"].update(self.puntal_overrides)
         config["classes"]["puntal"].update(self.class_overrides)
         return config
@@ -242,6 +245,21 @@ class Context:
                 FAKE_PUNTAL_FAULT=self.fault,
             )
         return environment
+
+
+def host_root() -> pathlib.Path:
+    """The root the driver resolves as the host's, by the rule `bin/_python.sh` uses: the environment's
+    answer, else the git checkout this directory sits in, else the directory above the package."""
+    configured = os.environ.get("AGENT_OS_HOST_ROOT")
+    if configured:
+        return pathlib.Path(configured)
+    toplevel = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return pathlib.Path(toplevel) if toplevel else REPO_ROOT.parent
 
 
 def parse_assignments(items: list[str]) -> dict:
@@ -348,15 +366,22 @@ def run_invocation(
     if context.timeout:
         command += ["--timeout", str(context.timeout)]
     started = time.monotonic()
-    completed = subprocess.run(
-        command,
-        env=context.environment(),
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=REPO_ROOT,
-        timeout=(context.timeout or 90) + 120,
-    )
+    # The driver kills its own backend at its safety timeout; this one only guards the driver.
+    allowance = (context.timeout or context.puntal_overrides.get("timeout_seconds", 90)) + 120
+    try:
+        completed = subprocess.run(
+            command,
+            env=context.environment(),
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=REPO_ROOT,
+            timeout=allowance,
+        )
+    except subprocess.TimeoutExpired:
+        completed = subprocess.CompletedProcess(
+            command, 124, "", f"the driver did not return within {allowance}s"
+        )
     wall = time.monotonic() - started
     after = store.dump()
     seq = len(read_json_lines(context.trace_file)) + 1
@@ -464,23 +489,56 @@ def require_budget(context: Context, calls: int) -> None:
 # ---------------------------------------------------------------------------------------------
 # Stages.
 # ---------------------------------------------------------------------------------------------
+def verify_calibration_tool(context: Context, trace: dict) -> None:
+    """After the call that reads through the persistence tool: it must really have run. A tool the
+    CLI denied, or never offered, would make every action of every session fail the same way, and
+    the cap is for measuring, not for finding that out."""
+    tele = telemetry_for(context, trace["invocation_id"])
+    if tele is None:
+        return  # run_invocation has already stopped the stage for a missing record
+    calls = tele["tool_calls"]
+    ran = [c for c in calls if c["violation"] is None and c["is_error"] is False]
+    if ran and not tele["permission_denials"]:
+        return
+    raise Refusal(
+        "the calibration's tool call did not run: "
+        f"{len(calls)} call(s), {tele['permission_denials']} denied by the CLI, tools offered "
+        f"{tele['init'].get('tools')}. The allow rule or --tools did not take effect; nothing further "
+        "is spent. Read the run's log in the workdir's cache directory"
+    )
+
+
 def stage_calibrate(context: Context) -> None:
     done = sum(1 for r in read_json_lines(context.trace_file) if r["stage"] == "calibration")
     if done >= CALIBRATION_CALLS:
         raise Refusal("calibration already ran; its two calls are in trace.jsonl")
-    remaining = CALIBRATION_CALLS - done
-    require_budget(context, remaining)
-    for index in range(done + 1, CALIBRATION_CALLS + 1):
-        run_invocation(
+    require_budget(context, CALIBRATION_CALLS - done)
+    for index, (action, node) in enumerate(CALIBRATION_STEPS[done:], start=done + 1):
+        trace = run_invocation(
             context,
             stage="calibration",
             session="cal",
             step=index,
             of=CALIBRATION_CALLS,
-            action="calibrate",
+            action=action,
             payload={},
-            node="calibration",
+            node=node,
         )
+        if action == "calibrate_tool":
+            verify_calibration_tool(context, trace)
+
+
+def require_calibration(context: Context) -> None:
+    """A real session is not started on a setup the calibration has not passed."""
+    if context.mode != "real":
+        return
+    passed = [
+        r
+        for r in read_json_lines(context.trace_file)
+        if r["stage"] == "calibration" and r["driver_exit_code"] == 0
+    ]
+    if len(passed) < CALIBRATION_CALLS:
+        raise Refusal("run `calibrate` first: no real session starts before its two calls passed")
 
 
 def stage_main(context: Context, which: str) -> None:
@@ -497,12 +555,11 @@ def stage_main(context: Context, which: str) -> None:
             if len(finished) < len(SESSIONS[earlier]) and earlier not in chosen:
                 raise Refusal(f"session {session} needs session {earlier} to be complete first")
         plans.append((session, todo))
-    if (
-        not read_json_lines(context.trace_file)
-        and Store(context.store_dir).dump() != domain.empty_state()
-    ):
+    require_calibration(context)
+    measured = [r for r in read_json_lines(context.trace_file) if r["stage"] != "calibration"]
+    if not measured and Store(context.store_dir).dump() != domain.empty_state():
         raise Refusal(
-            f"{context.store_dir} holds data but trace.jsonl is empty: use a fresh --workdir"
+            f"{context.store_dir} holds data but nothing was measured there: use a fresh --workdir"
         )
     require_budget(context, sum(len(todo) for _, todo in plans))
     for position, (session, todo) in enumerate(plans):
@@ -646,22 +703,25 @@ def summarize(
     )
     out("    message that carries the answer (after the tool calls).")
     out("")
-    out("CALIBRATION (the smallest prompt: the context floor of a call)")
+    out("CALIBRATION (the context floor: what a call carries before it has done anything)")
     if not calibration:
         out("  no calibration records")
     for record in calibration:
         usage = record.get("usage") or {}
+        first = usage.get("first_turn") or {}
         cache = (
-            "cold cache"
-            if (usage.get("cache_creation_input_tokens") or 0)
-            > (usage.get("cache_read_input_tokens") or 0)
-            else "warm cache"
+            "cold cache" if (first.get("cache_creation_input_tokens") or 0) > 0 else "warm cache"
         )
         out(
-            f"  step {record['labels'].get('step')}: {record['outcome']}, {cache}: context peak {usage.get('context_tokens_peak')} tokens "
-            f"(uncached {usage.get('input_tokens')}, cache-created {usage.get('cache_creation_input_tokens')}, cache-read "
-            f"{usage.get('cache_read_input_tokens')}), output {usage.get('output_tokens')}, cost {fmt(record.get('cost_usd'), '', 4)}, "
-            f"total {fmt(record['latency_s'].get('total'))}, tools offered {record['init'].get('tools')}, model {record['model']}"
+            f"  step {record['labels'].get('step')} ({record['action']}): {record['outcome']}, {cache}: FIRST-TURN CONTEXT "
+            f"{usage.get('context_tokens_first_turn')} tokens (uncached {first.get('input_tokens')}, cache-created "
+            f"{first.get('cache_creation_input_tokens')}, cache-read {first.get('cache_read_input_tokens')})"
+        )
+        out(
+            f"      whole call: {usage.get('total_tokens')} tokens over {usage.get('turns')} turn(s), cost "
+            f"{fmt(record.get('cost_usd'), '', 4)}, total {fmt(record['latency_s'].get('total'))}, first signal "
+            f"{fmt(record['latency_s'].get('first_text_delta'))}, tool calls {len(record['tool_calls'])}, tools offered "
+            f"{record['init'].get('tools')}, model {record['model']}, claude {record['init'].get('claude_code_version')}"
         )
     out("")
     out(f"MAIN STAGE (n={len(main)}; outcomes {analysis.outcomes(main)})")

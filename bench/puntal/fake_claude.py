@@ -67,6 +67,7 @@ FAULTS = {
     "runaway_context": "any action: a first turn whose context is far past the class's ceiling",
     "hang": "any action: never answers",
     "crash": "any action: dies at start-up with an error and no stream",
+    "deny_tool": "calibrate_tool: the CLI denies the persistence tool (the allow rule did not match)",
 }
 
 CONTEXT_FLOOR_TOKENS = 5200
@@ -116,6 +117,7 @@ class Stream:
         }
         self.started = time.monotonic()
         self.first_context_override: int | None = None
+        self.denials: list[dict] = []
 
     def _emit(self, event: dict) -> None:
         sys.stdout.write(json.dumps(event) + "\n")
@@ -142,24 +144,23 @@ class Stream:
         )
 
     def _usage(self, output_tokens: int) -> dict:
+        """A turn's counters as the real CLI shapes them: the first turn pays for the brief as new
+        input on top of the cached system prompt and tool definitions; every later turn reads all of
+        that from the cache and adds only the last tool result, so the context grows turn by turn."""
         turn = self.message_count
-        context = CONTEXT_FLOOR_TOKENS + turn * 180
-        if turn == 0 and self.first_context_override:
-            context = self.first_context_override
-        fresh = 40 + (self.brief_tokens if turn == 0 else 120)
-        if self.cold and turn == 0:
-            usage = {
-                "input_tokens": fresh,
-                "cache_creation_input_tokens": context,
-                "cache_read_input_tokens": 0,
-            }
+        if turn == 0:
+            cached = self.first_context_override or CONTEXT_FLOOR_TOKENS
+            fresh = 40 + self.brief_tokens
         else:
-            usage = {
-                "input_tokens": fresh,
-                "cache_creation_input_tokens": 0,
-                "cache_read_input_tokens": context,
-            }
-        usage["output_tokens"] = output_tokens
+            cached = CONTEXT_FLOOR_TOKENS + self.brief_tokens + 40 + (turn - 1) * 180
+            fresh = 120
+        creating = self.cold and turn == 0
+        usage = {
+            "input_tokens": fresh,
+            "cache_creation_input_tokens": cached if creating else 0,
+            "cache_read_input_tokens": 0 if creating else cached,
+            "output_tokens": output_tokens,
+        }
         for key, value in usage.items():
             self.totals[key] += value
         return usage
@@ -274,14 +275,22 @@ class Stream:
     def text(self, text: str) -> None:
         self._message([{"type": "text", "text": text}])
 
-    def tool(self, command: str) -> tuple[str, bool]:
-        """A Bash tool call, executed for real in the working directory (where `./state` is)."""
+    def tool(self, command: str, *, deny: bool = False) -> tuple[str, bool]:
+        """A Bash tool call, executed for real in the working directory (where `./state` is), or
+        denied the way the CLI denies a call that no allow rule matches."""
         tool_id = f"toolu_fake_{self.message_count}"
         self._message(
             [{"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}]
         )
-        completed = subprocess.run(command, shell=True, capture_output=True, text=True, check=False)
-        output = completed.stdout if completed.returncode == 0 else completed.stderr
+        if deny:
+            output, failed = "Permission to use Bash with this command was denied", True
+            self.denials.append({"tool_name": "Bash", "tool_use_id": tool_id})
+        else:
+            completed = subprocess.run(
+                command, shell=True, capture_output=True, text=True, check=False
+            )
+            failed = completed.returncode != 0
+            output = completed.stderr if failed else completed.stdout
         self._emit(
             {
                 "type": "user",
@@ -292,14 +301,14 @@ class Stream:
                             "type": "tool_result",
                             "tool_use_id": tool_id,
                             "content": output,
-                            "is_error": completed.returncode != 0,
+                            "is_error": failed,
                         }
                     ],
                 },
                 "session_id": self.session_id,
             }
         )
-        return output, completed.returncode != 0
+        return output, failed
 
     def tool_raw(self, name: str, tool_input: dict) -> None:
         self._message(
@@ -336,7 +345,7 @@ class Stream:
                 "total_cost_usd": round(cost, 6),
                 "usage": dict(self.totals),
                 "modelUsage": {},
-                "permission_denials": [],
+                "permission_denials": self.denials,
             }
         )
 
@@ -362,6 +371,9 @@ def _recount_and_store(stream: Stream) -> None:
 
 def play_domain(stream: Stream, action: str, payload: dict, fault: str) -> str:
     if action == "calibrate":
+        return '{"ok": true}'
+    if action == "calibrate_tool":
+        stream.tool("./state list tickets", deny=fault == "deny_tool")
         return '{"ok": true}'
     if action == "create_ticket":
         ticket_id = None

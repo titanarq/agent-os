@@ -25,7 +25,8 @@ that closed several small issues at once name them all. This file starts on 2026
   document store, five actions (one whose node is deliberately silent, to exercise the gap note), a
   reference model of their rules, a fake `claude`, and `measure.py`, the measurement -- real calls
   need `--allow-real-calls`, never run under pytest and are capped at 30 in code by a persistent
-  counter; `summarize` computes p50/p95 latency, time-to-first-signal, cost per action and
+  counter, after free `--help`/`--version` checks of the real CLI and a calibration whose second
+  call proves the persistence tool ran; `summarize` computes p50/p95 latency, time-to-first-signal, cost per action and
   persisted-state coherence across three sessions from the raw files alone. Tests stub the backend
   and fail on a trap `claude` (`no_real_backend`). ADR
   `2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`;
