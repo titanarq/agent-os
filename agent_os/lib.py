@@ -262,12 +262,15 @@ class ClassEscalation(Strict):
 
 
 class TaskClass(Strict):
-    # Which of the four headless roles this class configures (agent_os/docs/adr/2026-09-14-a-pr-is-
+    # Which of the headless roles this class configures (agent_os/docs/adr/2026-09-14-a-pr-is-
     # validated-by-a-validator-agent-against-the-issues-acceptance-criteria.md). A worker's class
-    # is picked by the issue's `<!-- budget: <class> -->` line and there may be many of them; the
-    # other three roles have exactly one class each, named after the role, which is how
-    # `agent_task.sh <role>` resolves its model without a second mapping.
-    role: Literal["worker", "validator", "refiner", "planner"] = "worker"
+    # is picked by the issue's `<!-- budget: <class> -->` line and there may be many of them; every
+    # other role has exactly one class, named after the role, which is how `agent_task.sh <role>`
+    # resolves its model without a second mapping. `puntal` (Agentos v2, Phase 0) is the live
+    # stand-in for one UI action: its three ceilings bind ONE invocation, not an issue
+    # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
+    # cannot-write-code.md).
+    role: Literal["worker", "validator", "refiner", "planner", "puntal"] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
     backend: str
@@ -320,6 +323,15 @@ class TaskClass(Strict):
                 f"fallback names '{self.fallback.backend}', the class's own backend; "
                 "a fallback has to be a different one"
             )
+        return self
+
+    @model_validator(mode="after")
+    def a_puntal_declares_no_fallback(self) -> TaskClass:
+        # The puntal driver confines the backend with the flags of one CLI dialect and substitutes
+        # nothing: a click that cannot be answered on its own backend fails fast, which is what a
+        # person waiting for it needs. A declaration nothing would read is a config written wrong.
+        if self.role == "puntal" and self.fallback is not None:
+            raise ValueError("fallback is not supported on a puntal class: it never substitutes")
         return self
 
     @property
@@ -848,12 +860,49 @@ class PlannerConfig(Strict):
     reconcile_closed_lookback_days: int = 30
 
 
+class PuntalConfig(Strict):
+    """How a puntal (Agentos v2, Phase 0) reaches the app it stands in for and how long it may take
+    (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
+    cannot-write-code.md). Every key is optional, but the puntal driver refuses to run without a
+    persistence command: state is real from day one, and a puntal that cannot persist contradicts
+    itself between sessions (docs/AGENTOS_V2_PLAN.md, founding decision 4)."""
+
+    # The app's persistence API, as the command (shell-split into an argument vector) the puntal's
+    # one allowed tool runs from the host's root: `./state get tickets T-1` becomes `<this> get
+    # tickets T-1`. `puntal_task.sh --persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank
+    # it, which is how a bench points one run at a scratch store.
+    persistence_command: str = ""
+    # A text file, relative to the host's root, describing that command's subcommands: rendered into
+    # the contract at `__PERSISTENCE_API__` so the puntal does not spend a turn asking `--help`.
+    persistence_api_file: str = ""
+    # A hung process is the one failure a person waiting for a click cannot be told about, so the
+    # driver kills the run's process group after this many seconds. A SAFETY, not a budget: spend is
+    # bounded by the class's ceilings (agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-
+    # and-needs-a-written-budget.md), and nothing here is ever tuned to save tokens.
+    timeout_seconds: int = 90
+    # The most tool calls one invocation may make before the driver cuts it: the loop guard of a
+    # run that has no commits to count.
+    max_tool_calls: int = 12
+    # `claude --effort`: how hard the model thinks before it answers. Empty leaves the CLI's own
+    # default; the latency spike measures what a lower one buys.
+    effort: str = ""
+
+    @field_validator("timeout_seconds", "max_tool_calls")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be at least 1")
+        return value
+
+
 class AgentsConfig(Strict):
     project: ProjectConfig
     # The mechanism's own section, optional exactly as `planner:` is: a config that predates it
     # still loads, and an absent mechanism list audits nothing rather than failing the dispatch.
     mechanism: MechanismConfig = MechanismConfig()
     planner: PlannerConfig = PlannerConfig()
+    # Optional exactly as `planner:` is: a config that predates the puntal still loads.
+    puntal: PuntalConfig = PuntalConfig()
     classes: dict[str, TaskClass]
 
     @model_validator(mode="after")
@@ -916,6 +965,10 @@ def load_mechanism(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> Mechanis
 
 def load_planner_config(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> PlannerConfig:
     return load_agents_config(path).planner
+
+
+def load_puntal_config(path: pathlib.Path | str = DEFAULT_AGENTS_CONFIG) -> PuntalConfig:
+    return load_agents_config(path).puntal
 
 
 def worktree_path(

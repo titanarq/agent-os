@@ -224,6 +224,32 @@ planner:
   # refiner unattended. False until a human has reviewed one of its dry runs.
   refiner_unattended: false
 
+# The puntal (Agentos v2, Phase 0): the live stand-in for one UI action that has no hand-written
+# implementation yet, a one-shot headless process per click (`bin/puntal_task.sh`, ADR
+# 2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code).
+# Every key is optional and these are the defaults, but the driver refuses to run a puntal that has
+# no `persistence_command` (state is real from day one: a puntal that cannot persist contradicts
+# itself between sessions).
+puntal:
+  # The app's persistence API: the command (shell-split) the puntal's ONE tool runs, from the
+  # host's root, with the arguments the puntal gives it -- `./state get tickets T-1` runs
+  # `<persistence_command> get tickets T-1`. The puntal reads and writes state through it and
+  # through nothing else. `puntal_task.sh --persistence-command` and the environment variable
+  # `PUNTAL_PERSISTENCE_COMMAND` outrank this key. Example:
+  #   persistence_command: .venv/bin/python scripts/app_state.py
+  persistence_command: ""
+  # A text file (relative to the host's root) describing that command's subcommands, rendered into
+  # the puntal's contract so it spends no turn asking `--help`. Empty renders nothing there.
+  persistence_api_file: ""
+  # Kills the run's process group after this many seconds. A hung-process SAFETY for a person
+  # waiting on a click, never a budget: spend is bounded by `classes.puntal` below.
+  timeout_seconds: 90
+  # The most tool calls one invocation may make before the driver cuts it (a loop guard; a run with
+  # no commits has no commit cadence to catch one).
+  max_tool_calls: 12
+  # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
+  effort: ""
+
 # The budget classes. `max_context` applies per stage process, fresh at every stage;
 # `max_cost_usd` and `max_total_tokens` apply to the whole issue. Every issue body names one in a
 # `<!-- budget: <class> -->` line; a class with a `role:` field belongs to that role instead.
@@ -340,3 +366,21 @@ classes:
       backend: qwen
       model: qwen3.8-max
       ceilings: [max_context, max_total_tokens]
+
+  # The puntal's class: small context and a low ceiling PER INVOCATION -- `max_context`,
+  # `max_cost_usd` and `max_total_tokens` all bind one click, not an issue, and are checked on the
+  # run's own stream: `max_cost_usd` is also handed to the CLI (`--max-budget-usd`), and the driver
+  # cuts a run whose context or token total passes its ceiling. Placeholders until the latency
+  # spike measures a real floor. No `fallback:` (refused at load: the puntal never changes
+  # backend), and `commit_*_turns` are required by the schema and read by nothing for this role,
+  # as for the planner. Its logs and `runs.tsv` are `.cache/puntal/`.
+  puntal:
+    role: puntal
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 30000
+    max_cost_usd: 0.25
+    max_total_tokens: 300000
+    commit_warn_turns: 6
+    commit_cut_turns: 12
+    qwen_fallback_eligible: false
