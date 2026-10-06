@@ -155,7 +155,8 @@ Exit: the owner uses the product.
   through the app's API (which keeps derived data itself), post-helpers run off the critical path,
   and the slow path (a read the node did not declare) stays as the escape. `bin/puntal_task.sh` and
   `agent_os/puntal.py` change accordingly; the first real measurement is on the vector's actions.
-- Minimal question sessions (where they happen is an open item).
+- Minimal question sessions: one GitHub issue per session, opened by the owner
+  (`docs/tree/dec-a-question-session-is-a-github-issue.md`).
 - The tree format gains `experiments` (spike, demand probe, question with scope `what` or `how` and
   a default answer, lookup; outcome `open` allowed); an open `what` question blocks the hardening of
   its node, and its default stays schematic.
@@ -214,7 +215,7 @@ Where each piece lives. "Host" is the product's repository (the vector first).
 | Product shell | Every action goes to code or to a puntal; test-session mode; records the owner's feedback | host, the app's own code (stack of the product) | 1 |
 | Progress board | Progress per branch; the owner's order of the backlog | the host repository's GitHub Project | 1 |
 | Test sessions | The owner tries a branch, accepts or rejects, answers the puntals' questions | inside the shell | 1 |
-| Question sessions | Batches of `what` questions; reviews of the tree and of method proposals | open item | 1 |
+| Question sessions | Batches of `what` questions; reviews of the tree and of method proposals | one GitHub issue per session, in the host repository | 1 |
 | Product tree | Goals, requirements, use cases, decisions, experiments, components | host `product/` (`tree.root`) | 1 |
 | Agentos's own tree | Agentos's goals, requirements, use cases and decisions | agent-os `docs/tree/` | done |
 | Components | Reusable pieces with a core and extensions | host `components/`, a package of its own; a shared repository in Stage 3 | 2 |
@@ -267,8 +268,10 @@ is part of compression, in Stage 3.
     of latency where they start improvised.
   - Reusable components start inside the vector, as a package of its own, and move to a shared
     repository when they are reused across products.
-- **Open doubts of the how pass**: where question sessions happen. (Closed on 2026-10-06: the
-  Phase 0 no-go, by `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`.)
+- **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
+  (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
+  happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Next: the mechanism of each
+  requirement, goal by goal.
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,
