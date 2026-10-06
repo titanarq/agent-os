@@ -22,6 +22,7 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
+| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, Phase 0 spike, §4.7); reads and writes state only through the app's persistence API | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -333,6 +334,10 @@ per-turn sum; the follow-up is §7 row (v).
   `.cache/<role>/runs.tsv` (timestamp, context, model, turns, cost) — `agent_os.lib:1034`
   (`planner_run_row`), `agent_os/bin/agent_task.sh:74-80` (`agent_append_run_row`).
 - A full, never-truncated log per run: `.cache/planner/<ts>.log`, `.cache/<role>/<ts>.log`.
+- Per puntal invocation (§4.7): `.cache/puntal/runs.tsv` (the same five columns), a per-run log
+  `.cache/puntal/<ts>-<µs>-<pid>.log` and, beside them, `.cache/puntal/telemetry.jsonl` -- one JSON
+  line per invocation with latencies, tokens, cost and tool calls, which is not a spend record but the
+  usage record the refiner will consume.
 - Those files are the drivers' own, never a role's (agent-os#33): each planner, validator and
   refiner run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory under `$TMPDIR`
   (outside the run dir and the checkout) for its working files, and the driver removes it on every
@@ -414,6 +419,7 @@ agent_os/
 │   ├── install.py                 agent-os-install: systemd units + copy-if-absent templates
 │   ├── issues.py                  tracker CLI over gh: list/show/create/update/validate/move/…
 │   ├── lib.py                     config models, dispatch/budget predicates, jsonl event reading
+│   ├── puntal.py                  the puntal driver's Python half (§4.7)
 │   └── render.py                  __TOKEN__ substitution for the agents/*.md templates
 ├── agents/                      templates for the .claude/agents/*.md prompts
 │   ├── control-plane.md
@@ -423,16 +429,19 @@ agent_os/
 │   ├── agent_task.sh              one-shot driver for validator/refiner
 │   ├── notify.sh                  pages the project's ntfy topic
 │   ├── planner_task.sh            planner driver, one `claude -p` per decision
+│   ├── puntal_task.sh             puntal driver, one `claude -p` per UI action (§4.7)
 │   ├── _python.sh                 the one interpreter/host-root resolver every driver sources
 │   ├── qwen_task.sh               compatibility wrapper (`exec worker_task.sh qwen "$@"`)
 │   ├── worker_progress.sh         what the workers have done lately and spent, one screen
 │   └── worker_task.sh             worker driver: init/branch/start/status/watch/collect/open-pr/…
+├── bench/puntal/                the puntal spike's instrument, outside the package (§4.7)
 ├── bootstrap.sh                 builds agent_os/.venv, installs the package editable; idempotent
 ├── config.example.yaml          every §4.2 key, filled in for an invented project
 ├── docs/                        the mechanism's own docs
 │   └── AGENT_OS.md                 this document
 ├── prompts/                     one template per role, rendered by agent_lib.render_prompt
 │   ├── planner.md
+│   ├── puntal.md
 │   ├── refiner.md
 │   ├── validator.md
 │   └── worker.md
@@ -510,7 +519,8 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `tree.root` | the directory of the product tree and the decision ledger (§4.6), relative to the host's root; `agent-os-tree --root` overrides it for one run | `product` (the default) |
 | `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-qwen` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
-| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role`, optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
+| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -719,6 +729,183 @@ subtree) are skipped. A ticket has the shape of the repository's dispatchable is
 The founding decisions of the plan are the ledger's first entries, in `docs/ledger/`;
 `tests/test_tree_founding_decisions.py` runs the doctor and the slicing over them.
 
+### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
+
+A **puntal** is the shore that props a building up: the product's interface goes live early, every
+action in it is bound to a use case, and an action nobody has implemented yet is answered, live, by a
+headless agent instead of by code (`docs/AGENTOS_V2_PLAN.md`, "Puntal layer"). `bin/puntal_task.sh`
+is that agent's driver -- a sibling of `worker_task.sh`, founding decision 6 -- and Phase 0 builds it
+as a **spike**: it exists to be measured, and whether a process per click is fast and cheap enough is
+the question `docs/spikes/2026-10-puntal-latency.md` answers once the measurement below has been
+run. The binding decisions are in
+`docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`.
+
+**Calling it.** The node slice (the use case and the goals above it), the payload and the relevant
+persisted state are plain text, from a file or from stdin (`-`); this driver knows nothing of the
+product tree that will one day produce a slice.
+
+```
+agent_os/bin/puntal_task.sh --action ACTION --node-file NODE.md [--payload TEXT | --payload-file F]
+    [--state-file F] [--node-id ID] [--session-id S] [--invocation-id ID] [--label KEY=VALUE ...]
+    [--model M] [--effort E] [--timeout SECONDS] [--persistence-command CMD]
+    [--telemetry-file F] [--dry-run]
+```
+
+STDOUT is the response and nothing else, and it is empty unless the run was answered; stderr carries
+the diagnostics. The exit status says how it ended: `0` answered, `1` the backend failed, `2` not run
+(refused before anything was spent), `3` the run broke the contract, `4` a ceiling cut it, `124` the
+safety timeout killed it. `--dry-run` prints the resolved launch -- flags, contract, brief -- and
+spends nothing. Unlike the other role drivers it does not detach, mints no GitHub identity, writes no
+planner event and wakes nobody: the caller is waiting for the answer on stdout.
+
+**What it launches.** One `claude -p` in a throwaway, empty scratch directory (so no project
+`CLAUDE.md`, `.claude/`, `.mcp.json`, memory or git status reaches the context), with the contract
+`prompts/puntal.md` as the whole system prompt and the brief -- node slice, action, payload, state --
+as the first message. The flags, and why each one is there:
+
+| Flag | Why |
+|---|---|
+| `-p --output-format stream-json --verbose --include-partial-messages` | streaming: the driver stamps every event on arrival, which is what makes time-to-first-signal measurable |
+| `--safe-mode` | the user's `CLAUDE.md` and rules, skills, plugins, hooks, MCP servers, custom agents, LSP and auto memory stay out of the context. Works with a subscription login (`--bare` does not: it reads `ANTHROPIC_API_KEY` only) |
+| `--system-prompt <contract>` | replaces Claude Code's own system prompt wholesale, so the contract is all of it |
+| `--tools=Bash` | the only built-in tool in the model's context is Bash; Read, Write, Edit, WebFetch, Task... are not there to be misused. Written `--name=value`: a variadic option followed by a space swallows the prompt that follows |
+| `--permission-mode dontAsk` `--allowedTools=Bash(./state *)` | a call that would ask for approval is denied, so the one Bash command that runs is the persistence shim |
+| `--max-budget-usd <classes.puntal.max_cost_usd>` | the CLI's own per-invocation dollar cut |
+| `--no-session-persistence` | no transcript is written under `~/.claude` for a throwaway run |
+| `--model`, `--effort` | `classes.puntal.model` / `--model`; `puntal.effort` / `--effort` |
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` is exported to the backend (version checks and telemetry
+are start-up latency a person waiting on a click should not pay). The driver also prints, in every
+telemetry record, the exact flag list the run was launched with (`launch.flags`).
+
+**How "the puntal never writes code" is enforced**, as far as the CLI allows, in layers
+(`agent_os/puntal.py` docstring):
+
+1. *Availability*: `--tools=Bash`; no file-writing tool is in the model's context.
+2. *Permission*: `dontAsk` plus one allow rule. The shim `./state` -- written into the scratch
+   directory by the driver -- runs the app's persistence command from the host's root with whatever
+   arguments the puntal gives it, and it is the only command the rule lets through.
+3. *Audit*: every `tool_use` is checked as its block closes, before its result can return
+   (`audit_tool_call`): it must be Bash, run `./state`, and carry no shell operator, command
+   substitution or second line. The first violation SIGTERMs the run's process group; the run ends as
+   `contract_violation` (exit 3) and hands the app no response.
+4. *Record*: every tool call and its command, every violation, every file found in the scratch
+   directory after the run (`scratch_extra_entries`) and the CLI's own count of denied calls
+   (`permission_denials`) are in the telemetry, so "the puntal wrote no code" is a query over the
+   log, and the bench's summary prints it as a verdict.
+
+**The known hole**: Claude Code auto-approves *read-only* Bash commands (`cat`, `ls`...) whatever the
+permission rules say, so layers 1 and 2 do not stop the model reading a file; layer 3 cuts the run at
+the first such call and layer 4 records it, but one such command may have run by then. An MCP server
+exposing the persistence API as its only tool would close it, and was not used: `--safe-mode` drops
+every non-SDK MCP server (read in the CLI's own source, v2.1.289), and without `--safe-mode` the
+user's own plugins, connectors and hooks are back in the context.
+
+**Budget class and ceilings.** `classes.puntal` (`role: puntal`) is the budget class. Its three
+ceilings bind **one invocation**, not an issue: `max_context` (the largest single turn) and
+`max_total_tokens` (all turns) are checked on the live stream and cut the run (`ceiling_cut`, exit
+4); `max_cost_usd` is handed to the CLI (`--max-budget-usd`) and checked again on the result;
+`puntal.max_tool_calls` cuts a loop. `puntal.timeout_seconds` SIGKILLs a hung process group
+(`timeout`, exit 124): a safety for a person waiting on a click, never a budget
+(`docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md`). The numbers in
+`config.example.yaml` are placeholders until the spike measures a real floor. There is no launch
+gate: a puntal never substitutes a backend, and a `fallback:` on its class is refused at load.
+
+**What it leaves.** `.cache/puntal/runs.tsv` (the five columns every role's has, via the same
+helper), one log per run `.cache/puntal/<ts>-<µs>-<pid>.log` (never reused: parallel clicks are the
+point) with its `.exited` marker, and the telemetry line. `AGENT_CACHE_DIR` moves the first two, as
+it does for the validator and the refiner. The log carries the `backend:` header and the raw stream,
+and the class is a non-worker role, so **the guard reads a puntal run as one more quota observation**
+(`role_log_quota_observations`): a puntal that meets the rate-limit wall updates the backend's verdict
+like any role. There is no PID file and the role is not in `ONE_SHOT_ROLES`: no `role_died` event
+exists for a run whose caller is waiting for it.
+
+**The telemetry record.** One JSON object per line in `.cache/puntal/telemetry.jsonl` (or
+`--telemetry-file`), appended under a lock, for every invocation whatever its outcome. This file is
+the telemetry the refiner will consume to choose what to harden into code. Latencies are in seconds
+from the moment `puntal_task.sh` was entered -- the click reaching the driver -- so the shell, the
+interpreter's start-up and the config load are inside them. `schema` is bumped on an incompatible
+change.
+
+| Field | Meaning |
+|---|---|
+| `schema` | the record's version (`1`) |
+| `invocation_id` | a UUID, or the caller's `--invocation-id`; the join key to anything the caller keeps |
+| `started_at` | UTC, millisecond precision |
+| `action`, `node` | the UI action, and the node it is bound to (`--node-id`, else the node file's stem) |
+| `node_digest` | `sha256:` and 16 hex digits of the node slice: tells a node that changed between two clicks |
+| `session_id` | the APP's session (`--session-id`): groups the clicks of one user session |
+| `backend_session_id` | the backend's own session id of this process |
+| `labels` | the caller's `--label KEY=VALUE` pairs, free-form (the bench puts `stage` and `step` here) |
+| `class`, `backend`, `model`, `effort` | what ran; `effort` is null when the CLI's default was used |
+| `outcome`, `outcome_detail` | `ok`, `error`, `timeout`, `contract_violation` or `ceiling_cut`, and why |
+| `exit_code` | the backend process's, null if it never started |
+| `latency_s` | `total` (entry to response complete); `python_startup` (entry to the interpreter being ready: shell, imports); `launch_overhead` (entry to the backend being spawned); `first_event` (first stream line, the CLI's init); `first_message` (first `message_start`); `first_tool_call`; **`first_text_delta`**: the first assistant text delta of any message, which is the **time-to-first-signal** -- the first thing a UI could show; `final_answer_first_delta` (the first delta of the message that carries the answer, after the tool calls); `backend_reported` (the CLI's own `duration_ms`, `duration_api_ms` and `ttft_ms` when it reports them, a cross-check). A milestone that never happened is null |
+| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `first_turn` (the four counters of the very first turn, before any tool result) and `context_tokens_first_turn` (their context sum: **the context floor of the call**, system prompt, tool definitions and brief), `context_tokens_peak` (the largest single turn) and `turns` (null for a run that was cut before its `result`) |
+| `cost_usd` | the CLI's `total_cost_usd`; under a subscription it is notional (API-equivalent). Null when the run produced no `result` |
+| `tool_calls` | per call: `name`, `command` (Bash only), `at_s`, `violation`, `is_error`, `result_chars` |
+| `tool_violations` | the audit's findings; empty means the puntal ran only `./state` |
+| `init` | what the CLI said it started with: `tools`, `mcp_servers`, `permission_mode`, `claude_code_version` -- evidence the confinement took |
+| `permission_denials` | how many calls the CLI itself denied |
+| `ceilings` | the four ceilings and the timeout this run was bound by, and `exceeded` (any passed, cut or not) |
+| `launch` | `flags` (the exact confining flags) and `persistence_command` |
+| `scratch_extra_entries` | files found in the scratch directory after the run, other than the shim |
+| `response` | the response the app received (empty text for a run that did not finish) |
+| `gap_note` | the *gap note*, below, or null |
+| `stderr_tail` | the last non-JSON lines the backend printed, kept only when the run was not `ok` |
+
+**The gap note.** When the action asks for something its node does not describe, the contract tells
+the puntal to do the closest safe thing and end its final message with one line,
+`GAP: asked for <what>; the node does not describe it`. The driver strips that line from the response
+(the last line starting with `GAP:`) and records it in `gap_note`: the telemetry the refiner reads to
+find use cases that need a node written or sharpened.
+
+**The bench and the measurement** (`bench/puntal/`, outside the `agent_os` package and so outside the
+wheel: it is an instrument, not mechanism, and nothing imports it). A helpdesk of tickets over a JSON
+document store (`store.py`, a CLI of atomic file writes with a locked counter), four nodes bound to
+five actions -- `create_ticket`, `change_status`, `show_board`, `board_report`, and `export_csv`
+bound to the show-board node that says nothing of exporting, the deliberate gap -- a reference model
+of their rules (`domain.py`), a fake `claude` that plays a perfect or a faulty puntal
+(`fake_claude.py`), and `measure.py`:
+
+```
+measure.py calibrate --dry-run             # 2 calls -> the context floor: the smallest brief, cold cache; then warm cache + ONE read through the persistence tool
+measure.py main --session 1 --dry-run      # 3 sessions of 8 over ONE store, a fresh process per call
+measure.py main --session 2                #   (replace --dry-run by --allow-real-calls to spend)
+measure.py main --session 3
+measure.py reserve --count 2 --model M     # up to 4 adaptive probes on the same store: another model, effort...
+measure.py summarize [--json]              # latency, cost, coherence: from the raw files only
+measure.py status | check-store
+```
+
+Run it with the mechanism's interpreter, `.venv/bin/python bench/puntal/measure.py <stage> ...`: it
+imports the package and `pyyaml`. Everything lands in `--workdir` (default `.cache/puntal-bench/`): the shared store, `telemetry.jsonl`
+(the driver's records), `trace.jsonl` (the harness's: action, payload and the whole store before and
+after each call) and the generated `agents.yaml`. **Real calls are guarded in code**: they need
+`--allow-real-calls`; the script refuses under pytest; every real call is counted in a persistent
+file (`~/.cache/agent-os/puntal-bench-real-calls.json`, so the count spans checkouts) *before* it is
+made, and the 31st is refused -- `REAL_CALL_CAP` is a constant, not a setting; a stage that would not
+fit in what remains is refused whole before it starts; a dry run never touches the counter. Before
+a real stage's first call it runs `claude --help` and `claude <the driver's flags> --version` -- the
+only other commands it ever runs on the real CLI -- to check that every flag is still listed and
+every value still accepted; the calibration's second call makes one read through the persistence
+tool and the stage stops if that call did not run (a denied or missing tool would fail every action
+of every session the same way), and no real session starts before the calibration passed; two
+failed invocations in a row stop a stage (one stops the calibration), so a setup that fails
+systematically does not burn the cap. The tests stub the backend
+and fail if a trap `claude` on PATH is ever reached.
+
+`summarize` reports p50/p95 of full-response latency and of time-to-first-signal (and the other
+milestones), cost per action (mean, and tokens), the prompt-cache split, the calibration floor, and
+**coherence** from three oracles that blame different things: the store's invariants (sequential ids,
+the derived `summary/board` equal to a recount, status and resolution consistent), a one-step replay of
+each action's rules from the store as it was before the call, and a ledger replayed from the empty
+store and compared with the store at every session boundary -- a fact established in session N that
+is no longer true in N+1, or reported differently in N+1, is listed with its evidence. It states its
+own sample size (`p95` of 24 is the 23rd value; one slow call moves it) and that `total_cost_usd` is
+notional. It judges the plan's starting points (first signal < 5 s, full response p95 < 30 s, mean
+cost < $0.10, zero contradictions) and adds one of its own, that the puntal ran only `./state`.
+
 ## 5. Export recipe
 
 1. **Copy `agent_os/` as a unit** — `git subtree add --prefix=agent_os <the split repo> main`,
@@ -880,6 +1067,8 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
+| `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.7). Not a role the planner launches |
+| `bench/puntal/measure.py calibrate\|main\|reserve\|summarize\|status` | the lead, once, deliberately | the puntal spike's measurement; the only place real calls are authorised, capped at 30 in code (§4.7) |
 | `agent_os.guard check\|tick\|wake\|promote-refined\|event` | exit hook (`check`), systemd timer (`tick`), `wake`/drivers (`event`), a human (`promote-refined`, by hand), or control-plane via `issues.py update --add-label wake:planner` (never this script directly) | exit-hook bookkeeping; the periodic budget/liveness/quota/drift check, which also reconciles mechanical state (closed → `done`, `promote_refined`, `orphan_doing`) and reports a one-shot role run whose PID is dead with its PID file still on disk as `role_died` (#400); advances `merged_seen.json` and may write `pr_merged`; removes any `wake:planner` label found and may write `nudged` (#413); the `flock`-guarded planner invocation; write a `<kind>` event; the `status:refine → status:ready` sweep, which the tick now runs on every fire |
 | `agent_os/bin/notify.sh "<message>"` | guard, planner | one ntfy.sh POST to the project's single topic |
 | `agent_os/bin/worker_progress.sh [issue] [--hours H]` | human | what the workers have done lately and what they have spent, in one screen |

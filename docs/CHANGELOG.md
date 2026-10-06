@@ -8,6 +8,31 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Agentos v2, Phase 0 (`docs/AGENTOS_V2_PLAN.md`) -- the puntal spike. A **puntal** answers one live
+  UI action with one headless `claude -p`, reading the action's node slice and reading and writing
+  state only through the app's persistence API. New `bin/puntal_task.sh` (a thin shell half) and
+  `agent_os/puntal.py`: the brief is rendered from the new `prompts/puntal.md`, the run is launched
+  in an empty scratch directory with `--safe-mode`, `--tools=Bash`, `--permission-mode dontAsk` and one
+  allow rule for the persistence shim `./state`, the stream is audited as it arrives and the run is
+  cut at the first tool call outside that contract, at a passed ceiling, or at the safety timeout.
+  Every invocation appends one JSON line of telemetry (action, node, session, latencies including
+  time-to-first-signal, tokens, cost, tool calls, response, gap note) and one `runs.tsv` row. New
+  `TaskClass.role: puntal` (`classes.puntal`: its three ceilings bind one invocation; a `fallback:`
+  on it is refused at load) and a `puntal:` config section (`persistence_command`,
+  `persistence_api_file`, `timeout_seconds`, `max_tool_calls`, `effort`), all optional with the
+  defaults in `config.example.yaml`; a puntal logs under `.cache/puntal/` and the guard reads those
+  logs as role quota observations. `bench/puntal/`, outside the package: a toy helpdesk over a JSON
+  document store, five actions (one whose node is deliberately silent, to exercise the gap note), a
+  reference model of their rules, a fake `claude`, and `measure.py`, the measurement -- real calls
+  need `--allow-real-calls`, never run under pytest and are capped at 30 in code by a persistent
+  counter, after free `--help`/`--version` checks of the real CLI and a calibration whose second
+  call proves the persistence tool ran; `summarize` computes p50/p95 latency, time-to-first-signal, cost per action and
+  persisted-state coherence across three sessions from the raw files alone. Tests stub the backend
+  and fail on a trap `claude` (`no_real_backend`). ADR
+  `2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`;
+  `docs/AGENT_OS.md` §4.7. Numbers and the go/no-go are `docs/spikes/2026-10-puntal-latency.md`, not
+  written yet. Hosts: a `subtree pull`; nothing to configure unless you run puntales.
+
 - Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
   the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and
   console script `agent-os-tree`: a node (goal, functional requirement, use case) and a decision are
