@@ -47,7 +47,7 @@ def _flattened(text: str) -> str:
 
 
 def test_the_example_config_carries_one_expert_class_on_sonnet():
-    expert_class = load_role_class("expert")
+    _, expert_class = load_role_class("expert")
     assert expert_class.role == "expert"
     assert "sonnet" in expert_class.model
     assert expert_class.fallback is None
