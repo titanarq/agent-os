@@ -165,8 +165,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     It also carries a **`Node-Change` trailer step** (agent-os#116): every commit of a pull request
     that touches the product tree (`tree.root`, default `product/`) must end with exactly one
     `Node-Change: usage | rework | owner` trailer, or the step fails
-    (`agent-os-tree trailers`, `docs/AGENT_OS.md` §4.6). The step fetches the PR's history and
-    installs only `pyyaml` and `pydantic`; a host with no tree yet passes it with nothing to check.
+    (`agent-os-tree trailers`, `docs/AGENT_OS.md` §4.6). The step runs on the mechanism's interpreter
+    the ratchet's bootstrap step builds and on the full history that checkout fetches; a host
+    with no tree yet passes it with nothing to check.
     A host adopting this after a `subtree pull` needs no config change, but its own existing
     `config/agents.yaml` keeps the models it names: the new defaults (Sonnet for every role, Opus
     only for the `custodian` and `consolidator` keys of `project.agent_models`) apply to a host only
