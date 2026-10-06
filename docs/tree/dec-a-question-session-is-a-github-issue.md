@@ -27,3 +27,5 @@ numbered, grouped by branch, ordered by what they block, and each carrying its d
 owner answers only the ones they want ("1: yes; 3: no, rather X"); the reply wakes the planner, and
 each answer is written back into its node. A question left unanswered keeps its default, stays
 open and comes back in the next session. Questions reach the expert before they reach this issue.
+Each session also carries a short digest of what was decided without the owner, so the owner can
+reclaim what was theirs (`dec-a-doubt-of-how-is-settled-by-an-experiment`).
