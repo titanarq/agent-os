@@ -940,45 +940,30 @@ class PlannerConfig(Strict):
 
 
 class PuntalConfig(Strict):
-    """How a puntal (Agentos v2, Phase 0) reaches the app it stands in for and how long it may take
+    """How a puntal (Agentos v2) reaches the app it stands in for and how long it may take
     (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
-    cannot-write-code.md). Every key is optional, but the puntal driver refuses to run without a
-    persistence command: state is real from day one, and a puntal that cannot persist contradicts
-    itself between sessions (docs/AGENTOS_V2_PLAN.md, founding decision 4)."""
+    cannot-write-code.md). Every key is optional, but the driver refuses to run without a
+    persistence command and, on its default path, without an executor command."""
 
-    # The app's persistence API, as the command (shell-split into an argument vector) the puntal's
-    # one allowed tool runs from the host's root: `./state get tickets T-1` becomes `<this> get
-    # tickets T-1`. `puntal_task.sh --persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank
-    # it, which is how a bench points one run at a scratch store.
+    # The app's persistence API: the command (shell-split) behind `./state get tickets T-1` and the
+    # pre-helper's reads. `--persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank it.
     persistence_command: str = ""
-    # A text file, relative to the host's root, describing that command's subcommands: rendered into
-    # the contract at `__PERSISTENCE_API__` so the puntal does not spend a turn asking `--help`.
+    # A text file (relative to the host's root) describing its subcommands, rendered into the slow
+    # path's contract at `__PERSISTENCE_API__`.
     persistence_api_file: str = ""
-    # The app's EXECUTOR: the command (shell-split) that applies a puntal's validated operations
-    # atomically through the app's own API. It reads `{"operations": [...]}` on stdin and prints
-    # `{"ok": true, "bindings": {...}}` or `{"ok": false, "errors": [...]}` -- the interface is
-    # `agent_os/product/puntal/fast/executor.py`. Empty: the driver can still hand the plan to a
-    # caller that applies it itself (`puntal_task.sh --json --plan-only`), but it refuses to run a
-    # fast-path invocation it could not finish. `PUNTAL_EXECUTOR_COMMAND` and `--executor-command`
-    # outrank it.
+    # The app's EXECUTOR: the command (shell-split) that applies a plan's operations atomically
+    # (agent_os/product/puntal/fast/executor.py). Empty makes the fast path refuse unless the caller
+    # asks for the plan alone. `--executor-command` and `PUNTAL_EXECUTOR_COMMAND` outrank it.
     executor_command: str = ""
-    # The first words a node's declared read may start with (`reads: [get tickets {payload.id}]`):
-    # the subcommands of the persistence API that change nothing. A declaration that names any other
-    # is skipped, so a node file can never make the pre-helper write.
+    # The words a node's declared read may start with: subcommands that change nothing.
     read_subcommands: list[str] = ["get", "list"]
-    # The executor is code on the click's critical path: past this many seconds it is cut and the
-    # invocation ends `executor_failed`.
-    executor_timeout_seconds: int = 30
-    # A hung process is the one failure a person waiting for a click cannot be told about, so the
-    # driver kills the run's process group after this many seconds. A SAFETY, not a budget: spend is
-    # bounded by the class's ceilings (agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-
-    # and-needs-a-written-budget.md), and nothing here is ever tuned to save tokens.
+    executor_timeout_seconds: int = 30  # the executor is on the click's critical path: cut after
+    # A model turn's process group is killed after this many seconds: a SAFETY for a person waiting
+    # on a click, not a budget (spend is bounded by the class's ceilings).
     timeout_seconds: int = 90
-    # The most tool calls one invocation may make before the driver cuts it: the loop guard of a
-    # run that has no commits to count.
+    # The slow path's loop guard: most tool calls before the driver cuts it.
     max_tool_calls: int = 12
-    # `claude --effort`: how hard the model thinks before it answers. Empty leaves the CLI's own
-    # default; the latency spike measures what a lower one buys.
+    # `claude --effort`. Empty leaves the CLI's own default.
     effort: str = ""
 
     @field_validator("timeout_seconds", "max_tool_calls", "executor_timeout_seconds")

@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import domain
 import fake_fast
+from fake_playbook import next_turn_index, play_playbook
 
 VALUE_FLAGS = {
     "--output-format",
@@ -465,49 +466,6 @@ def play_domain(stream: Stream, action: str, payload: dict, fault: str) -> str:
             else text + "\nGAP: asked for a CSV export; the node does not describe it"
         )
     return json.dumps({"ok": False, "reason": f"unknown action {action}"})
-
-
-def play_playbook(stream: Stream, steps: list[dict]) -> None:
-    for step in steps:
-        operation = step["op"]
-        if operation == "sleep":
-            time.sleep(step["seconds"])
-        elif operation == "text":
-            stream.text(step["text"])
-        elif operation == "tool":
-            stream.tool(step["command"])
-        elif operation == "tool_raw":
-            stream.tool_raw(step["name"], step.get("input", {}))
-        elif operation == "write_file":
-            with open(step["path"], "w") as handle:
-                handle.write("written by the fake")
-        elif operation == "raw":
-            sys.stdout.write(step["line"] + "\n")
-            sys.stdout.flush()
-        elif operation == "hang":
-            time.sleep(3600)
-        elif operation == "exit":
-            sys.exit(step.get("code", 0))
-        elif operation == "final":
-            stream.result(
-                step["text"],
-                subtype=step.get("subtype", "success"),
-                is_error=step.get("is_error", False),
-            )
-            sys.exit(step.get("code", 0))
-
-
-def next_turn_index(playbook: str, turn_count: int) -> int:
-    """Which turn of a multi-turn playbook this process is: how many ran before it, counted in a
-    file beside the playbook. Past the last turn, the last one repeats."""
-    counter = playbook + ".turn"
-    done = 0
-    if os.path.exists(counter):
-        with open(counter) as handle:
-            done = int(handle.read())
-    with open(counter, "w") as handle:
-        handle.write(str(done + 1))
-    return min(done, turn_count - 1)
 
 
 def section(brief: str, heading: str) -> str:
