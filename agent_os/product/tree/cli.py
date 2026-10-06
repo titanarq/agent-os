@@ -26,16 +26,21 @@ from collections.abc import Sequence
 
 from agent_os import lib
 from agent_os.cli import host_root
-from agent_os.tree.checks import check_tree
-from agent_os.tree.compile import (
+from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.compile import (
     CompileError,
     compile_tree,
     render_compile_json,
     render_compile_text,
     write_compile_files,
 )
-from agent_os.tree.loader import Defect, TreeRootError, load_tree, require_tree_root
-from agent_os.tree.slicing import SliceError, build_slice, render_slice_json, render_slice_markdown
+from agent_os.product.tree.loader import Defect, TreeRootError, load_tree, require_tree_root
+from agent_os.product.tree.slicing import (
+    SliceError,
+    build_slice,
+    render_slice_json,
+    render_slice_markdown,
+)
 
 PROGRAM = "agent-os-tree"
 

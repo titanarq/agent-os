@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import yaml
 from pydantic import ValidationError
 
-from agent_os.tree.models import (
+from agent_os.product.tree.models import (
     BODY_FIELD_BY_TYPE,
     DECISION_TYPE,
     IDENTIFIER_PATTERN,
@@ -34,7 +34,7 @@ from agent_os.tree.models import (
 MARKDOWN_SUFFIX = ".md"
 FRONTMATTER_FENCE = "---"
 
-# The loader's own defect codes. Every other code belongs to `agent_os.tree.checks`.
+# The loader's own defect codes. Every other code belongs to `agent_os.product.tree.checks`.
 ORPHAN_FILE = "orphan-file"
 BAD_FRONTMATTER = "bad-frontmatter"
 SCHEMA = "schema"

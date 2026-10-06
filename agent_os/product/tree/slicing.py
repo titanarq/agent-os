@@ -4,7 +4,7 @@ Cost and quality degrade with the context of a call, not with the number of call
 agent is handed is never the tree. A slice is the node itself, its ancestors up to the goal, and
 the decisions in force on that chain -- and by construction nothing of its siblings, its
 descendants or any decision that does not bind it. Its size is bounded by the length of one chain
-of ancestors, however large the tree grows (`tests/test_tree_slice.py` pins that).
+of ancestors, however large the tree grows (`tests/product/tree/test_tree_slice.py` pins that).
 
 Each ancestor brings its verification too, labelled as the acceptance the node's work serves and
 must not break: tests run top-down from the goals, so what a goal or a requirement is verified by
@@ -26,9 +26,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from agent_os.tree.checks import check_tree
-from agent_os.tree.loader import Defect, Tree
-from agent_os.tree.models import MECHANISM_PENDING, Decision, Node, Verification
+from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.loader import Defect, Tree
+from agent_os.product.tree.models import MECHANISM_PENDING, Decision, Node, Verification
 
 MECHANISM_PENDING_NOTE = (
     f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "

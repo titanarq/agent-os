@@ -19,7 +19,7 @@ Which nodes become tickets (the rule is one place, `_classify`):
 - a node with children is a container -- its use cases are the work -- and is skipped without
   comment, whether or not it has a verification: tests run top-down from the goals, so a
   container's verification is the acceptance of its subtree (it reaches every descendant's ticket
-  as context, see `agent_os.tree.slicing`) and never a ticket of its own;
+  as context, see `agent_os.product.tree.slicing`) and never a ticket of its own;
 - every other pending node needs an executable verification -- a `command`; a criterion an agent
   judges is acceptance and not executable -- and a mechanism that can be resolved (written, or
   `pending` with no spike having found it infeasible). One that lacks either is an ESCALATION:
@@ -37,10 +37,10 @@ from dataclasses import dataclass
 
 from agent_os.issues import prefixed_title, type_labels
 from agent_os.lib import AgentsConfig, validate_issue_body
-from agent_os.tree.checks import check_tree
-from agent_os.tree.loader import Defect, Tree
-from agent_os.tree.models import MECHANISM_PENDING, Node
-from agent_os.tree.slicing import (
+from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.loader import Defect, Tree
+from agent_os.product.tree.models import MECHANISM_PENDING, Node
+from agent_os.product.tree.slicing import (
     JUDGED_BY_AGENT_LABEL,
     Slice,
     assemble_slice,

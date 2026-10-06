@@ -2,7 +2,7 @@
 """A stand-in for the `claude` CLI, for the puntal driver's tests and the bench's `--dry-run`.
 
 It never opens a network connection and never spends a token. It accepts exactly the flags
-`agent_os.puntal.backend_flags` passes (an unknown option is an error, as the real CLI's is, so a
+`agent_os.product.puntal.backend_flags` passes (an unknown option is an error, as the real CLI's is, so a
 driver that drifts from the CLI's vocabulary fails a test and not a measurement), and it writes the
 same stream-json a real `claude -p --output-format stream-json --verbose --include-partial-messages`
 run writes: `system/init`, `stream_event`s with text and tool-input deltas, `assistant` messages,

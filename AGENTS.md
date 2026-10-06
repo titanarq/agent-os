@@ -5,7 +5,7 @@ Agentos lets one person build and evolve software products far beyond their indi
 without losing control of what gets built. It is a system of agents that turns its owner's goals
 into a working product, keeps that product faithful to those goals as it grows, and improves the
 way it does so with every product. Its own goals and requirements are the tree in `docs/tree/`
-(`python -m agent_os.tree validate --root docs/tree`); the construction plan is
+(`python -m agent_os.product.tree validate --root docs/tree`); the construction plan is
 `docs/AGENTOS_V2_PLAN.md`.
 
 Underneath sits the execution substrate (v1): a guard, a planner, workers and one-shot role drivers
@@ -37,6 +37,8 @@ non-obvious "why".
 
 ## Layout
 - `agent_os/` — the Python package: `guard`, `lib`, `issues`, `install`, `doctor`, `render`, `cli`…
+  `agent_os/product/` holds the v2 subsystems (`tree/`, `puntal.py`, and what Stage 1 adds); the root
+  stays for the v1 substrate (`docs/adr/2026-10-07-v2-subsystems-live-under-agent-os-product.md`).
 - `bin/` — the shell drivers (`worker_task.sh`, `agent_task.sh`, `planner_task.sh`, …) a host's
   `scripts/` wrappers `exec` into.
 - `prompts/` — role prompt templates, rendered with host tokens (`__TEST_COMMAND__`, …).
@@ -44,7 +46,8 @@ non-obvious "why".
   not tools for developing this repository.
 - `templates/` — what `agent-os-install` writes into a host (issue templates, systemd, CI).
 - `config.example.yaml` — the documented shape of a host's `config/agents.yaml`.
-- `tests/` — the suite: no database, no network, no real backend.
+- `tests/` — the suite: no database, no network, no real backend; `tests/product/` mirrors
+  `agent_os/product/`.
 
 ## Commands
 ```bash

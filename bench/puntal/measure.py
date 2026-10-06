@@ -56,8 +56,8 @@ import domain
 import yaml
 from store import Store
 
-from agent_os import puntal
 from agent_os.lib import load_agents_config
+from agent_os.product import puntal
 
 REPO_ROOT = HERE.parents[1]
 DRIVER = REPO_ROOT / "bin" / "puntal_task.sh"

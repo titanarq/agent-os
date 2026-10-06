@@ -15,5 +15,5 @@ The modules:
 - `agent_os.issues` -- the tracker CLI over `gh`.
 - `agent_os.gh_app_token` -- one installation token per GitHub App identity.
 - `agent_os.cli` -- where the package resolves its own interpreter and its host's root.
-- `agent_os.tree` -- the product tree and decision ledger of Agentos v2: schemas, doctor, slices, tickets.
+- `agent_os.product.tree` -- the product tree and decision ledger of Agentos v2: schemas, doctor, slices, tickets.
 """

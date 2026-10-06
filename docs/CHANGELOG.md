@@ -30,6 +30,11 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #112 -- the v2 subsystems move under `agent_os/product/` (`git mv`, no behaviour change):
+  `agent_os.tree` is now `agent_os.product.tree` and `agent_os.puntal` is `agent_os.product.puntal`;
+  their tests move to `tests/product/`. `agent-os-tree` and `bin/puntal_task.sh` keep their names.
+  A host that imported the old modules directly updates the import after its next subtree pull.
+  See `docs/adr/2026-10-07-v2-subsystems-live-under-agent-os-product.md`.
 - agent-os#90 — a backend runs more than one worker at once: slots, separate from backends. The
   backend's name was the only key a run's state was kept under, so the real ceiling was one worker
   per `project.backends` entry whatever `planner.max_parallel_issues` said. New

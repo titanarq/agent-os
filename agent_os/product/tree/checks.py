@@ -17,7 +17,7 @@ implementation pointer resolves.
 
 from __future__ import annotations
 
-from agent_os.tree.loader import (
+from agent_os.product.tree.loader import (
     BAD_FRONTMATTER,
     DUPLICATE_ID,
     ORPHAN_FILE,
@@ -25,7 +25,7 @@ from agent_os.tree.loader import (
     Defect,
     Tree,
 )
-from agent_os.tree.models import (
+from agent_os.product.tree.models import (
     ID_PREFIX_BY_TYPE,
     MECHANISM_PENDING,
     PARENT_TYPE_BY_TYPE,

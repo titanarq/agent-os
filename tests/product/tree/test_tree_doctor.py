@@ -1,4 +1,4 @@
-"""The tree doctor (`agent_os.tree.checks`): every rule is a named code, and a sound tree has none.
+"""The tree doctor (`agent_os.product.tree.checks`): every rule is a named code, and a sound tree has none.
 
 Each case starts from the smallest sound tree (`write_sound_tree`), breaks exactly one thing, and
 asserts the doctor reports exactly the expected `(file, code)` pairs -- so a check that fires twice,
@@ -19,9 +19,9 @@ from tree_helpers import (
     write_sound_tree,
 )
 
-from agent_os.tree.checks import CHECKS, check_tree
-from agent_os.tree.loader import TreeRootError, load_tree
-from agent_os.tree.models import (
+from agent_os.product.tree.checks import CHECKS, check_tree
+from agent_os.product.tree.loader import TreeRootError, load_tree
+from agent_os.product.tree.models import (
     BODY_FIELD_BY_TYPE,
     ID_PREFIX_BY_TYPE,
     NODE_TYPES,

@@ -1,4 +1,4 @@
-"""`bin/puntal_task.sh` and `agent_os/puntal.py` -- the puntal driver: what it launches, what it
+"""`bin/puntal_task.sh` and `agent_os/product/puntal.py` -- the puntal driver: what it launches, what it
 refuses, what it measures and what it logs.
 
 Nothing here spends a turn. Every launch goes to `bench/puntal/fake_claude.py`, passed to the driver
@@ -23,7 +23,6 @@ import yaml
 from conftest import EXAMPLE_CONFIG
 
 from agent_os import guard as agent_guard
-from agent_os import puntal
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     PROMPTS_DIR,
@@ -33,6 +32,7 @@ from agent_os.lib import (
     load_role_class,
     render_prompt,
 )
+from agent_os.product import puntal
 
 pytestmark = pytest.mark.usefixtures("no_real_backend")
 

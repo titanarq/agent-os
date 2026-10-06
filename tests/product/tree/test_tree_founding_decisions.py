@@ -19,10 +19,10 @@ import pytest
 from tree_helpers import write_node
 
 from agent_os.cli import AGENT_OS_DIR
-from agent_os.tree.checks import check_tree
-from agent_os.tree.cli import format_defect
-from agent_os.tree.loader import load_tree
-from agent_os.tree.slicing import SliceError, build_slice, render_slice_markdown
+from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.cli import format_defect
+from agent_os.product.tree.loader import load_tree
+from agent_os.product.tree.slicing import SliceError, build_slice, render_slice_markdown
 
 LEDGER = AGENT_OS_DIR / "docs" / "tree"
 PLAN = AGENT_OS_DIR / "docs" / "AGENTOS_V2_PLAN.md"

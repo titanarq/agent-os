@@ -975,7 +975,7 @@ class PuntalConfig(Strict):
 
 class TreeConfig(Strict):
     """Where a host's product tree lives and how the tickets compiled from it are named
-    (`agent_os.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
+    (`agent_os.product.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
 
     # The directory holding the product tree AND the decision ledger -- one directory of Markdown
     # files, nodes and decisions together, in any subdirectories the host likes -- relative to the
