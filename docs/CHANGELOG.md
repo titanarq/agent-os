@@ -8,6 +8,28 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Agentos v2, how pass, goal B (owner design discussion of 2026-10-06; no issue, branch
+  `feat/v2-how-goal-b`) -- a verification is a command or a judged criterion, and a goal without
+  evaluators is a red check. A `verification` entry of a node is now exactly one of `command` (with
+  its optional `expects`) or `judge`, a one-paragraph criterion in plain language that an agent
+  judges against what was built; both in one entry, neither, or `expects` with a `judge` is a
+  `schema` error. `hardened-needs-verification` now asks for at least one `command` (tests harden; a
+  judged criterion alone is acceptance). New red check `goal-without-evaluators`: a goal whose
+  `verification` is empty fails the doctor, one line with the file path (24 codes now). `context`
+  (Markdown and `--json`) and a `compile` ticket's acceptance criteria render a judged criterion
+  labelled "judged by an agent", for the node and for every ancestor, on one line so it cannot open
+  a section of the ticket; in `--json` every `verification` entry carries a `kind` (`command` or
+  `judge`) and a judged one a `label`. `compile`'s dispatch rule is unchanged: a leaf with only
+  judged criteria still escalates as `missing-verification` (Stage 1 changes that). Agentos's four
+  goals carry their evaluators as `judge` entries in `verification` instead of a list in the body
+  (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`,
+  `docs/tree/dec-a-goal-without-evaluators-is-a-red-check.md`,
+  `docs/tree/dec-tests-harden-they-do-not-build.md`; ADR
+  `2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`,
+  dated paragraph; `docs/AGENT_OS.md` §4.6). Host follow-up after a `subtree pull`: a host tree
+  with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
+  `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
+  `kind` now.
 - agent-os#90 — a backend runs more than one worker at once: slots, separate from backends. The
   backend's name was the only key a run's state was kept under, so the real ceiling was one worker
   per `project.backends` entry whatever `planner.max_parallel_issues` said. New

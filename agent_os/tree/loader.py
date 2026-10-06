@@ -150,6 +150,10 @@ def describe_validation_error(error: ValidationError, record_type: str) -> list[
             text = "must be lowercase words joined by hyphens (a-z, 0-9, -)"
         elif kind == "string_pattern_mismatch":
             text = "must be one line"
+        elif kind == "value_error":
+            # A rule the model states itself (a verification entry is a command or a judge): its
+            # own sentence, without pydantic's "Value error, " prefix.
+            text = str(item["ctx"]["error"])
         else:
             text = item["msg"]
         lines.append(f"{location}: {text}" if location else text)

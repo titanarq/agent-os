@@ -645,18 +645,30 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
-| `verification` | optional on a goal or a node with children (its acceptance); **mandatory for dispatch** of a leaf | list of `command` (exits 0 when the node holds) and optional `expects` (what a pass proves) |
+| `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a `command` is **mandatory for dispatch** of a leaf and for a `hardened` node | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised`, `hardened` |
 | `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
 | `spikes` | optional | timeboxed spike results: `question`, `outcome` (`feasible`, `infeasible`, `inconclusive`), `finding`, `date` |
 
 A goal carries none of `mechanism`, `implementation`, `spikes`, `foundation` or a state other than
-`pending`: it is not something to build. It *may* carry a `verification`, which is acceptance and
+`pending`: it is not something to build. It **must** carry a `verification`, which is acceptance and
 never dispatched work: **tests run top-down from the goals.** A goal's verification (and a
 requirement's, once it has use cases) is the evaluator that keeps the work under it from drifting;
 the tests written bottom-up at the leaves consolidate reliability. A node with children is a
 container whether or not it has a verification (see Tickets), so an upper node's verification is
 the acceptance of its subtree and never a ticket of its own.
+
+**A verification is a command or a judged criterion.** The top-down acceptance is essential from the
+first build and cannot always be checked deterministically, so an entry is either a `command` or a
+`judge`: one paragraph, in plain language, that an agent judges (pass or fail, with reasons) against
+what was built (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`). A goal's
+evaluators can therefore be written the day the goal is, with no data or code behind them yet
+(`docs/tree/dec-a-goal-without-evaluators-is-a-red-check.md`), and a goal with none fails the
+doctor. Only a `command` hardens: a `hardened` node needs at least one, because tests harden and a
+judged criterion alone is acceptance (`docs/tree/dec-tests-harden-they-do-not-build.md`). Agentos's
+own goals carry their evaluators this way, as `judge` entries. Nothing here runs the judge: the
+tree only carries the criterion and renders it, labelled as judged by an agent, to whoever works
+under it (see the slice and the tickets).
 
 **A decision.** The statement -- what was decided and what it binds -- is the Markdown body.
 
@@ -695,10 +707,11 @@ pointer.
 | `parent-type-mismatch` | a requirement is not under a goal, or a use case not under a requirement |
 | `parent-cycle` | the `parent` pointers loop |
 | `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `spikes`, `foundation`, or a state other than `pending`); `verification` is not one |
+| `goal-without-evaluators` | a goal's `verification` is empty: it needs at least one evaluator, a `command` or a `judge` |
 | `missing-work-field` | a requirement or use case has no `mechanism` (write `pending` to defer it) |
 | `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal issues, and the shell does not go live until they are hardened |
 | `hardened-needs-implementation` | a hardened node has no `implementation` |
-| `hardened-needs-verification` | a hardened node has no `verification` |
+| `hardened-needs-verification` | a hardened node has no `verification` with a `command`: tests harden, and a judged criterion alone is acceptance, not hardening |
 | `dangling-decision` | a node's `decisions` names an id that is not a decision |
 | `superseded-decision-in-use` | a node's `decisions` names a superseded decision; the line names the live successor |
 | `superseded-without-successor` | a superseded decision has no `superseded_by` |
@@ -715,7 +728,11 @@ never the tree: the node in full, its ancestors up to the goal (description, sou
 verification each one carries, labelled as the acceptance the node's work serves and must not
 break, in `--json` as each ancestor's `verification` list), and the
 decisions in force on that chain -- the node's own and its ancestors' -- each with its statement,
-premises, rejected alternatives, review triggers and the *count* of its friction entries. An
+premises, rejected alternatives, review triggers and the *count* of its friction entries. A
+criterion an agent judges is rendered for the node and for every ancestor as a line
+`judged by an agent: <criterion>` (one line, its whitespace collapsed); in `--json` every
+`verification` entry has a `kind`, and a judged one is `{"kind": "judge", "judge": ..., "label":
+"judged by an agent"}` where a command is `{"kind": "command", "command": ..., "expects": ...}`. An
 `under-review` decision is in the slice labelled "UNDER REVIEW -- still obeyed while it is
 challenged"; a superseded one never is. It contains no sibling, no descendant and no decision that
 does not bind the node, so its size is bounded by one chain of ancestors however large the tree
@@ -725,16 +742,19 @@ made of fails the doctor (the doctor's lines are printed); a defect elsewhere do
 
 **Tickets** (`agent-os-tree compile [--json] [--out-dir DIR] [--budget-class C] [--label L]`)
 renders; it creates no issue. A node becomes a ticket when it is a functional requirement or use
-case with no children, `pending`, has an executable `verification`, and its mechanism can be resolved (written, or
-`pending` with no spike having found it `infeasible`). A node that is pending but lacks a
+case with no children, `pending`, has an executable `verification` (a `command`; a judged criterion
+is acceptance and does not make a node dispatchable -- the rule itself is Stage 1's to change,
+`docs/tree/dec-tests-harden-they-do-not-build.md`), and its mechanism can be resolved (written, or
+`pending` with no spike having found it `infeasible`). A node that is pending but has no executable
 verification (a leaf), or whose pending mechanism a spike found infeasible, is reported as an
 **escalation** -- `missing-verification` or `mechanism-unresolvable` -- and never as a ticket. A goal,
 a node past `pending`, and a container (any node with children, whether or not it has a
 verification: its use cases are the work, and its own verification is the acceptance of its
 subtree) are skipped. A ticket has the shape of the repository's dispatchable issues:
-`## Objective` (the node), `## Acceptance criteria` (the node's own verification commands),
-`## Stages` (one to resolve and write back a pending mechanism, one to implement), `## Context`
-(the slice, which carries the verification of every ancestor as acceptance not to break),
+`## Objective` (the node), `## Acceptance criteria` (the node's own verification: each command as
+"exits 0", each judged criterion as `judged by an agent: <criterion>`), `## Stages` (one to
+resolve and write back a pending mechanism, one to implement), `## Context` (the slice, which
+carries the verification of every ancestor, judged criteria included, as acceptance not to break),
 `## Not included`, `## Dependencies` (`none`), `## Definition of done`, then
 `<!-- budget: <class> -->` and the address `<!-- node: <id> -->`; every body is checked by
 `validate_issue_body` before it is returned. The class is `--budget-class` or

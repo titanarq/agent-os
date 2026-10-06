@@ -42,6 +42,7 @@ DANGLING_PARENT = "dangling-parent"
 PARENT_TYPE_MISMATCH = "parent-type-mismatch"
 PARENT_CYCLE = "parent-cycle"
 GOAL_CARRIES_WORK_FIELDS = "goal-carries-work-fields"
+GOAL_WITHOUT_EVALUATORS = "goal-without-evaluators"
 MISSING_WORK_FIELD = "missing-work-field"
 FOUNDATION_IMPROVISED = "foundation-improvised"
 HARDENED_NEEDS_IMPLEMENTATION = "hardened-needs-implementation"
@@ -78,7 +79,11 @@ CHECKS: dict[str, str] = {
     PARENT_CYCLE: "the chain of `parent` pointers loops back on itself",
     GOAL_CARRIES_WORK_FIELDS: (
         "a goal carries a work field (mechanism, implementation, spikes, foundation, or a state "
-        "other than pending); a goal may carry a verification, which is acceptance and never work"
+        "other than pending); `verification` is not one: it is acceptance and never work"
+    ),
+    GOAL_WITHOUT_EVALUATORS: (
+        "a goal's `verification` is empty: a goal needs at least one evaluator, a `command` or a "
+        "`judge` criterion an agent judges"
     ),
     MISSING_WORK_FIELD: (
         "a functional requirement or a use case has no `mechanism` (write `pending` to defer it)"
@@ -88,7 +93,10 @@ CHECKS: dict[str, str] = {
         "does not go live until they are hardened"
     ),
     HARDENED_NEEDS_IMPLEMENTATION: "a hardened node has no `implementation` pointer",
-    HARDENED_NEEDS_VERIFICATION: "a hardened node has no executable `verification`",
+    HARDENED_NEEDS_VERIFICATION: (
+        "a hardened node has no `verification` with a `command`: tests harden, and a judged "
+        "criterion alone is acceptance, not hardening"
+    ),
     DANGLING_DECISION: "a node's `decisions` names an id that is not a decision",
     SUPERSEDED_DECISION_IN_USE: (
         "a node's `decisions` names a superseded decision; it must name the successor"
@@ -140,6 +148,15 @@ def _check_node_records(tree: Tree) -> list[Defect]:
                 defects.append(
                     Defect(path, GOAL_CARRIES_WORK_FIELDS, f"a goal carries {', '.join(carried)}")
                 )
+            if not node.verification:
+                defects.append(
+                    Defect(
+                        path,
+                        GOAL_WITHOUT_EVALUATORS,
+                        "no evaluator in `verification`: a goal needs at least one, a `command` "
+                        "or a `judge` criterion an agent judges",
+                    )
+                )
             continue
         if node.parent is None:
             defects.append(Defect(path, PARENT_MISSING, f"a {node.type} needs a `parent`"))
@@ -160,9 +177,14 @@ def _check_node_records(tree: Tree) -> list[Defect]:
                 defects.append(
                     Defect(path, HARDENED_NEEDS_IMPLEMENTATION, "hardened, but no `implementation`")
                 )
-            if not node.verification:
+            if not node.has_executable_verification:
                 defects.append(
-                    Defect(path, HARDENED_NEEDS_VERIFICATION, "hardened, but no `verification`")
+                    Defect(
+                        path,
+                        HARDENED_NEEDS_VERIFICATION,
+                        "hardened, but no `verification` with a `command` (tests harden; a "
+                        "judged criterion alone is acceptance, not hardening)",
+                    )
                 )
     return defects
 
