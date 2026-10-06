@@ -1,7 +1,7 @@
 """The six founding decisions of `docs/AGENTOS_V2_PLAN.md` as the first real ledger entries.
 
-The plan says: if the format cannot hold them, the format is wrong. So the ledger under
-`docs/ledger/` is run through the same doctor and the same slicing every host's tree is, and it
+The plan says: if the format cannot hold them, the format is wrong. So Agentos's own tree under
+`docs/tree/` is run through the same doctor and the same slicing every host's tree is, and it
 is held to the plan's own table: nothing added, nothing dropped, nothing invented. A change to one
 of these files that breaks the format fails this file, the way a host literal fails
 `tests/test_no_host_literals.py`.
@@ -24,7 +24,7 @@ from agent_os.tree.cli import format_defect
 from agent_os.tree.loader import load_tree
 from agent_os.tree.slicing import SliceError, build_slice, render_slice_markdown
 
-LEDGER = AGENT_OS_DIR / "docs" / "ledger"
+LEDGER = AGENT_OS_DIR / "docs" / "tree"
 PLAN = AGENT_OS_DIR / "docs" / "AGENTOS_V2_PLAN.md"
 
 SEED_BY_ROW = {
@@ -58,10 +58,16 @@ def test_the_ledger_passes_the_tree_doctor():
     assert defects == [], "\n".join(format_defect(defect) for defect in defects)
 
 
-def test_the_ledger_holds_exactly_the_six_decisions_of_the_plans_table():
+def test_the_decisions_from_the_plans_table_are_exactly_its_six_rows():
+    # The tree also holds Agentos's own goals and later decisions; the seeds are the entries whose
+    # source is the plan's table, and of those there are exactly six.
     tree = load_tree(LEDGER)
-    assert tree.nodes == {}
-    assert sorted(tree.decisions) == sorted(SEED_BY_ROW.values())
+    from_the_table = [
+        decision_id
+        for decision_id, decision in tree.decisions.items()
+        if "'Founding decisions' row" in decision.sources[0]
+    ]
+    assert sorted(from_the_table) == sorted(SEED_BY_ROW.values())
     assert sorted(plan_rows()) == [1, 2, 3, 4, 5, 6]
 
 

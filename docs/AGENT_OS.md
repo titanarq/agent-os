@@ -1,5 +1,13 @@
 # The agent operating system
 
+**What Agentos is for (v2).** Agentos lets one person build and evolve software products far beyond
+their individual capacity without losing control of what gets built: a system of agents that turns
+its owner's goals into a working product, keeps that product faithful to those goals as it grows,
+and improves the way it does so with every product. Its goals and requirements are the tree in
+`docs/tree/`; the construction plan is `docs/AGENTOS_V2_PLAN.md`. What follows describes the
+mechanism as it stands today: the execution substrate (v1) and the product tree (§4.6) v2 is built
+on.
+
 A mechanism for running a software project's backlog through headless coding agents on top of
 GitHub Issues and a GitHub Project, for a host project (`titanarq/roedor` is the one instance that
 exists today) and the one human who owns it.
@@ -726,8 +734,10 @@ subtree) are skipped. A ticket has the shape of the repository's dispatchable is
 `tree.ticket_budget_class`, a worker class, never a guess; the labels are the task type label,
 `tree.ticket_labels` and `--label`. `compile` refuses a tree the doctor finds anything in.
 
-The founding decisions of the plan are the ledger's first entries, in `docs/ledger/`;
-`tests/test_tree_founding_decisions.py` runs the doctor and the slicing over them.
+Agentos's own tree is `docs/tree/`: its goals and functional requirements (the what, with every
+`mechanism: pending` until the how is decided), the plan's founding decisions as the ledger's first
+entries, and the decisions taken since. `tests/test_tree_founding_decisions.py` runs the doctor and
+the slicing over it.
 
 ### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
 

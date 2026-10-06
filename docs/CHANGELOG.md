@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Agentos v2, what Agentos is for (owner design discussion of 2026-10-05/06; no issue, branch
+  `feat/v2-global-goals`) -- Agentos's own tree moves from `docs/ledger/` to `docs/tree/` and gains
+  its goals: four goals (a usable product early, grown by real use; faithful to its owner's goals
+  over months; the owner decides what, Agentos decides how; Agentos improves with every product)
+  seventeen functional requirements under them and six use cases (what the owner does with
+  Agentos), all `mechanism: pending` -- the what is
+  written first and the how is decided later. New decision `dec-one-owner-for-now`. `AGENTS.md`
+  and `docs/AGENT_OS.md` open with what Agentos is for instead of what the v1 substrate does.
+  Each goal carries its evaluators, set by the owner as trends until the vector gives the first
+  measurements; they are part of the what, so only the owner changes them.
+
 - Agentos v2, Phase 0 (`docs/AGENTOS_V2_PLAN.md`) -- the puntal spike. A **puntal** answers one live
   UI action with one headless `claude -p`, reading the action's node slice and reading and writing
   state only through the app's persistence API. New `bin/puntal_task.sh` (a thin shell half) and
@@ -30,8 +41,8 @@ that closed several small issues at once name them all. This file starts on 2026
   persisted-state coherence across three sessions from the raw files alone. Tests stub the backend
   and fail on a trap `claude` (`no_real_backend`). ADR
   `2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`;
-  `docs/AGENT_OS.md` §4.7. Numbers and the go/no-go are `docs/spikes/2026-10-puntal-latency.md`, not
-  written yet. Hosts: a `subtree pull`; nothing to configure unless you run puntales.
+  `docs/AGENT_OS.md` §4.7. Numbers and the go/no-go are `docs/spikes/2026-10-puntal-latency.md`
+  (no-go on time-to-first-signal, go on the other three criteria). Hosts: a `subtree pull`; nothing to configure unless you run puntales.
 
 - Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
   the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and
