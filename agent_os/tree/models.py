@@ -46,8 +46,10 @@ PARENT_TYPE_BY_TYPE = {"functional-requirement": "goal", "use-case": "functional
 MECHANISM_PENDING = "pending"
 
 # The fields that make a node a work item. A goal is a lighthouse, not something to build, and
-# carries none of them (`goal-carries-work-fields`).
-WORK_FIELDS = ("mechanism", "implementation", "verification", "spikes", "foundation", "state")
+# carries none of them (`goal-carries-work-fields`). `verification` is deliberately not among them:
+# tests run top-down from the goals, so a goal's verification is the acceptance that keeps the work
+# under it from drifting, never work to dispatch.
+WORK_FIELDS = ("mechanism", "implementation", "spikes", "foundation", "state")
 
 # The two fields that are the Markdown body rather than frontmatter, by record type.
 BODY_FIELD_BY_TYPE = {**dict.fromkeys(NODE_TYPES, "description"), DECISION_TYPE: "statement"}
@@ -105,7 +107,8 @@ class Node(Strict):
     # node is hardened (`hardened-needs-implementation`).
     implementation: NonBlank | None = None
     # Executable verification: mandatory for dispatch. A leaf node without any escalates instead
-    # of becoming a ticket (`agent_os.tree.compile`).
+    # of becoming a ticket (`agent_os.tree.compile`). On a goal, or on any node with children, it is
+    # the acceptance of the subtree -- an evaluator the work below must not break, never work itself.
     verification: list[Verification] = Field(default_factory=list)
     state: Literal["pending", "improvised", "hardened"] = "pending"
     # A foundation node (persistence, identity, UI skeleton) must be hardened before the shell goes

@@ -4,8 +4,9 @@
         # one line per defect, `<file>: <code>: <what is wrong>`, exit 1 if there is any. The
         # tree must not ship red, the way no host literal may ship in `agent_os/`.
     agent-os-tree context NODE [--root DIR] [--json]
-        # the slice of one node: the node, its ancestors, the decisions in force on that chain
-        # (an `under-review` one labelled as still obeyed), their sources. Nothing else.
+        # the slice of one node: the node, its ancestors with the acceptance each one carries (what
+        # the node's work serves and must not break), the decisions in force on that chain (an
+        # `under-review` one labelled as still obeyed), their sources. Nothing else.
     agent-os-tree compile [--root DIR] [--json] [--out-dir DIR] [--budget-class C] [--label L ...]
         # the dispatch tickets of every dispatchable node, and an escalation for each node that
         # lacks a verification. Renders only: no issue is created and no network is touched.

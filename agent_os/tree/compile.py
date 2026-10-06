@@ -14,10 +14,12 @@ ticket came from, and the ticket a node already has, by that line alone.
 
 Which nodes become tickets (the rule is one place, `_classify`):
 
-- a goal is never a ticket: it is verified through what is under it;
+- a goal is never a ticket, whether or not it carries a verification: that is its acceptance;
 - a node past `pending` (improvised, hardened) is not dispatched by this step;
-- a node with children and no verification of its own is a container -- its use cases are the work
-  -- and is skipped without comment;
+- a node with children is a container -- its use cases are the work -- and is skipped without
+  comment, whether or not it has a verification: tests run top-down from the goals, so a
+  container's verification is the acceptance of its subtree (it reaches every descendant's ticket
+  as context, see `agent_os.tree.slicing`) and never a ticket of its own;
 - every other pending node needs an executable verification, and a mechanism that can be resolved
   (written, or `pending` with no spike having found it infeasible). One that lacks either is an
   ESCALATION: reported, with its reason, and never turned into a ticket.
@@ -102,7 +104,7 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
         return "goal"
     if node.state != "pending":
         return "past-pending"
-    if has_children and not node.verification:
+    if has_children:
         return "container"
     reasons: list[tuple[str, str]] = []
     if not node.verification:

@@ -50,19 +50,23 @@ fails the way a host literal fails `tests/test_no_host_literals.py`.
   `pending` to `hardened` directly is legal -- a foundation node is built as a normal issue and
   never improvised (`foundation-improvised`) -- so the machine is not the strictly linear one the
   plan's arrow suggests.
-- **A goal is not a work item.** It carries no mechanism, implementation, verification, spike,
-  foundation flag or non-pending state (`goal-carries-work-fields`): it is verified through what is
-  under it. A functional requirement and a use case must declare `mechanism`, as text or `pending`,
-  so deferring it is a visible choice and not an omission.
+- **A goal is not a work item.** It carries no mechanism, implementation, spike, foundation flag or
+  non-pending state (`goal-carries-work-fields`). It may carry a `verification`, which is acceptance
+  and never dispatched work: a goal is still never a ticket. A functional requirement and a use case
+  must declare `mechanism`, as text or `pending`, so deferring it is a visible choice and not an
+  omission.
 - **The slice is the chain, nothing else.** `context NODE` emits the node in full, its ancestors up
   to the goal, and the decisions in force on that chain (the node's own and every ancestor's, since
   a decision on a requirement binds its use cases), with their sources. Each decision brings its
   statement, premises, rejected alternatives and review triggers -- what a worker needs to obey it
   and to know not to relitigate it -- and only the COUNT of its friction entries, which grow without
-  bound. An `under-review` decision is included and labelled as still obeyed; a superseded one never
-  is. No sibling, descendant or unrelated decision appears, so the size depends on the length of one
-  chain and not on the tree (a test compares the very same bytes against a tree with over nine hundred more nodes). The
-  output is deterministic: ordered by chain, then by id.
+  bound. Each ancestor also brings the verification it carries (commands and `expects`), labelled as
+  the acceptance the node's work serves and must not break: the evaluators above the work are in the
+  chain, so they cost one chain and no more. An `under-review` decision is included and labelled as
+  still obeyed; a superseded one never is. No sibling, descendant or unrelated decision appears, so
+  the size depends on the length of one chain and not on the tree (a test compares the very same
+  bytes against a tree with over nine hundred more nodes). The output is deterministic: ordered by
+  chain, then by id.
 - **The slice asks the doctor.** It is refused, printing the doctor's lines, when any file it is made
   of fails a check; a defect in another branch does not stop it. One implementation of "is this file
   sound", not a second copy of the rules in the slicer.
@@ -70,10 +74,11 @@ fails the way a host literal fails `tests/test_no_host_literals.py`.
   executable `verification`, and whose mechanism is resolvable: written, or `pending` with no spike
   that found it `infeasible`. A pending node that lacks a verification, or whose pending mechanism a
   spike found infeasible, is an ESCALATION entry with a code and a reason, never a ticket. A node
-  with children and no verification of its own is a *container* -- its use cases are the work -- and
-  is skipped without comment; demanding a verification of every requirement would escalate every
-  decomposed requirement of a real tree. Goals and nodes past `pending` are not dispatched by this
-  step. Foundation nodes are listed first.
+  with children is a *container* -- its use cases are the work -- and is skipped without comment,
+  whether or not it has a verification of its own; demanding a verification of every requirement
+  would escalate every decomposed requirement of a real tree, and a requirement's verification, when
+  it has one, is the acceptance of its subtree and not a ticket. Goals and nodes past `pending` are
+  not dispatched by this step. Foundation nodes are listed first.
 - **A ticket is a dispatchable issue.** Its body has the seven sections of
   `agent_os.lib.REQUIRED_SECTIONS` in order, the `<!-- budget: <class> -->` line and a second marker,
   `<!-- node: <id> -->`, the address Phase 2 finds a ticket's node and a node's ticket by. Every body
@@ -99,6 +104,20 @@ fails the way a host literal fails `tests/test_no_host_literals.py`.
 - **Friction lives in the decision file.** A `friction` list of dated entries, each optionally naming
   a node and a pointer to the evidence. It is the simplest thing that holds "entries against the
   decision's id" and lets the consolidator read a decision and its friction in one file.
+
+**Changed 2026-10-06, before merge, by the owner's decision that tests run top-down from the
+goals.** A goal's tests are the evaluators that keep the work under it from drifting; the tests
+written bottom-up at the leaves consolidate reliability. Two rules of the first draft contradicted
+that, and a third piece was missing. (1) A goal used to be forbidden a `verification`
+(`goal-carries-work-fields`); it may now carry one -- acceptance, not work, so a goal is still never
+a ticket -- and still no mechanism, implementation, spike, foundation flag or state other than
+`pending`. (2) `compile` used to treat a node with children as a container only when it had no
+verification, so a requirement with use cases and a verification of its own would have been
+dispatched as a ticket on top of its own use cases; a node with children is now a container
+whatever it carries, and its verification is the acceptance of its subtree. (3) The slice now
+shows the verification of every ancestor, labelled as acceptance to serve and not break, so the
+agent working on a use case is told which evaluators stand above it (and so does a ticket, whose
+Context is the slice). Nothing else in the format moved.
 
 ## Consequences
 - A host gets a tree and a ledger it can diff, review and gate in CI, and every red line has a code.

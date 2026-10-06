@@ -6,6 +6,12 @@ the decisions in force on that chain -- and by construction nothing of its sibli
 descendants or any decision that does not bind it. Its size is bounded by the length of one chain
 of ancestors, however large the tree grows (`tests/test_tree_slice.py` pins that).
 
+Each ancestor brings its verification too, labelled as the acceptance the node's work serves and
+must not break: tests run top-down from the goals, so what a goal or a requirement is verified by
+is what keeps the work below it from drifting, and the agent working on a use case is told which
+evaluators stand above it. It is still the chain only -- an ancestor's verification, never a
+sibling's or a descendant's.
+
 A decision that is `under-review` is in the slice and labelled as such: it is still obeyed while it
 is challenged. A superseded decision is never in a slice; a node still pointing at one is a defect
 the slice refuses to paper over.
@@ -30,6 +36,9 @@ MECHANISM_PENDING_NOTE = (
 )
 UNDER_REVIEW_NOTE = "UNDER REVIEW -- still obeyed while it is challenged"
 IN_FORCE_NOTE = "in force"
+ANCESTOR_ACCEPTANCE_NOTE = (
+    "Acceptance of this ancestor -- what the work on this node serves and must not break:"
+)
 
 
 class SliceError(Exception):
@@ -143,6 +152,15 @@ def _yes_no(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
+def _verification_bullets(node: Node) -> list[str]:
+    return _bullets(
+        [
+            f"`{check.command}`" + (f" -- {check.expects}" if check.expects else "")
+            for check in node.verification
+        ]
+    )
+
+
 def render_node(
     cut: Slice, *, level: int, with_description: bool = True, with_verification: bool = True
 ) -> str:
@@ -164,13 +182,9 @@ def render_node(
         lines += ["", _heading(level + 1, "Mechanism"), "", text]
     if node.implementation is not None:
         lines += ["", _heading(level + 1, "Implementation"), "", node.implementation]
-    if with_verification and node.type != "goal":
-        shown = _bullets(
-            [
-                f"`{check.command}`" + (f" -- {check.expects}" if check.expects else "")
-                for check in node.verification
-            ]
-        )
+    # A goal has no work to verify, so its section appears only when it carries an acceptance.
+    if with_verification and (node.type != "goal" or node.verification):
+        shown = _verification_bullets(node)
         lines += ["", _heading(level + 1, "Verification"), "", *(shown or ["none"])]
     if node.spikes:
         lines += ["", _heading(level + 1, "Spike results"), ""]
@@ -198,6 +212,8 @@ def render_ancestors(cut: Slice, *, level: int) -> str:
             "Sources:",
             *_bullets(ancestor.sources),
         ]
+        if ancestor.verification:
+            block += ["", ANCESTOR_ACCEPTANCE_NOTE, *_verification_bullets(ancestor)]
         blocks.append("\n".join(block))
     return "\n\n".join([heading, *blocks])
 
@@ -263,6 +279,7 @@ def slice_as_data(cut: Slice) -> dict:
                 "title": ancestor.title,
                 "description": ancestor.description,
                 "sources": ancestor.sources,
+                "verification": [check.model_dump(mode="json") for check in ancestor.verification],
             }
             for ancestor in cut.ancestors
         ],

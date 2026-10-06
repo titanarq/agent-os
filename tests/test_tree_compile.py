@@ -212,7 +212,7 @@ def test_a_requirement_with_use_cases_and_no_verification_is_a_container_and_ski
     assert [t.node_id for t in result.tickets] == ["uc-edit"]
 
 
-def test_a_requirement_with_use_cases_and_a_verification_of_its_own_is_also_a_ticket(tmp_path):
+def test_a_requirement_with_use_cases_and_a_verification_of_its_own_is_still_a_container(tmp_path):
     write_sound_tree(tmp_path)
     write_node(
         tmp_path,
@@ -221,7 +221,53 @@ def test_a_requirement_with_use_cases_and_a_verification_of_its_own_is_also_a_ti
         parent="goal-notes",
         verification=[{"command": "scripts/check_offline.sh"}],
     )
-    assert [t.node_id for t in compiled(tmp_path).tickets] == ["fr-offline", "uc-edit"]
+    result = compiled(tmp_path)
+    # Its verification is the acceptance of its subtree: an evaluator above the work, never work.
+    assert [t.node_id for t in result.tickets] == ["uc-edit"]
+    assert result.containers == 1
+    assert result.escalations == ()
+
+
+def test_a_container_verification_reaches_its_use_cases_ticket_as_acceptance_to_not_break(
+    tmp_path,
+):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[{"command": "scripts/check_journey.sh", "expects": "the journey holds"}],
+    )
+    write_node(
+        tmp_path,
+        "fr-offline",
+        "functional-requirement",
+        parent="goal-notes",
+        verification=[{"command": "scripts/check_offline.sh"}],
+    )
+    body = one_ticket(tmp_path, "uc-edit").body
+    criteria = body.split("## Acceptance criteria\n")[1].split("\n\n## Stages")[0]
+    assert criteria == "- `pytest tests/test_edit.py -q` exits 0: it persists"
+    context = body.split("## Context\n")[1].split("\n\n## Not included")[0]
+    assert "`scripts/check_offline.sh`" in context
+    assert "`scripts/check_journey.sh` -- the journey holds" in context
+    assert "must not break" in context
+
+
+def test_a_goal_with_a_verification_is_still_never_a_ticket(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[{"command": "scripts/check_journey.sh"}],
+    )
+    result = compiled(tmp_path)
+    assert [t.node_id for t in result.tickets] == ["uc-edit"]
+    assert result.goals == 1
+    assert result.escalations == ()
 
 
 def test_a_leaf_requirement_without_a_verification_escalates(tmp_path):

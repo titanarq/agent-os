@@ -17,10 +17,15 @@ that closed several small issues at once name them all. This file starts on 2026
   defect with the file path, exit 1 (orphan files, missing or unknown fields, duplicate ids, id
   and filename or prefix mismatches, dangling or mistyped or cyclic parents, a hardened node
   without implementation or verification, a node pointing at a superseded decision, a superseded
-  decision without an existing successor, ...). `context NODE [--json]` emits the slice -- the node,
-  its ancestors up to the goal, the decisions in force on that chain (an `under-review` one labelled
-  as still obeyed), their sources -- deterministic, and bounded by one chain whatever the size of
-  the tree. `compile [--json] [--out-dir]` renders dispatch tickets from pending nodes that have an
+  decision without an existing successor, ...). Tests run top-down from the goals: a goal may carry
+  a `verification` (acceptance, never work: it still carries no mechanism, implementation, spike,
+  foundation flag or state, and is never a ticket), and a node with children is a container whether
+  or not it has a verification, so an upper node's verification is the acceptance of its subtree
+  and never a ticket. `context NODE [--json]` emits the slice -- the node, its ancestors up to the
+  goal with the verification each carries (labelled as the acceptance the node's work serves and
+  must not break), the decisions in force on that chain (an `under-review` one labelled as still
+  obeyed), their sources -- deterministic, and bounded by one chain whatever the size of the tree.
+  `compile [--json] [--out-dir]` renders dispatch tickets from pending leaves that have an
   executable verification (shape checked by `validate_issue_body`, address `<!-- node: <id> -->`)
   and reports an escalation for each that lacks one; it renders only, no issue is created (Phase
   2). New optional config section `tree:` (`root`, `ticket_budget_class`, `ticket_labels`). The

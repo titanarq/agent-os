@@ -372,7 +372,6 @@ def test_a_node_that_is_its_own_parent_is_a_cycle(tmp_path):
 @pytest.mark.parametrize(
     "fields",
     [
-        {"verification": [{"command": "true"}]},
         {"mechanism": "pending"},
         {"implementation": "somewhere"},
         {"foundation": True},
@@ -388,6 +387,33 @@ def test_a_goal_cannot_carry_work_fields(tmp_path, fields):
     write_sound_tree(tmp_path)
     write_node(tmp_path, "goal-busy", "goal", **fields)
     assert found(tmp_path) == [("goal-busy.md", "goal-carries-work-fields")]
+
+
+def test_a_goal_may_carry_a_verification_because_it_is_acceptance_and_not_work(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[
+            {"command": "scripts/check_notes_journey.sh", "expects": "the whole journey works"}
+        ],
+    )
+    assert found(tmp_path) == []
+
+
+def test_a_goal_with_a_verification_and_a_work_field_is_red_for_the_work_field_only(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "goal-busy",
+        "goal",
+        mechanism="pending",
+        verification=[{"command": "true"}],
+    )
+    assert found(tmp_path) == [("goal-busy.md", "goal-carries-work-fields")]
+    assert messages(tmp_path) == ["a goal carries mechanism"]
 
 
 def test_a_work_node_without_a_mechanism_is_red(tmp_path):

@@ -61,6 +61,58 @@ def test_the_slice_carries_every_sources_list_on_the_chain(tmp_path):
         assert f"- {source}" in text
 
 
+def write_tree_with_acceptance_above(root: pathlib.Path) -> None:
+    """The sound tree, but the goal and the requirement each carry the evaluators of their subtree."""
+    write_sound_tree(root)
+    write_node(
+        root,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[
+            {"command": "scripts/check_journey.sh", "expects": "the whole journey holds"}
+        ],
+    )
+    write_node(
+        root,
+        "fr-offline",
+        "functional-requirement",
+        parent="goal-notes",
+        verification=[{"command": "pytest tests/test_offline.py -q"}],
+    )
+
+
+def test_the_slice_shows_the_acceptance_of_every_ancestor_labelled_as_to_serve_and_not_break(
+    tmp_path,
+):
+    write_tree_with_acceptance_above(tmp_path)
+    ancestors = markdown(tmp_path, "uc-edit").split("## Ancestors")[1].split("## Decisions")[0]
+    requirement, goal = ancestors.split("### `goal-notes`")
+    assert "`pytest tests/test_offline.py -q`" in requirement
+    assert "`scripts/check_journey.sh` -- the whole journey holds" in goal
+    for block in (requirement, goal):
+        assert "serves and must not break" in block
+    # The node's own verification stays under its own heading, not among the ancestors'.
+    assert "`pytest tests/test_edit.py -q` -- it persists" not in ancestors
+
+
+def test_an_ancestor_with_no_verification_adds_no_acceptance_block(tmp_path):
+    write_sound_tree(tmp_path)
+    assert "must not break" not in markdown(tmp_path, "uc-edit")
+
+
+def test_a_goals_own_slice_shows_its_own_verification_under_the_node(tmp_path):
+    write_tree_with_acceptance_above(tmp_path)
+    own = markdown(tmp_path, "goal-notes").split("## Ancestors")[0]
+    assert "### Verification" in own
+    assert "`scripts/check_journey.sh` -- the whole journey holds" in own
+
+
+def test_a_goal_without_a_verification_has_no_verification_section_in_its_slice(tmp_path):
+    write_sound_tree(tmp_path)
+    assert "Verification" not in markdown(tmp_path, "goal-notes")
+
+
 def test_a_decision_under_review_is_in_the_slice_and_labelled_as_still_obeyed(tmp_path):
     write_sound_tree(tmp_path)
     write_decision(tmp_path, "dec-local-first", state="under-review")
@@ -151,6 +203,7 @@ def _add_the_rest_of_a_large_tree(root: pathlib.Path, width: int) -> None:
             parent="fr-offline",
             body=f"SIBLING TEXT {index} " * 40,
             decisions=[f"dec-elsewhere-{index}"],
+            verification=[{"command": f"SIBLING VERIFICATION {index}"}],
         )
         write_node(
             root,
@@ -158,10 +211,24 @@ def _add_the_rest_of_a_large_tree(root: pathlib.Path, width: int) -> None:
             "functional-requirement",
             parent="goal-notes",
             body=f"COUSIN TEXT {index} " * 40,
+            verification=[{"command": f"COUSIN VERIFICATION {index}"}],
         )
-        write_node(root, f"goal-other-{index}", "goal", body=f"OTHER GOAL TEXT {index} " * 40)
+        write_node(
+            root,
+            f"goal-other-{index}",
+            "goal",
+            body=f"OTHER GOAL TEXT {index} " * 40,
+            verification=[{"command": f"OTHER GOAL VERIFICATION {index}"}],
+        )
         write_decision(root, f"dec-elsewhere-{index}", body=f"ELSEWHERE TEXT {index} " * 40)
-    write_node(root, "uc-edit-child", "use-case", parent="uc-edit", body="DESCENDANT TEXT " * 40)
+    write_node(
+        root,
+        "uc-edit-child",
+        "use-case",
+        parent="uc-edit",
+        body="DESCENDANT TEXT " * 40,
+        verification=[{"command": "DESCENDANT VERIFICATION"}],
+    )
 
 
 def test_a_slice_excludes_siblings_cousins_descendants_and_unrelated_decisions(tmp_path):
@@ -176,18 +243,24 @@ def test_a_slice_excludes_siblings_cousins_descendants_and_unrelated_decisions(t
         "OTHER GOAL TEXT",
         "ELSEWHERE",
         "DESCENDANT",
+        "VERIFICATION",
     ):
         assert foreign_text not in text
 
 
+@pytest.mark.parametrize("with_acceptance_above", [False, True])
 @pytest.mark.parametrize("renderer", ["markdown", "json"])
-def test_a_slice_is_bounded_by_its_chain_and_not_by_the_size_of_the_tree(tmp_path, renderer):
+def test_a_slice_is_bounded_by_its_chain_and_not_by_the_size_of_the_tree(
+    tmp_path, renderer, with_acceptance_above
+):
     small = tmp_path / "small"
     large = tmp_path / "large"
     small.mkdir()
     large.mkdir()
-    write_sound_tree(small)
-    write_sound_tree(large)
+    # The evaluators above are part of the chain, so they are in both slices and the same.
+    write_tree = write_tree_with_acceptance_above if with_acceptance_above else write_sound_tree
+    write_tree(small)
+    write_tree(large)
     _add_the_rest_of_a_large_tree(large, 300)
 
     def render(root: pathlib.Path) -> str:
@@ -302,9 +375,24 @@ def test_the_json_slice_has_the_same_content_as_structured_data(tmp_path):
         {"command": "pytest tests/test_edit.py -q", "expects": "it persists"}
     ]
     assert [ancestor["id"] for ancestor in data["ancestors"]] == ["fr-offline", "goal-notes"]
+    assert [ancestor["verification"] for ancestor in data["ancestors"]] == [[], []]
     (decision,) = data["decisions"]
     assert decision["id"] == "dec-local-first"
     assert decision["state"] == "under-review"
     assert decision["attached_to"] == "goal-notes"
     assert decision["friction_count"] == 0
     assert "friction" not in decision
+
+
+def test_the_json_slice_carries_the_verification_of_each_ancestor(tmp_path):
+    write_tree_with_acceptance_above(tmp_path)
+    data = json.loads(render_slice_json(build_slice(load_tree(tmp_path), "uc-edit")))
+    by_id = {ancestor["id"]: ancestor for ancestor in data["ancestors"]}
+    assert by_id["fr-offline"]["verification"] == [
+        {"command": "pytest tests/test_offline.py -q", "expects": None}
+    ]
+    assert by_id["goal-notes"]["verification"] == [
+        {"command": "scripts/check_journey.sh", "expects": "the whole journey holds"}
+    ]
+    # Still the chain only: the node's own verification is under `node`, not repeated above.
+    assert "pytest tests/test_edit.py -q" not in json.dumps(data["ancestors"])

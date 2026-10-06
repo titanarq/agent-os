@@ -77,8 +77,8 @@ CHECKS: dict[str, str] = {
     ),
     PARENT_CYCLE: "the chain of `parent` pointers loops back on itself",
     GOAL_CARRIES_WORK_FIELDS: (
-        "a goal carries a work field (mechanism, implementation, verification, spikes, "
-        "foundation, or a state other than pending); a goal is verified through what is under it"
+        "a goal carries a work field (mechanism, implementation, spikes, foundation, or a state "
+        "other than pending); a goal may carry a verification, which is acceptance and never work"
     ),
     MISSING_WORK_FIELD: (
         "a functional requirement or a use case has no `mechanism` (write `pending` to defer it)"
