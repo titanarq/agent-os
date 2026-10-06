@@ -31,6 +31,9 @@ jobs:
       - name: bootstrap the mechanism's own interpreter
         run: bash agent_os/bootstrap.sh
 
+      # The code-quality ratchet is not repeated here: it runs in `ci-host.yml` on every pull
+      # request, and it skips `agent_os/` itself, which a host never edits (`git subtree pull` only).
+      #
       # No database, no network, no real backend: the same subset `agent_os/tests/conftest.py`
       # keeps separate from the host's own fixtures, and the run a second host can also make.
       - name: the mechanism's own suite
