@@ -87,7 +87,8 @@ A new module of the package, fully testable without network or real backend.
 - **Node** (one file per node, Markdown with frontmatter): type (`goal` / `functional-requirement`
   / `use-case`), description, sources, solution mechanism (`pending` allowed), implementation
   pointer, **executable verification — mandatory for dispatch: a node without one escalates
-  instead of dispatching**, state (`pending → improvised → hardened`), `foundation` flag, spike
+  instead of dispatching** (replaced on 2026-10-06 by `docs/tree/dec-tests-harden-they-do-not-build.md`:
+  tests harden, they are not a requirement to build), state (`pending → improvised → hardened`), `foundation` flag, spike
   results, pointers to the decisions in force on it.
 - **Decision**: premises, rejected alternatives, review trigger, state
   (`in-force → under-review → superseded-by`), accumulated friction.
@@ -138,11 +139,18 @@ Exit: the owner uses the product.
 - The owner writes the product's goals and their evaluators; the goals' tests come first and
   everything below is tested from them downwards.
 - The **expert** role (Sonnet, prompt and class in the validator/refiner pattern) populates
-  requirements and use cases as small nodes, launches spikes where feasibility is in doubt, writes
-  the verification of `foundation` nodes before a worker touches them, and records its questions;
+  requirements and use cases as small nodes, launches spikes where feasibility is in doubt, and
+  records its questions;
   a question goes to the expert before it goes to the owner.
-- Foundations (persistence, identity, UI skeleton) are built as normal issues; the shell does not go
-  live until they are hardened.
+- Foundations (persistence, identity, UI skeleton) are built as normal issues, held by the essential
+  acceptance and the owner's acceptance in the first test session, their tests later; the shell goes
+  live once they are implemented and accepted.
+- Tests harden, they do not build (`docs/tree/dec-tests-harden-they-do-not-build.md`): the tree gains
+  the state `implemented` between `improvised` and `hardened`, and `compile` dispatches without an
+  executable verification. The essential top-down acceptance always holds, judged by an agent against
+  the branch's goals and use cases (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`):
+  a node's verification is either a command or a criterion an agent judges; the validator judges every
+  pull request of the branch.
 - `compile` creates the dispatch issues, each carrying its node address; the worker's brief carries
   the slice, never the tree; write-back discipline in the worker and refiner prompts; the validator
   validates against the node's verification, in a context separate from the worker's.
@@ -173,8 +181,9 @@ Exit: branches with telemetry and hardened nodes.
   which reads a node should declare.
 - Hardening driven by use: `compile` emits hardening tickets for `improvised` nodes, in the order of
   use (frequency x the puntal's cost, latency and errors); verification extracted from interactions
-  the owner accepted; `retired` for what nobody uses; `llm_by_design` for what must stay a model
-  call, verified by an evaluation.
+  the owner accepted; retirement candidates for what stays unused while the rest of its branch is
+  used, decided by the owner (`docs/tree/dec-retirement-is-a-relative-candidacy-the-owner-decides.md`);
+  `llm_by_design` for what must stay a model call, verified by an evaluation.
 - Indicators: derived hardness (a soft product decision is revised by the refiner with a record, a
   hard one by the owner); unverified exposure per branch and its two triggers; definition degree per
   branch (the cap on demand probes); determinism ratio; iterations by cause; the slice size cap
@@ -270,8 +279,8 @@ is part of compression, in Stage 3.
     repository when they are reused across products.
 - **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
   (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
-  happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Next: the mechanism of each
-  requirement, goal by goal.
+  happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Then the mechanism of each
+  requirement, goal by goal: goal A done on 2026-10-06 (`goal-product-early-grown-by-use`).
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,

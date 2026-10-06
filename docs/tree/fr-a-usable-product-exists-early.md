@@ -8,7 +8,15 @@ sources:
 decisions:
 - dec-puntales-run-as-headless-processes
 - dec-a-puntal-plans-in-one-turn-and-code-executes
-mechanism: pending
+- dec-tests-harden-they-do-not-build
+- dec-top-down-acceptance-is-essential-even-when-judged
+mechanism: |-
+  Stage 1. The owner writes the product's goals and their evaluators; the expert populates small
+  requirement and use-case nodes and records its questions, which reach the owner in a question
+  session. Foundations (persistence, identity, UI skeleton) are built first as normal tickets, with
+  the branch's essential acceptance and the owner's acceptance in the first test session; their tests
+  come later. The shell goes live once the foundations are implemented and accepted; every other
+  action is served by a puntal, and an action whose what is still in doubt by its schematic default.
 ---
 A product the owner can use exists very early, even while most of what it does is
 improvised. Nothing waits for a complete specification.
