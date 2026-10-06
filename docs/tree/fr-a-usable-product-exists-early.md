@@ -13,8 +13,9 @@ decisions:
 mechanism: |-
   Stage 1. The owner writes the product's goals and their evaluators; the expert populates small
   requirement and use-case nodes and records its questions, which reach the owner in a question
-  session. Foundations (persistence, identity, UI skeleton) are built first as normal tickets, with
-  the branch's essential acceptance and the owner's acceptance in the first test session; their tests
+  session. Foundations -- persistence, identity, UI skeleton, and the means to deploy the app
+  locally, run its tests and log from minute zero -- are built first as normal tickets, with the
+  branch's essential acceptance and the owner's acceptance in the first test session; their tests
   come later. The shell goes live once the foundations are implemented and accepted; every other
   action is served by a puntal, and an action whose what is still in doubt by its schematic default.
 ---
