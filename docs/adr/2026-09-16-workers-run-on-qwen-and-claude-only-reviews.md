@@ -103,3 +103,9 @@ themselves -- the rule this decision states is about a role's own class and its 
 capability, and a third backend earns its place the same way `qwen` and `claude` did: one
 `project.backends` entry, a stream parser only if its jsonl shape is new, and a class or a
 `fallback:` naming it. Nothing else in the Decision, Consequences or reversal sections changes.
+
+## Amendment, 2026-10-06 (Agentos v2)
+For Agentos v2 the owner left Qwen aside: every role runs on Claude Code, Sonnet everywhere except
+the custodian and the consolidator, which run on Opus in minimal use
+(`docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`). The multi-backend machinery this ADR
+relies on stays, configured with one backend; a host changes its own `config/agents.yaml`.

@@ -58,6 +58,11 @@ The whole suite takes over ten minutes: launch it in the background and check it
 diverge from CI.
 
 ## Rules
+- **Code quality, in every pull request** (`docs/tree/dec-every-pull-request-gets-a-code-quality-review.md`):
+  SOLID principles; self-explanatory code with long descriptive names and comments only for a
+  non-obvious why; folders organized in depth (no folder with dozens of files) and small files. A
+  new file stays under 300 lines and a folder under 12 entries, and a file you touch never gets
+  worse; the large files that exist are split as they are touched.
 - **No host literal anywhere outside `docs/`.** `tests/test_no_host_literals.py` reads every file
   git knows (`git ls-files --cached --others --exclude-standard`, except `docs/`, `tests/golden/`,
   `config.example.yaml`) and fails on a host project's name, org, owner login or database port.
