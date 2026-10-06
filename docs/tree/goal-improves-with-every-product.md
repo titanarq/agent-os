@@ -9,14 +9,14 @@ sources:
 decisions:
 - dec-one-owner-for-now
 - dec-the-cycle-applies-at-every-scale
+verification:
+- judge: 'Recurrence of failures already recorded: tends to zero.'
+- judge: 'Cost per verified checkpoint: falls from one method version to the next.'
+- judge: 'Share of new nodes that reuse existing components: grows.'
+- judge: 'Once a second product exists: it costs less than the first.'
 ---
 What Agentos learns while building one product makes the next one cost less: it does not
 forget, it looks for what it does not know, it knows how far to trust itself, it improves
 its own method from evidence, and it turns what recurs into reusable pieces.
 
-Evaluators (set by the owner on 2026-10-06; trends until the vector gives the first measurements,
-numeric thresholds after):
-- Recurrence of failures already recorded: tends to zero.
-- Cost per verified checkpoint: falls from one method version to the next.
-- Share of new nodes that reuse existing components: grows.
-- Once a second product exists: it costs less than the first.
+Evaluators: in `verification`, set by the owner on 2026-10-06 -- trends until the vector gives the first measurements, numeric thresholds after.

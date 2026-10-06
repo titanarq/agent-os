@@ -102,6 +102,99 @@ def test_the_verification_is_the_acceptance_criteria(tmp_path):
     )
 
 
+def test_a_judged_criterion_is_an_acceptance_criterion_labelled_as_judged_by_an_agent(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-edit",
+        "use-case",
+        parent="fr-offline",
+        verification=[
+            {"command": "pytest tests/test_edit.py -q", "expects": "an edit persists"},
+            {"judge": "Editing a note reads as one step to the person doing it."},
+        ],
+    )
+    ticket = one_ticket(tmp_path, "uc-edit")
+    criteria = ticket.body.split("## Acceptance criteria\n")[1].split("\n\n## Stages")[0]
+    assert criteria == (
+        "- `pytest tests/test_edit.py -q` exits 0: an edit persists\n"
+        "- judged by an agent: Editing a note reads as one step to the person doing it."
+    )
+    assert (
+        validate_issue_body(ticket.body, task_classes=CONFIG.classes, open_issue_numbers=set())
+        == []
+    )
+
+
+def test_the_stage_of_a_ticket_with_a_judged_criterion_says_an_agent_judges_it(tmp_path):
+    write_sound_tree(tmp_path)
+    plain = one_ticket(tmp_path, "uc-edit").body
+    assert "judged" not in plain.split("## Stages\n")[1].split("\n\n## Context")[0]
+    write_node(
+        tmp_path,
+        "uc-edit",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"command": "true"}, {"judge": "It reads as one step."}],
+    )
+    stages = one_ticket(tmp_path, "uc-edit").body.split("## Stages\n")[1].split("\n\n## Context")[0]
+    assert "judged by an agent" in stages
+
+
+def test_a_judged_criterion_over_several_lines_cannot_break_the_shape_of_a_ticket(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-edit",
+        "use-case",
+        parent="fr-offline",
+        verification=[
+            {"command": "true"},
+            {"judge": "One step.\n\n## Context\nIt keeps what was typed.\nBlocked by #12\n"},
+        ],
+    )
+    ticket = one_ticket(tmp_path, "uc-edit")
+    criteria = ticket.body.split("## Acceptance criteria\n")[1].split("\n\n## Stages")[0]
+    assert criteria.splitlines()[1] == (
+        "- judged by an agent: One step. ## Context It keeps what was typed. Blocked by #12"
+    )
+    assert (
+        validate_issue_body(ticket.body, task_classes=CONFIG.classes, open_issue_numbers={12}) == []
+    )
+
+
+def test_judged_criteria_of_every_ancestor_reach_the_ticket_as_acceptance_to_not_break(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[{"judge": "The owner finds it is the notes app they asked for."}],
+    )
+    write_node(
+        tmp_path,
+        "fr-offline",
+        "functional-requirement",
+        parent="goal-notes",
+        verification=[{"judge": "Nothing a person wrote is lost when the network is gone."}],
+    )
+    ticket = one_ticket(tmp_path, "uc-edit")
+    context = ticket.body.split("## Context\n")[1].split("\n\n## Not included")[0]
+    assert (
+        "- judged by an agent: Nothing a person wrote is lost when the network is gone." in context
+    )
+    assert "- judged by an agent: The owner finds it is the notes app they asked for." in context
+    assert context.count("must not break") == 2
+    # What an ancestor is judged by is context, never the ticket's own acceptance.
+    criteria = ticket.body.split("## Acceptance criteria\n")[1].split("\n\n## Stages")[0]
+    assert "judged by an agent" not in criteria
+    assert (
+        validate_issue_body(ticket.body, task_classes=CONFIG.classes, open_issue_numbers=set())
+        == []
+    )
+
+
 def test_the_objective_is_the_node_and_its_description(tmp_path):
     write_sound_tree(tmp_path)
     objective = one_ticket(tmp_path, "uc-edit").body.split("## Objective\n")[1]
@@ -202,6 +295,26 @@ def test_a_leaf_without_a_verification_escalates_and_is_never_a_ticket(tmp_path)
     assert escalation.code == "missing-verification"
     assert escalation.path == "product/uc-vague.md"
     assert "escalates instead of dispatching" in escalation.message
+
+
+def test_a_leaf_with_only_a_judged_criterion_has_no_executable_verification_and_escalates(
+    tmp_path,
+):
+    # The dispatch rule is unchanged by the judged criterion: a node without an executable
+    # verification is not dispatched. Whether it should be is Stage 1's decision, not this one's.
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-judged",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"judge": "Editing a note reads as one step."}],
+    )
+    result = compiled(tmp_path)
+    assert [t.node_id for t in result.tickets] == ["uc-edit"]
+    (escalation,) = result.escalations
+    assert (escalation.node_id, escalation.code) == ("uc-judged", "missing-verification")
+    assert "no executable `verification`" in escalation.message
 
 
 def test_a_requirement_with_use_cases_and_no_verification_is_a_container_and_skipped(tmp_path):

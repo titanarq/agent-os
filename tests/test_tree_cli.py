@@ -85,6 +85,37 @@ def test_validate_json_of_a_sound_tree_is_ok(tmp_path, capsys):
     assert data["ok"] is True and data["defects"] == []
 
 
+def test_validate_prints_one_line_with_the_path_for_a_goal_without_evaluators(
+    tmp_path, capsys, monkeypatch
+):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-bare", "goal", verification=None)
+    monkeypatch.chdir(tmp_path)
+    assert run(["validate", "--root", "."]) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert lines[0].startswith("goal-bare.md: goal-without-evaluators: ")
+    assert lines[1] == "FAIL: 1 defect(s) in 1 file(s) under ."
+
+
+def test_validate_prints_the_schema_line_of_an_entry_that_is_a_command_and_a_judge(
+    tmp_path, capsys, monkeypatch
+):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-both",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"command": "true", "judge": "It feels right."}],
+    )
+    monkeypatch.chdir(tmp_path)
+    assert run(["validate", "--root", "."]) == 1
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "uc-both.md: schema: verification.0: an entry is a `command` or a `judge`, not both"
+    )
+
+
 # --------------------------------------------------------------------------------------------
 # context
 # --------------------------------------------------------------------------------------------
@@ -102,6 +133,15 @@ def test_context_json_prints_the_slice_as_data(tmp_path, capsys):
     write_sound_tree(tmp_path)
     assert run(["context", "uc-edit", "--root", tmp_path, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["node"]["id"] == "uc-edit"
+
+
+def test_context_prints_a_judged_criterion_labelled_as_judged_by_an_agent(tmp_path, capsys):
+    write_sound_tree(tmp_path)
+    assert run(["context", "uc-edit", "--root", tmp_path]) == 0
+    assert "- judged by an agent: An agent finds that goal-notes holds." in capsys.readouterr().out
+    assert run(["context", "uc-edit", "--root", tmp_path, "--json"]) == 0
+    (goal,) = [a for a in json.loads(capsys.readouterr().out)["ancestors"] if a["type"] == "goal"]
+    assert goal["verification"][0]["label"] == "judged by an agent"
 
 
 def test_context_of_an_unknown_node_says_so_on_stderr_and_exits_one(tmp_path, capsys):

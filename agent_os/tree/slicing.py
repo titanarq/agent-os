@@ -10,7 +10,8 @@ Each ancestor brings its verification too, labelled as the acceptance the node's
 must not break: tests run top-down from the goals, so what a goal or a requirement is verified by
 is what keeps the work below it from drifting, and the agent working on a use case is told which
 evaluators stand above it. It is still the chain only -- an ancestor's verification, never a
-sibling's or a descendant's.
+sibling's or a descendant's. A verification is a command or a criterion an agent judges; a judged
+one is rendered, for the node and for every ancestor, labelled as judged by an agent.
 
 A decision that is `under-review` is in the slice and labelled as such: it is still obeyed while it
 is challenged. A superseded decision is never in a slice; a node still pointing at one is a defect
@@ -27,7 +28,7 @@ from dataclasses import dataclass
 
 from agent_os.tree.checks import check_tree
 from agent_os.tree.loader import Defect, Tree
-from agent_os.tree.models import MECHANISM_PENDING, Decision, Node
+from agent_os.tree.models import MECHANISM_PENDING, Decision, Node, Verification
 
 MECHANISM_PENDING_NOTE = (
     f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "
@@ -39,6 +40,9 @@ IN_FORCE_NOTE = "in force"
 ANCESTOR_ACCEPTANCE_NOTE = (
     "Acceptance of this ancestor -- what the work on this node serves and must not break:"
 )
+# What marks a criterion as one an agent judges rather than a command that is run. One string for
+# the Markdown slice, the JSON slice and the ticket's acceptance criteria, so they cannot drift.
+JUDGED_BY_AGENT_LABEL = "judged by an agent"
 
 
 class SliceError(Exception):
@@ -152,13 +156,31 @@ def _yes_no(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
+def judged_criterion_line(check: Verification) -> str:
+    """`judged by an agent: <criterion>`, on ONE line. The criterion is a paragraph, and every
+    consumer of this line (a slice read by an agent, a ticket body `validate_issue_body` reads line
+    by line) is safer when a line of it cannot start with `##` or `Blocked by`, so its whitespace
+    is collapsed; the words are not touched."""
+    return f"{JUDGED_BY_AGENT_LABEL}: {' '.join((check.judge or '').split())}"
+
+
 def _verification_bullets(node: Node) -> list[str]:
     return _bullets(
         [
-            f"`{check.command}`" + (f" -- {check.expects}" if check.expects else "")
+            judged_criterion_line(check)
+            if check.is_judged
+            else f"`{check.command}`" + (f" -- {check.expects}" if check.expects else "")
             for check in node.verification
         ]
     )
+
+
+def verification_as_data(check: Verification) -> dict:
+    """One entry of a `verification` list for `--json`: its `kind` first, so a reader branches on
+    it, and a judged one carries the same label the Markdown slice prints."""
+    if check.is_judged:
+        return {"kind": "judge", "judge": check.judge, "label": JUDGED_BY_AGENT_LABEL}
+    return {"kind": "command", "command": check.command, "expects": check.expects}
 
 
 def render_node(
@@ -182,8 +204,9 @@ def render_node(
         lines += ["", _heading(level + 1, "Mechanism"), "", text]
     if node.implementation is not None:
         lines += ["", _heading(level + 1, "Implementation"), "", node.implementation]
-    # A goal has no work to verify, so its section appears only when it carries an acceptance.
-    if with_verification and (node.type != "goal" or node.verification):
+    # A goal's section is its evaluators, which the doctor requires; for any other node it may be
+    # empty, and says so.
+    if with_verification:
         shown = _verification_bullets(node)
         lines += ["", _heading(level + 1, "Verification"), "", *(shown or ["none"])]
     if node.spikes:
@@ -271,7 +294,11 @@ def slice_as_data(cut: Slice) -> dict:
     """The slice as plain data, for `--json` and for the callers that would rather not parse
     Markdown."""
     return {
-        "node": {**cut.node.model_dump(mode="json"), "file": cut.relative_path},
+        "node": {
+            **cut.node.model_dump(mode="json"),
+            "verification": [verification_as_data(check) for check in cut.node.verification],
+            "file": cut.relative_path,
+        },
         "ancestors": [
             {
                 "id": ancestor.id,
@@ -279,7 +306,7 @@ def slice_as_data(cut: Slice) -> dict:
                 "title": ancestor.title,
                 "description": ancestor.description,
                 "sources": ancestor.sources,
-                "verification": [check.model_dump(mode="json") for check in ancestor.verification],
+                "verification": [verification_as_data(check) for check in ancestor.verification],
             }
             for ancestor in cut.ancestors
         ],

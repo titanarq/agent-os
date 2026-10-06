@@ -151,6 +151,11 @@ Exit: the owner uses the product.
   the branch's goals and use cases (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`):
   a node's verification is either a command or a criterion an agent judges; the validator judges every
   pull request of the branch.
+- The guard on the what (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`): a
+  pull request touching a goal or an evaluator is merged only on the owner's word -- the owner's
+  merge, or a question-session answer the validator checks it transcribes exactly. A goal without
+  evaluators is a red check (`docs/tree/dec-a-goal-without-evaluators-is-a-red-check.md`). In a v2
+  host the planner dispatches only tickets that carry a node address.
 - `compile` creates the dispatch issues, each carrying its node address; the worker's brief carries
   the slice, never the tree; write-back discipline in the worker and refiner prompts; the validator
   validates against the node's verification, in a context separate from the worker's.
@@ -280,7 +285,8 @@ is part of compression, in Stage 3.
 - **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
   (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
   happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Then the mechanism of each
-  requirement, goal by goal: goal A done on 2026-10-06 (`goal-product-early-grown-by-use`).
+  requirement, goal by goal: goals A and B done on 2026-10-06 (`goal-product-early-grown-by-use`,
+  `goal-faithful-to-the-owners-goals`).
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,

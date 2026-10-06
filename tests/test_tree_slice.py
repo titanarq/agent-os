@@ -97,8 +97,12 @@ def test_the_slice_shows_the_acceptance_of_every_ancestor_labelled_as_to_serve_a
 
 
 def test_an_ancestor_with_no_verification_adds_no_acceptance_block(tmp_path):
+    # The goal always carries evaluators (the doctor sees to it), the requirement here has none.
     write_sound_tree(tmp_path)
-    assert "must not break" not in markdown(tmp_path, "uc-edit")
+    ancestors = markdown(tmp_path, "uc-edit").split("## Ancestors")[1].split("## Decisions")[0]
+    requirement, goal = ancestors.split("### `goal-notes`")
+    assert "must not break" not in requirement
+    assert "must not break" in goal
 
 
 def test_a_goals_own_slice_shows_its_own_verification_under_the_node(tmp_path):
@@ -108,9 +112,124 @@ def test_a_goals_own_slice_shows_its_own_verification_under_the_node(tmp_path):
     assert "`scripts/check_journey.sh` -- the whole journey holds" in own
 
 
-def test_a_goal_without_a_verification_has_no_verification_section_in_its_slice(tmp_path):
+def test_a_goal_always_shows_its_evaluators_in_its_own_slice(tmp_path):
     write_sound_tree(tmp_path)
-    assert "Verification" not in markdown(tmp_path, "goal-notes")
+    own = markdown(tmp_path, "goal-notes").split("## Ancestors")[0]
+    assert "### Verification" in own
+    assert "- judged by an agent: An agent finds that goal-notes holds." in own
+
+
+def test_a_slice_under_a_goal_without_evaluators_is_refused_with_the_doctors_line(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-notes", "goal", decisions=["dec-local-first"], verification=None)
+    with pytest.raises(SliceError) as raised:
+        build_slice(load_tree(tmp_path), "uc-edit")
+    assert [defect.code for defect in raised.value.defects] == ["goal-without-evaluators"]
+
+
+def write_tree_with_judged_criteria(root: pathlib.Path) -> None:
+    """The sound tree where the use case, the requirement and the goal each carry a criterion an
+    agent judges, and the use case a command besides."""
+    write_sound_tree(root)
+    write_node(
+        root,
+        "goal-notes",
+        "goal",
+        decisions=["dec-local-first"],
+        verification=[
+            {"judge": "The owner finds the notes app is the one they asked for."},
+            {"command": "scripts/check_journey.sh"},
+        ],
+    )
+    write_node(
+        root,
+        "fr-offline",
+        "functional-requirement",
+        parent="goal-notes",
+        verification=[{"judge": "Nothing a person wrote is lost when the network is gone."}],
+    )
+    write_node(
+        root,
+        "uc-edit",
+        "use-case",
+        parent="fr-offline",
+        verification=[
+            {"command": "pytest tests/test_edit.py -q", "expects": "it persists"},
+            {"judge": "Editing a note reads as one step to the person doing it."},
+        ],
+    )
+
+
+def test_a_judged_criterion_is_rendered_and_labelled_for_the_node_and_for_every_ancestor(tmp_path):
+    write_tree_with_judged_criteria(tmp_path)
+    text = markdown(tmp_path, "uc-edit")
+    own = text.split("## Ancestors")[0]
+    assert "- `pytest tests/test_edit.py -q` -- it persists" in own
+    assert "- judged by an agent: Editing a note reads as one step to the person doing it." in own
+    ancestors = text.split("## Ancestors")[1].split("## Decisions")[0]
+    requirement, goal = ancestors.split("### `goal-notes`")
+    assert (
+        "- judged by an agent: Nothing a person wrote is lost when the network is gone."
+        in requirement
+    )
+    assert "- judged by an agent: The owner finds the notes app is the one they asked for." in goal
+    assert "- `scripts/check_journey.sh`" in goal
+    for block in (requirement, goal):
+        assert "serves and must not break" in block
+    # Still the chain only: the node's own judged criterion is not repeated among the ancestors'.
+    assert "reads as one step" not in ancestors
+
+
+def test_a_judged_criterion_over_several_lines_is_one_bullet_that_cannot_open_a_section(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-edit",
+        "use-case",
+        parent="fr-offline",
+        verification=[
+            {
+                "judge": (
+                    "Editing a note is one step.\n\n## Context\nIt keeps what was typed.\n"
+                    "Blocked by #12"
+                )
+            }
+        ],
+    )
+    own = markdown(tmp_path, "uc-edit").split("## Ancestors")[0]
+    assert (
+        "- judged by an agent: Editing a note is one step. ## Context It keeps what was typed. "
+        "Blocked by #12\n"
+    ) in own
+
+
+def test_the_json_slice_labels_a_judged_criterion_for_the_node_and_for_every_ancestor(tmp_path):
+    write_tree_with_judged_criteria(tmp_path)
+    data = json.loads(render_slice_json(build_slice(load_tree(tmp_path), "uc-edit")))
+    assert data["node"]["verification"] == [
+        {"kind": "command", "command": "pytest tests/test_edit.py -q", "expects": "it persists"},
+        {
+            "kind": "judge",
+            "judge": "Editing a note reads as one step to the person doing it.",
+            "label": "judged by an agent",
+        },
+    ]
+    by_id = {ancestor["id"]: ancestor for ancestor in data["ancestors"]}
+    assert by_id["fr-offline"]["verification"] == [
+        {
+            "kind": "judge",
+            "judge": "Nothing a person wrote is lost when the network is gone.",
+            "label": "judged by an agent",
+        }
+    ]
+    assert by_id["goal-notes"]["verification"] == [
+        {
+            "kind": "judge",
+            "judge": "The owner finds the notes app is the one they asked for.",
+            "label": "judged by an agent",
+        },
+        {"kind": "command", "command": "scripts/check_journey.sh", "expects": None},
+    ]
 
 
 def test_a_decision_under_review_is_in_the_slice_and_labelled_as_still_obeyed(tmp_path):
@@ -372,10 +491,19 @@ def test_the_json_slice_has_the_same_content_as_structured_data(tmp_path):
     assert data["node"]["id"] == "uc-edit"
     assert data["node"]["file"] == "uc-edit.md"
     assert data["node"]["verification"] == [
-        {"command": "pytest tests/test_edit.py -q", "expects": "it persists"}
+        {"kind": "command", "command": "pytest tests/test_edit.py -q", "expects": "it persists"}
     ]
     assert [ancestor["id"] for ancestor in data["ancestors"]] == ["fr-offline", "goal-notes"]
-    assert [ancestor["verification"] for ancestor in data["ancestors"]] == [[], []]
+    assert [ancestor["verification"] for ancestor in data["ancestors"]] == [
+        [],
+        [
+            {
+                "kind": "judge",
+                "judge": "An agent finds that goal-notes holds.",
+                "label": "judged by an agent",
+            }
+        ],
+    ]
     (decision,) = data["decisions"]
     assert decision["id"] == "dec-local-first"
     assert decision["state"] == "under-review"
@@ -389,10 +517,14 @@ def test_the_json_slice_carries_the_verification_of_each_ancestor(tmp_path):
     data = json.loads(render_slice_json(build_slice(load_tree(tmp_path), "uc-edit")))
     by_id = {ancestor["id"]: ancestor for ancestor in data["ancestors"]}
     assert by_id["fr-offline"]["verification"] == [
-        {"command": "pytest tests/test_offline.py -q", "expects": None}
+        {"kind": "command", "command": "pytest tests/test_offline.py -q", "expects": None}
     ]
     assert by_id["goal-notes"]["verification"] == [
-        {"command": "scripts/check_journey.sh", "expects": "the whole journey holds"}
+        {
+            "kind": "command",
+            "command": "scripts/check_journey.sh",
+            "expects": "the whole journey holds",
+        }
     ]
     # Still the chain only: the node's own verification is under `node`, not repeated above.
     assert "pytest tests/test_edit.py -q" not in json.dumps(data["ancestors"])
