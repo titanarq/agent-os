@@ -66,6 +66,7 @@ NODES_DIR = HERE / "nodes"
 FAKE_BACKEND = HERE / "fake_claude.py"
 PERSISTENCE_API = HERE / "persistence_api.txt"
 STORE_CLI = HERE / "store.py"
+EXECUTOR_CLI = HERE / "executor.py"
 
 # THE cap on real invocations, across every run of this script on this machine. Calibration (2) + the
 # main stage (3 sessions of 8) + the reserve (4). Changing it is a decision to spend more, and belongs
@@ -203,6 +204,7 @@ class Context:
         self.config_file = self.workdir / "agents.yaml"
         self.cache_dir = self.workdir / "cache"
         self.model = args.model
+        self.path = args.puntal_path
         self.effort = args.effort
         self.timeout = args.timeout
         self.fault = getattr(args, "fake_fault", "") or ""
@@ -231,12 +233,16 @@ class Context:
     def persistence_command(self) -> str:
         return shlex.join([sys.executable, str(STORE_CLI), "--dir", str(self.store_dir)])
 
+    def executor_command(self) -> str:
+        return shlex.join([sys.executable, str(EXECUTOR_CLI), "--dir", str(self.store_dir)])
+
     def environment(self) -> dict[str, str]:
         environment = dict(os.environ)
         environment.update(
             AGENTS_CONFIG_PATH=str(self.config_file),
             AGENT_CACHE_DIR=str(self.cache_dir),
             PUNTAL_PERSISTENCE_COMMAND=self.persistence_command(),
+            PUNTAL_EXECUTOR_COMMAND=self.executor_command(),
         )
         if self.mode == "dry":
             environment.update(
@@ -360,6 +366,8 @@ def run_invocation(
         context.model,
         "--telemetry-file",
         str(context.telemetry_file),
+        "--path",
+        context.path,
     ]
     if context.effort:
         command += ["--effort", context.effort]
@@ -482,6 +490,7 @@ def require_budget(context: Context, calls: int) -> None:
         model=context.model,
         effort=context.effort,
         max_cost_usd=config.classes["puntal"].max_cost_usd,
+        with_state_tool=context.path == "slow",
     )
     print(f"preflight ({executable}): {preflight_backend(executable, flags)}", flush=True)
 
@@ -725,6 +734,11 @@ def summarize(
         )
     out("")
     out(f"MAIN STAGE (n={len(main)}; outcomes {analysis.outcomes(main)})")
+    split = analysis.path_report(main)
+    out(
+        f"  paths {split['paths']}; {split['retried']} needed a retry turn, "
+        f"{split['executor_refusals']} were refused by the executor at least once"
+    )
     latency = analysis.latency_report(main)
     out(stats_line("full response (total)", latency["total"]))
     out(stats_line("first signal (first text delta)", latency["first_text_delta"]))
@@ -829,6 +843,7 @@ def summarize(
     machine = {
         "n": {"calibration": len(calibration), "main": len(main), "reserve": len(reserve)},
         "outcomes": analysis.outcomes(main),
+        "paths": analysis.path_report(main),
         "latency": latency,
         "cost": cost,
         "cache": cache,
@@ -860,6 +875,13 @@ def build_parser() -> argparse.ArgumentParser:
             help="make REAL calls, counted against the cap",
         )
         sub.add_argument("--model", default=DEFAULT_MODEL)
+        sub.add_argument(
+            "--puntal-path",
+            choices=["slow", "fast"],
+            default="slow",
+            help="the driver's path: `slow` (default) is the Phase 0 tool loop this bench was "
+            "built to measure; `fast` plans in one turn and the bench's executor applies it",
+        )
         sub.add_argument("--effort", default="")
         sub.add_argument(
             "--timeout",

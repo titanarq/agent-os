@@ -131,6 +131,12 @@ class Node(Strict):
     # Where the built thing lives (a path, a symbol, a pull request). Free text; required once the
     # node is hardened (`hardened-needs-implementation`).
     implementation: NonBlank | None = None
+    # The state this node's action reads, as the read commands of the app's persistence API that
+    # the puntal's pre-helper runs and loads into its brief before the model turn
+    # (`agent_os.product.puntal.fast.pre_helper`): `list tickets`, `get tickets {payload.id}`.
+    # Declared by the expert who writes the node; empty means the action reads nothing the click
+    # does not carry, and an action that needs more pays the slow path's extra turn.
+    reads: list[NonBlank] = Field(default_factory=list)
     # Commands and criteria an agent judges. An executable one (a `command`) is mandatory for
     # dispatch: a leaf node without any escalates instead of becoming a ticket
     # (`agent_os.product.tree.compile`), and a hardened node needs one (`hardened-needs-verification`). On a

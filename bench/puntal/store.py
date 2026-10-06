@@ -47,6 +47,7 @@ def natural_key(identifier: str) -> list:
 class Store:
     def __init__(self, directory: str | os.PathLike) -> None:
         self.directory = pathlib.Path(directory)
+        self._lock_depth = 0
 
     # -- helpers -------------------------------------------------------------------------------
     @staticmethod
@@ -64,10 +65,19 @@ class Store:
 
     @contextlib.contextmanager
     def _locked(self):
+        """The store's one lock. Re-entrant within this object, so a whole plan can hold it
+        (`executor.py`) while the single writes it is made of take it again."""
+        if self._lock_depth:
+            yield
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         with (self.directory / LOCK_FILE).open("a") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
-            yield
+            self._lock_depth += 1
+            try:
+                yield
+            finally:
+                self._lock_depth -= 1
 
     @staticmethod
     def _write_atomically(path: pathlib.Path, document: object) -> None:

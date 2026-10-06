@@ -953,6 +953,21 @@ class PuntalConfig(Strict):
     # A text file, relative to the host's root, describing that command's subcommands: rendered into
     # the contract at `__PERSISTENCE_API__` so the puntal does not spend a turn asking `--help`.
     persistence_api_file: str = ""
+    # The app's EXECUTOR: the command (shell-split) that applies a puntal's validated operations
+    # atomically through the app's own API. It reads `{"operations": [...]}` on stdin and prints
+    # `{"ok": true, "bindings": {...}}` or `{"ok": false, "errors": [...]}` -- the interface is
+    # `agent_os/product/puntal/fast/executor.py`. Empty: the driver can still hand the plan to a
+    # caller that applies it itself (`puntal_task.sh --json --plan-only`), but it refuses to run a
+    # fast-path invocation it could not finish. `PUNTAL_EXECUTOR_COMMAND` and `--executor-command`
+    # outrank it.
+    executor_command: str = ""
+    # The first words a node's declared read may start with (`reads: [get tickets {payload.id}]`):
+    # the subcommands of the persistence API that change nothing. A declaration that names any other
+    # is skipped, so a node file can never make the pre-helper write.
+    read_subcommands: list[str] = ["get", "list"]
+    # The executor is code on the click's critical path: past this many seconds it is cut and the
+    # invocation ends `executor_failed`.
+    executor_timeout_seconds: int = 30
     # A hung process is the one failure a person waiting for a click cannot be told about, so the
     # driver kills the run's process group after this many seconds. A SAFETY, not a budget: spend is
     # bounded by the class's ceilings (agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-
@@ -965,7 +980,7 @@ class PuntalConfig(Strict):
     # default; the latency spike measures what a lower one buys.
     effort: str = ""
 
-    @field_validator("timeout_seconds", "max_tool_calls")
+    @field_validator("timeout_seconds", "max_tool_calls", "executor_timeout_seconds")
     @classmethod
     def positive(cls, value: int) -> int:
         if value < 1:

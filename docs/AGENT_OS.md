@@ -30,7 +30,7 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
-| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, Phase 0 spike, §4.7); reads and writes state only through the app's persistence API | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
+| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, §4.7); plans in one model turn with no tool, and the app's code applies what it planned (the slow path's one tool is the app's persistence API) | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -352,7 +352,8 @@ per-turn sum; the follow-up is §7 row (v).
 - Per puntal invocation (§4.7): `.cache/puntal/runs.tsv` (the same five columns), a per-run log
   `.cache/puntal/<ts>-<µs>-<pid>.log` and, beside them, `.cache/puntal/telemetry.jsonl` -- one JSON
   line per invocation with latencies, tokens, cost and tool calls, which is not a spend record but the
-  usage record the refiner will consume.
+  usage record the refiner will consume -- and `.cache/puntal/feedback.jsonl`, the owner's verdict
+  on an answer, joined to the telemetry on `invocation_id`.
 - Those files are the drivers' own, never a role's (agent-os#33): each planner, validator and
   refiner run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory under `$TMPDIR`
   (outside the run dir and the checkout) for its working files, and the driver removes it on every
@@ -434,7 +435,8 @@ agent_os/
 │   ├── install.py                 agent-os-install: systemd units + copy-if-absent templates
 │   ├── issues.py                  tracker CLI over gh: list/show/create/update/validate/move/…
 │   ├── lib.py                     config models, dispatch/budget predicates, jsonl event reading
-│   ├── puntal.py                  the puntal driver's Python half (§4.7)
+│   ├── product/puntal/            the puntal driver's Python half, a package (§4.7)
+│   ├── product/records/           what every v2 log shares: JSON-lines append, the versions a record carries
 │   └── render.py                  __TOKEN__ substitution for the agents/*.md templates
 ├── agents/                      templates for the .claude/agents/*.md prompts
 │   ├── control-plane.md
@@ -449,7 +451,7 @@ agent_os/
 │   ├── qwen_task.sh               compatibility wrapper (`exec worker_task.sh qwen "$@"`)
 │   ├── worker_progress.sh         what the workers have done lately and spent, one screen
 │   └── worker_task.sh             worker driver: init/branch/start/status/watch/collect/open-pr/…
-├── bench/puntal/                the puntal spike's instrument, outside the package (§4.7)
+├── bench/puntal/                the puntal bench's instrument (and its executor), outside the package (§4.7)
 ├── bootstrap.sh                 builds agent_os/.venv, installs the package editable; idempotent
 ├── config.example.yaml          every §4.2 key, filled in for an invented project
 ├── docs/                        the mechanism's own docs
@@ -457,6 +459,7 @@ agent_os/
 ├── prompts/                     one template per role, rendered by agent_lib.render_prompt
 │   ├── planner.md
 │   ├── puntal.md
+│   ├── puntal_slow.md
 │   ├── refiner.md
 │   ├── validator.md
 │   └── worker.md
@@ -535,7 +538,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-qwen` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
-| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the slow path's contract), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -645,6 +648,7 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
+| `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a `command` is **mandatory for dispatch** of a leaf and for a `hardened` node | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised`, `hardened` |
 | `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
@@ -766,47 +770,140 @@ Agentos's own tree is `docs/tree/`: its goals and functional requirements (the w
 entries, and the decisions taken since. `tests/product/tree/test_tree_founding_decisions.py` runs the doctor and
 the slicing over it.
 
-### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
+### 4.7 The puntal driver (Agentos v2)
 
 A **puntal** is the shore that props a building up: the product's interface goes live early, every
 action in it is bound to a use case, and an action nobody has implemented yet is answered, live, by a
 headless agent instead of by code (`docs/AGENTOS_V2_PLAN.md`, "Puntal layer"). `bin/puntal_task.sh`
-is that agent's driver -- a sibling of `worker_task.sh`, founding decision 6 -- and Phase 0 builds it
-as a **spike**: it exists to be measured, and whether a process per click is fast and cheap enough is
-the question `docs/spikes/2026-10-puntal-latency.md` answers once the measurement below has been
-run. The binding decisions are in
-`docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`.
+is that agent's driver -- a sibling of `worker_task.sh`, founding decision 6. Phase 0 built it as a
+tool loop and measured it (`docs/spikes/2026-10-puntal-latency.md`: no-go as it was); Stage 1 (#115)
+rebuilt its contract after `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`: **the
+puntal plans in one model turn and code does everything else.** The binding decisions are in
+`docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`
+(and its dated note of 2026-10-07).
 
-**Calling it.** The node slice (the use case and the goals above it), the payload and the relevant
-persisted state are plain text, from a file or from stdin (`-`); this driver knows nothing of the
-product tree that will one day produce a slice.
+**The four parts of a click.**
+
+1. *Pre-helper (code).* The node declares the state its action reads (`reads:` in its frontmatter,
+   §4.6) as read commands of the app's persistence API. The driver runs them in parallel before the
+   model starts and puts their output in the brief, under `State loaded for this action`. It is
+   tolerant by design: a malformed declaration, a payload field that is missing, a read that fails is
+   reported in the telemetry (`declared_reads`) and shown to the model as what it is, never fatal. Only
+   the subcommands in `puntal.read_subcommands` (default `get`, `list`) can be declared, so a node file
+   cannot make the pre-helper write. `{payload.NAME}` in a read is that field of the click's JSON
+   payload, substituted after the command is split into words: one argument, never a shell.
+2. *The model turn (no tool).* One `claude -p` with **no tool at all** (`--tools=`) returns the
+   **plan**, one JSON object, and nothing else:
+
+   ```
+   {"operations": [<operation> ...], "answer": <what the app is told>, "gap": "<optional gap note>"}
+   {"needs_state": "<what state it needs and why>"}        # the slow path, below
+   ```
+   Four operations are the whole vocabulary an app's executor has to understand
+   (`agent_os/product/puntal/fast/operations.py` defines and validates them):
+
+   | Operation | Fields | Meaning |
+   |---|---|---|
+   | `put` | `collection`, `id`, `document` | create or replace a document |
+   | `update` | `collection`, `id`, `changes` (non-empty) | merge fields into an existing document |
+   | `delete` | `collection`, `id` | remove a document |
+   | `allocate` | `counter`, `bind` | the next number of a counter, named `bind` |
+
+   Any string of a later operation, or of the answer, may carry `{{name}}`: the value an earlier
+   `allocate` bound. The puntal cannot know a new id, only the app can; it names it and the executor
+   fills it in. At most 50 operations; an unknown key, an unknown operation, a placeholder nobody
+   bound (or bound later) is a validation error. A markdown fence around the object and a trailing
+   `GAP:` line are tolerated.
+3. *Executor (code, on the critical path).* The validated operations go to the app's executor, one
+   call: `puntal.executor_command` reads `{"operations": [...]}` on stdin and prints
+   `{"ok": true, "bindings": {"name": value}}` or `{"ok": false, "errors": [...]}`, exit 0 either way
+   (`fast/executor.py`). `ok: true` means all applied, and the bindings fill the answer; `ok: false`
+   means **nothing** was applied (atomic) and the errors go back to the puntal for **one retry turn**.
+   Any other end -- a non-zero exit, output that is not that JSON, a timeout -- is a crash and is not
+   retried (`executor_failed`, exit `6`). The app owns what it derives: the executor, not the
+   puntal, keeps summaries and indexes true. `fast/reference_executor.py` interprets the operations
+   over any store with five methods (`exists`, `put`, `update`, `delete`, `next_number`, plus
+   `transaction()`); `bench/puntal/executor.py` is that over the bench's JSON store. An app that
+   applies operations in its own process asks for the plan alone, `--json --plan-only`, below.
+4. *Post-helpers (off the critical path).* The response is written and stdout closed **before** the
+   telemetry line, the `runs.tsv` row and the gap note are written, so a caller reading to end of file
+   is released while they are.
+
+**The two escapes, at most one of each.** A plan the validator rejects, or an executor that refuses
+it, costs **one retry turn**: the brief gains `Your previous plan was rejected` with the reasons; a
+second rejection ends the invocation (`invalid_plan`, exit `5`; or `executor_failed`, exit `6`), and
+nothing is answered. A plan that says `needs_state` costs **one slow turn**: the same brief, the
+`prompts/puntal_slow.md` contract and the confined `./state` tool of the layers below, which does
+what the node says and answers in the node's own form (a `GAP:` line as before). The telemetry marks
+it (`path: "slow"`, `slow_path_reason`) so the node is corrected to declare the read or the step is
+hardened. `--path slow` forces that path from the first turn (the Phase 0 baseline). Ceilings bind the
+**invocation**: a later turn is run with what the earlier turns left.
+
+**Calling it.** The node slice (the use case and the goals above it; it may open with the
+frontmatter that declares its `reads`, which is stripped before the model sees it), the payload and
+the relevant persisted state are plain text, from a file or from stdin (`-`).
 
 ```
 agent_os/bin/puntal_task.sh --action ACTION --node-file NODE.md [--payload TEXT | --payload-file F]
-    [--state-file F] [--node-id ID] [--session-id S] [--invocation-id ID] [--label KEY=VALUE ...]
-    [--model M] [--effort E] [--timeout SECONDS] [--persistence-command CMD]
-    [--telemetry-file F] [--dry-run]
+    [--state-file F] [--read 'CMD' ...] [--node-id ID] [--session-id S] [--invocation-id ID]
+    [--label KEY=VALUE ...] [--path fast|slow] [--model M] [--effort E] [--timeout SECONDS]
+    [--persistence-command CMD] [--executor-command CMD] [--telemetry-file F] [--dry-run]
+agent_os/bin/puntal_task.sh --json [--plan-only]           # the shell API, below
+agent_os/bin/puntal_task.sh feedback --invocation-id ID --verdict accept|reject|retry [--note T]
+    [--retried-as ID] [--telemetry-file F] [--feedback-file F]
 ```
 
-STDOUT is the response and nothing else, and it is empty unless the run was answered; stderr carries
-the diagnostics. The exit status says how it ended: `0` answered, `1` the backend failed, `2` not run
-(refused before anything was spent), `3` the run broke the contract, `4` a ceiling cut it, `124` the
-safety timeout killed it. `--dry-run` prints the resolved launch -- flags, contract, brief -- and
-spends nothing. Unlike the other role drivers it does not detach, mints no GitHub identity, writes no
-planner event and wakes nobody: the caller is waiting for the answer on stdout.
+STDOUT is the response and nothing else, and it is empty unless the run was answered (a string
+answer as it is, any other JSON compact); stderr carries the diagnostics. The exit status says how it
+ended: `0` answered, `1` the backend failed, `2` not run (refused before anything was spent), `3` the
+run broke the contract, `4` a ceiling cut it, `5` the plan was invalid after its retry, `6` the
+executor failed, `124` the safety timeout killed it (per model turn). `--dry-run` prints the resolved
+launch -- flags, contract, brief with the node's reads really loaded -- and spends nothing. Unlike
+the other role drivers it does not detach, mints no GitHub identity, writes no planner event and wakes
+nobody: the caller is waiting for the answer on stdout.
 
-**What it launches.** One `claude -p` in a throwaway, empty scratch directory (so no project
-`CLAUDE.md`, `.claude/`, `.mcp.json`, memory or git status reaches the context), with the contract
-`prompts/puntal.md` as the whole system prompt and the brief -- node slice, action, payload, state --
-as the first message. The flags, and why each one is there:
+**The generic API for a host's shell** (`--json`, `agent_os/product/puntal/json_api.py`): JSON in,
+JSON out, independent of the app's stack. One request object on stdin: `action` (required), `node`
+(the slice as text, with the optional `reads` frontmatter) or `node_file`, `node_id`, `payload` (any
+JSON value), `state`, `reads` (more read commands), `session_id`, `invocation_id`, `labels`,
+`retry_of` (the invocation a retry of the owner's replaces) and `previous_attempt`
+(`{"plan": ..., "errors": [...]}`, a plan the app applied itself and could not). One envelope on
+stdout: `invocation_id`, `outcome` (the telemetry's, or `not_run`), `exit_status`, `detail`, `path`,
+`answer` (a JSON value or text), `answer_text` (what the plain CLI would print), `operations`,
+`bindings`, `applied`, `gap_note`, `retries`. With `--plan-only` the executor is not called: the
+operations and the answer come back as the puntal wrote them, placeholders included, for the app to
+apply through its own API and fill in (then `previous_attempt` hands a failure back for a retry).
+
+**Owner feedback** (`feedback`). One line in `.cache/puntal/feedback.jsonl` (beside the telemetry
+file, or `--feedback-file`) per verdict, keyed by `invocation_id`: `schema`, `invocation_id`,
+`verdict` (`accept`, `reject` or `retry`), `note`, `retried_as` (the invocation that replaced a
+retried one), `recorded_at`, `action`, `node`, `session_id` and `versions`, **copied from the
+invocation's own telemetry record**: a verdict is about that model and that prompt, not about what is
+installed when the owner clicks. A verdict on an invocation the telemetry has never heard of is
+refused (exit `2`) and writes nothing.
+
+**Versions on every record** (`agent_os/product/records/versions.py`, which the judgments log will
+reuse). `versions` is `{"model", "cli_version", "method_version": {"agent_os_commit",
+"prompt_digest"}}`. `cli_version` is what the CLI reported at start-up (null for a run that never
+started); `agent_os_commit` is `HEAD` in agent-os's own checkout and, in a host, the upstream commit
+the `git subtree --squash` was pulled from (the `git-subtree-split:` of the newest pull of that
+directory), null when neither can be told -- never a guess; `prompt_digest` is `sha256:` and 16 hex
+digits of the **rendered** contract of the turn that produced the answer.
+
+**What it launches.** One `claude -p` per model turn, in a throwaway, empty scratch directory (so no
+project `CLAUDE.md`, `.claude/`, `.mcp.json`, memory or git status reaches the context), with the
+contract -- `prompts/puntal.md` on the fast path, `prompts/puntal_slow.md` on the slow one -- as the
+whole system prompt and the brief -- node slice, action, payload, state passed in, state loaded,
+and a retry's or the slow path's extra section -- as the first message. The flags, and why each one
+is there:
 
 | Flag | Why |
 |---|---|
 | `-p --output-format stream-json --verbose --include-partial-messages` | streaming: the driver stamps every event on arrival, which is what makes time-to-first-signal measurable |
 | `--safe-mode` | the user's `CLAUDE.md` and rules, skills, plugins, hooks, MCP servers, custom agents, LSP and auto memory stay out of the context. Works with a subscription login (`--bare` does not: it reads `ANTHROPIC_API_KEY` only) |
 | `--system-prompt <contract>` | replaces Claude Code's own system prompt wholesale, so the contract is all of it |
-| `--tools=Bash` | the only built-in tool in the model's context is Bash; Read, Write, Edit, WebFetch, Task... are not there to be misused. Written `--name=value`: a variadic option followed by a space swallows the prompt that follows |
-| `--permission-mode dontAsk` `--allowedTools=Bash(./state *)` | a call that would ask for approval is denied, so the one Bash command that runs is the persistence shim |
+| `--tools=` (fast path) / `--tools=Bash` (slow) | the fast path puts no tool in the model's context at all; the slow path puts only Bash, so Read, Write, Edit, WebFetch, Task... are not there to be misused. Written `--name=value`: a variadic option followed by a space swallows the prompt that follows |
+| `--permission-mode dontAsk` (+ `--allowedTools=Bash(./state *)` on the slow path) | a call that would ask for approval is denied, so on the slow path the one Bash command that runs is the persistence shim, and on the fast path none runs |
 | `--max-budget-usd <classes.puntal.max_cost_usd>` | the CLI's own per-invocation dollar cut |
 | `--no-session-persistence` | no transcript is written under `~/.claude` for a throwaway run |
 | `--model`, `--effort` | `classes.puntal.model` / `--model`; `puntal.effort` / `--effort` |
@@ -816,7 +913,9 @@ are start-up latency a person waiting on a click should not pay). The driver als
 telemetry record, the exact flag list the run was launched with (`launch.flags`).
 
 **How "the puntal never writes code" is enforced**, as far as the CLI allows, in layers
-(`agent_os/product/puntal.py` docstring):
+(`agent_os/product/puntal/__init__.py` docstring). On the fast path the model has no tool, so what
+changes state is the executor applying operations agent-os validated, and a tool call is itself a
+contract violation. The layers below are the slow path's:
 
 1. *Availability*: `--tools=Bash`; no file-writing tool is in the model's context.
 2. *Permission*: `dontAsk` plus one allow rule. The shim `./state` -- written into the scratch
@@ -842,10 +941,11 @@ user's own plugins, connectors and hooks are back in the context.
 ceilings bind **one invocation**, not an issue: `max_context` (the largest single turn) and
 `max_total_tokens` (all turns) are checked on the live stream and cut the run (`ceiling_cut`, exit
 4); `max_cost_usd` is handed to the CLI (`--max-budget-usd`) and checked again on the result;
-`puntal.max_tool_calls` cuts a loop. `puntal.timeout_seconds` SIGKILLs a hung process group
-(`timeout`, exit 124): a safety for a person waiting on a click, never a budget
+`puntal.max_tool_calls` cuts a loop. A retry or slow turn is run with the tokens and dollars the
+earlier turns left (the invocation's ceilings, not each turn's). `puntal.timeout_seconds` SIGKILLs a
+hung process group, per model turn (`timeout`, exit 124): a safety for a person waiting on a click, never a budget
 (`docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md`). The numbers in
-`config.example.yaml` are placeholders until the spike measures a real floor. There is no launch
+`config.example.yaml` are placeholders until a measurement on the vector's real actions sets a floor. There is no launch
 gate: a puntal never substitutes a backend, and a `fallback:` on its class is refused at load.
 
 **What it leaves.** `.cache/puntal/runs.tsv` (the five columns every role's has, via the same
@@ -862,11 +962,11 @@ exists for a run whose caller is waiting for it.
 the telemetry the refiner will consume to choose what to harden into code. Latencies are in seconds
 from the moment `puntal_task.sh` was entered -- the click reaching the driver -- so the shell, the
 interpreter's start-up and the config load are inside them. `schema` is bumped on an incompatible
-change.
+change (`2` since Stage 1: one record per invocation, whatever its number of model turns -- `usage`, `cost_usd`, `tool_calls` and the like add up over the turns, and the first-signal milestones are the first turn's).
 
 | Field | Meaning |
 |---|---|
-| `schema` | the record's version (`1`) |
+| `schema` | the record's version (`2`) |
 | `invocation_id` | a UUID, or the caller's `--invocation-id`; the join key to anything the caller keeps |
 | `started_at` | UTC, millisecond precision |
 | `action`, `node` | the UI action, and the node it is bound to (`--node-id`, else the node file's stem) |
@@ -875,26 +975,32 @@ change.
 | `backend_session_id` | the backend's own session id of this process |
 | `labels` | the caller's `--label KEY=VALUE` pairs, free-form (the bench puts `stage` and `step` here) |
 | `class`, `backend`, `model`, `effort` | what ran; `effort` is null when the CLI's default was used |
-| `outcome`, `outcome_detail` | `ok`, `error`, `timeout`, `contract_violation` or `ceiling_cut`, and why |
+| `path`, `slow_path_reason` | `fast` or `slow` -- the path that answered; for `slow`, why: the plan's own `needs_state` sentence (an undeclared read: correct the node or harden the step), or `forced by --path slow` |
+| `versions` | `model`, `cli_version` and `method_version` (`agent_os_commit`, `prompt_digest`): which method produced the record (above); the feedback and the judgments log carry the same object |
+| `outcome`, `outcome_detail` | `ok`, `error`, `timeout`, `contract_violation`, `ceiling_cut`, `invalid_plan` (the plan failed validation after its retry) or `executor_failed` (the app's executor refused the retried plan, or crashed), and why |
 | `exit_code` | the backend process's, null if it never started |
-| `latency_s` | `total` (entry to response complete); `python_startup` (entry to the interpreter being ready: shell, imports); `launch_overhead` (entry to the backend being spawned); `first_event` (first stream line, the CLI's init); `first_message` (first `message_start`); `first_tool_call`; **`first_text_delta`**: the first assistant text delta of any message, which is the **time-to-first-signal** -- the first thing a UI could show; `final_answer_first_delta` (the first delta of the message that carries the answer, after the tool calls); `backend_reported` (the CLI's own `duration_ms`, `duration_api_ms` and `ttft_ms` when it reports them, a cross-check). A milestone that never happened is null |
-| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `first_turn` (the four counters of the very first turn, before any tool result) and `context_tokens_first_turn` (their context sum: **the context floor of the call**, system prompt, tool definitions and brief), `context_tokens_peak` (the largest single turn) and `turns` (null for a run that was cut before its `result`) |
+| `latency_s` | `total` (entry to response ready); `pre_helper` (the node's declared reads loaded; null if it declares none); `executor` (the app's executor; null if it did not run); `python_startup` (entry to the interpreter being ready: shell, imports); `launch_overhead` (entry to the first backend being spawned); `first_event` (first stream line, the CLI's init); `first_message` (first `message_start`); `first_tool_call`; **`first_text_delta`**: the first assistant text delta of any message, which is the **time-to-first-signal** -- the first thing a UI could show; `final_answer_first_delta` (the first delta of the message that carries the answer, after the tool calls); `backend_reported` (the CLI's own `duration_ms`, `duration_api_ms` and `ttft_ms` when it reports them, a cross-check). A milestone that never happened is null |
+| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `first_turn` (the four counters of the very first turn, before any tool result) and `context_tokens_first_turn` (their context sum: **the context floor of the call**, system prompt, tool definitions and brief), `context_tokens_peak` (the largest single turn) and `turns` (the CLI's own count of model turns inside the processes, null when none reached a `result`); the token counters are sums over the invocation |
 | `cost_usd` | the CLI's `total_cost_usd`; under a subscription it is notional (API-equivalent). Null when the run produced no `result` |
-| `tool_calls` | per call: `name`, `command` (Bash only), `at_s`, `violation`, `is_error`, `result_chars` |
-| `tool_violations` | the audit's findings; empty means the puntal ran only `./state` |
+| `turns` | one object per model turn (one `claude -p` process): `n`, `kind` (`plan`, `retry` or `slow`), `outcome`, `outcome_detail`, `started_at_s`, `ended_at_s`, `total_tokens`, `cost_usd`, `num_turns`, `prompt_digest` (of the contract that turn ran under) and `backend_session_id` |
+| `declared_reads` | the pre-helper's: `declared` (the commands, as the node wrote them), `ran`, `failed` and `problems` (a malformed declaration, a missing payload field, a command that is not a read) |
+| `plan` | `operations` (how many the last valid plan had; null when none parsed), `applied`, `retries`, `attempts` (each rejected attempt: `turn`, `stage` = `validation` or `executor`, `errors`, `text`) and `bindings` (what the executor allocated) |
+| `executor` | `ran`, `ok`, `crashed` and `errors` of the app's executor |
+| `tool_calls` | per call over all turns: `name`, `command` (Bash only), `at_s`, `violation`, `is_error`, `result_chars`; empty on the fast path |
+| `tool_violations` | the audit's findings; empty means the puntal ran only `./state` (on the fast path, ran no tool) |
 | `init` | what the CLI said it started with: `tools`, `mcp_servers`, `permission_mode`, `claude_code_version` -- evidence the confinement took |
 | `permission_denials` | how many calls the CLI itself denied |
 | `ceilings` | the four ceilings and the timeout this run was bound by, and `exceeded` (any passed, cut or not) |
-| `launch` | `flags` (the exact confining flags) and `persistence_command` |
+| `launch` | `flags` (the first turn's exact confining flags), `persistence_command` and `executor_command` |
 | `scratch_extra_entries` | files found in the scratch directory after the run, other than the shim |
-| `response` | the response the app received (empty text for a run that did not finish) |
+| `response` | the response the app received: the answer, placeholders filled (empty text for a run that did not finish) |
 | `gap_note` | the *gap note*, below, or null |
 | `stderr_tail` | the last non-JSON lines the backend printed, kept only when the run was not `ok` |
 
 **The gap note.** When the action asks for something its node does not describe, the contract tells
-the puntal to do the closest safe thing and end its final message with one line,
-`GAP: asked for <what>; the node does not describe it`. The driver strips that line from the response
-(the last line starting with `GAP:`) and records it in `gap_note`: the telemetry the refiner reads to
+the puntal to do the closest safe thing and say so: `"gap": "asked for <what>; the node does not describe it"`
+in the plan (the slow path ends its message with a line `GAP: ...` instead). The driver keeps it out of
+the response and records it in `gap_note`: the telemetry the refiner reads to
 find use cases that need a node written or sharpened.
 
 **The bench and the measurement** (`bench/puntal/`, outside the `agent_os` package and so outside the
@@ -903,9 +1009,10 @@ document store (`store.py`, a CLI of atomic file writes with a locked counter), 
 five actions -- `create_ticket`, `change_status`, `show_board`, `board_report`, and `export_csv`
 bound to the show-board node that says nothing of exporting, the deliberate gap -- a reference model
 of their rules (`domain.py`), a fake `claude` that plays a perfect or a faulty puntal
-(`fake_claude.py`), and `measure.py`:
+(`fake_claude.py`, with `fake_fast.py` for the fast path), the helpdesk's executor (`executor.py`: it applies a plan to the store and recounts `summary/board` itself), and `measure.py`:
 
 ```
+measure.py calibrate --dry-run             # (every stage takes `--puntal-path slow|fast`; `slow`, the default, is the Phase 0 tool loop this bench was built to compare against)
 measure.py calibrate --dry-run             # 2 calls -> the context floor: the smallest brief, cold cache; then warm cache + ONE read through the persistence tool
 measure.py main --session 1 --dry-run      # 3 sessions of 8 over ONE store, a fresh process per call
 measure.py main --session 2                #   (replace --dry-run by --allow-real-calls to spend)
@@ -938,7 +1045,7 @@ milestones), cost per action (mean, and tokens), the prompt-cache split, the cal
 the derived `summary/board` equal to a recount, status and resolution consistent), a one-step replay of
 each action's rules from the store as it was before the call, and a ledger replayed from the empty
 store and compared with the store at every session boundary -- a fact established in session N that
-is no longer true in N+1, or reported differently in N+1, is listed with its evidence. It states its
+is no longer true in N+1, or reported differently in N+1, is listed with its evidence. It also says how many invocations took each path, needed a retry turn or were refused by the executor. It states its
 own sample size (`p95` of 24 is the 23rd value; one slow call moves it) and that `total_cost_usd` is
 notional. It judges the plan's starting points (first signal < 5 s, full response p95 < 30 s, mean
 cost < $0.10, zero contradictions) and adds one of its own, that the puntal ran only `./state`.
@@ -1104,7 +1211,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.product.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
-| `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.7). Not a role the planner launches |
+| `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |
 | `bench/puntal/measure.py calibrate\|main\|reserve\|summarize\|status` | the lead, once, deliberately | the puntal spike's measurement; the only place real calls are authorised, capped at 30 in code (§4.7) |
 | `agent_os.guard check <backend> [--slot N]\|tick\|wake\|promote-refined\|event` | exit hook (`check`), systemd timer (`tick`), `wake`/drivers (`event`), a human (`promote-refined`, by hand), or control-plane via `issues.py update --add-label wake:planner` (never this script directly) | exit-hook bookkeeping; the periodic budget/liveness/quota/drift check, which also reconciles mechanical state (closed → `done`, `promote_refined`, `orphan_doing`) and reports a one-shot role run whose PID is dead with its PID file still on disk as `role_died` (#400); advances `merged_seen.json` and may write `pr_merged`; removes any `wake:planner` label found and may write `nudged` (#413); the `flock`-guarded planner invocation; write a `<kind>` event; the `status:refine → status:ready` sweep, which the tick now runs on every fire |
 | `agent_os/bin/notify.sh "<message>"` | guard, planner | one ntfy.sh POST to the project's single topic |

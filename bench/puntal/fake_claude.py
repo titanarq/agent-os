@@ -17,6 +17,10 @@ Two modes, chosen by the environment:
   real puntal might, so the checks can be shown to catch it: see `FAULTS`.
 - PLAYBOOK MODE (`FAKE_PUNTAL_PLAYBOOK=<json file>`): a list of `{"op": ...}` steps, for a test that
   needs one exact stream: `text`, `tool`, `tool_raw`, `raw`, `write_file`, `sleep`, `final`, `exit`, `hang`.
+  `{"turns": [[steps], [steps]]}` plays one list per model turn of an invocation (a retry, the slow path).
+
+The driver's fast path offers no tool (`--tools=`): the domain mode then PLANS (`fake_fast.py`) -- it
+returns the operations JSON, reading only what the pre-helper loaded into the brief.
 
 Other environment: `FAKE_PUNTAL_PID_FILE` (where it writes its pid, so a test can prove it was
 killed), `FAKE_PUNTAL_ARGV_LOG` (a file each invocation appends its argv and cwd to),
@@ -37,6 +41,7 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import domain
+import fake_fast
 
 VALUE_FLAGS = {
     "--output-format",
@@ -118,6 +123,8 @@ class Stream:
         self.started = time.monotonic()
         self.first_context_override: int | None = None
         self.denials: list[dict] = []
+        # What the driver offered: `--tools=Bash` on the slow path, `--tools=` (nothing) on the fast.
+        self.tools: list[str] = []
 
     def _emit(self, event: dict) -> None:
         sys.stdout.write(json.dumps(event) + "\n")
@@ -135,7 +142,7 @@ class Stream:
                 "subtype": "init",
                 "session_id": self.session_id,
                 "cwd": os.getcwd(),
-                "tools": ["Bash"],
+                "tools": self.tools,
                 "mcp_servers": [],
                 "model": self.model,
                 "permissionMode": "dontAsk",
@@ -490,6 +497,19 @@ def play_playbook(stream: Stream, steps: list[dict]) -> None:
             sys.exit(step.get("code", 0))
 
 
+def next_turn_index(playbook: str, turn_count: int) -> int:
+    """Which turn of a multi-turn playbook this process is: how many ran before it, counted in a
+    file beside the playbook. Past the last turn, the last one repeats."""
+    counter = playbook + ".turn"
+    done = 0
+    if os.path.exists(counter):
+        with open(counter) as handle:
+            done = int(handle.read())
+    with open(counter, "w") as handle:
+        handle.write(str(done + 1))
+    return min(done, turn_count - 1)
+
+
 def section(brief: str, heading: str) -> str:
     start = brief.find(f"# {heading}\n")
     if start < 0:
@@ -539,11 +559,15 @@ def main() -> int:
     if fault == "crash":
         print("error: simulated crash before the first event", file=sys.stderr)
         return 1
+    stream.tools = [name for name in str(flags.get("--tools", "")).split(",") if name]
     stream.init()
     playbook = os.environ.get("FAKE_PUNTAL_PLAYBOOK")
     if playbook:
         with open(playbook) as handle:
-            play_playbook(stream, json.load(handle))
+            steps = json.load(handle)
+        if isinstance(steps, dict):
+            steps = steps["turns"][next_turn_index(playbook, len(steps["turns"]))]
+        play_playbook(stream, steps)
         return 0
     if fault == "hang":
         time.sleep(3600)
@@ -552,7 +576,17 @@ def main() -> int:
         payload = json.loads(section(brief, "Payload") or "{}")
     except ValueError:
         payload = {}
-    stream.result(play_domain(stream, action, payload if isinstance(payload, dict) else {}, fault))
+    payload = payload if isinstance(payload, dict) else {}
+    if "--tools" in flags and not stream.tools:
+        # The fast path: no tool at all. A fault that reaches for one is a contract violation.
+        if fault == "write_code" and action == "export_csv":
+            stream.tool_raw("Write", {"file_path": "export.py", "content": "print('csv')"})
+        plan = fake_fast.plan_domain(
+            action, payload, section(brief, "State loaded for this action"), fault, brief
+        )
+        stream.result(json.dumps(plan))
+        return 0
+    stream.result(play_domain(stream, action, payload, fault))
     return 0
 
 
