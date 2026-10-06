@@ -4,7 +4,7 @@
 - Status: accepted
 - Modules: tree (`agent_os/tree/`), config, docs
 - Implements Phase 1 of `docs/AGENTOS_V2_PLAN.md`; the founding decision "Tree as repo files, issues
-  as generated dispatch tickets" is `docs/ledger/dec-tree-as-repo-files.md`
+  as generated dispatch tickets" is `docs/tree/dec-tree-as-repo-files.md` (`docs/ledger/` until 2026-10-06)
 
 ## Context
 Agentos v2 adds a product layer to the substrate: a tree of global goals, functional requirements

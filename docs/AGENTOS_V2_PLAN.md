@@ -139,5 +139,15 @@ schema mining, multi-user telemetry, autonomous abort by level 0, an MCP server 
 ## Dependencies and open items
 
 - The vector project: chosen and its global goals written by the owner (pending).
+  - **2026-10-06:** soundmax v2 was considered and set aside as too complex for a first vector (the
+    owner's diagnosis of v1: its features needed an agentic engine that looks further ahead, and
+    the agent building it lacked the tools to build software at the level of its requirements). A
+    local skeleton exists under a provisional name, with an empty product tree, a components
+    package and its selection criteria, which follow from Agentos's goals (`docs/tree/`): a UI the
+    owner uses often, at least two functional branches, cheap executable verification, real
+    persisted state from day one, a small first version, and actions that tolerate a few seconds
+    of latency where they start improvised.
+  - Reusable components start inside the vector, as a package of its own, and move to a shared
+    repository when they are reused across products.
 - Phases 0 and 1 are independent of each other and of the vector; they start immediately on
   separate branches.

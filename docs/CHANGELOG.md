@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Agentos v2, what Agentos is for (owner design discussion of 2026-10-05/06; no issue, branch
+  `feat/v2-global-goals`) -- Agentos's own tree moves from `docs/ledger/` to `docs/tree/` and gains
+  its goals: four goals (a usable product early, grown by real use; faithful to its owner's goals
+  over months; the owner decides what, Agentos decides how; Agentos improves with every product)
+  and seventeen functional requirements under them, all `mechanism: pending` -- the what is
+  written first and the how is decided later. New decision `dec-one-owner-for-now`. `AGENTS.md`
+  and `docs/AGENT_OS.md` open with what Agentos is for instead of what the v1 substrate does.
+  The goals' evaluators are not set yet: they are part of the what, and the owner decides them.
+
 - Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
   the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and
   console script `agent-os-tree`: a node (goal, functional requirement, use case) and a decision are
