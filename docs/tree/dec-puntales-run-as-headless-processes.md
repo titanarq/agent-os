@@ -24,3 +24,8 @@ Held in reserve, NOT rejected: a live session per user session instead of a proc
 precomputation, and batched puntales. The plan names them as the designs to try next if Phase 0's
 go/no-go is no-go, so they are not listed under `rejected_alternatives`, which is what a worker
 reads as "do not propose this again".
+
+**Review trigger evaluated on 2026-10-06.** Phase 0 was a no-go on time-to-first-signal only (p95
+8.6 s; full response, cost and coherence passed). The mechanism stays: the puntal is still a
+headless Claude Code process. What changes is the work it is asked to do in that process --
+`dec-a-puntal-plans-in-one-turn-and-code-executes`. The designs held in reserve stay in reserve.

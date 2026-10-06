@@ -8,6 +8,7 @@ sources:
 - 'Owner''s diagnosis of 2026-10-06: soundmax v1 was stopped for drift; its features needed an agentic engine that looks further ahead, and the agent building it lacked the tools to build software at the level of its requirements'
 decisions:
 - dec-one-owner-for-now
+- dec-the-cycle-applies-at-every-scale
 ---
 What Agentos learns while building one product makes the next one cost less: it does not
 forget, it looks for what it does not know, it knows how far to trust itself, it improves
