@@ -104,7 +104,7 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `Review`, `Done`.
 14. **One GitHub App per identity** — `project.backends.<name>.app` for each worker backend
     (`project.backends.qwen.app`, `project.backends.claude.app` in the example),
-    `project.planner_app`, and optionally `project.role_apps.validator`/`.refiner` (falling back to
+    `project.planner_app`, and optionally `project.role_apps.validator`/`.refiner`/`.expert` (falling back to
     `planner_app` when unset, §7 row (p)). This is a browser step with no manifest automation in
     the mechanism (`agent_os.gh_app_token` only mints tokens for an App that already exists):
     create each App on `<org>/<repo>`'s GitHub settings, with permissions matched to what that
@@ -202,6 +202,14 @@ with no console-script equivalent.)
     `agent_os/bin/worker_task.sh <backend> watch` (tail the event stream),
     `journalctl --user -u <guard_unit>.service -f` (tick output), and
     `.cache/<role>/runs.tsv` (cost as it accrues).
+    In a v2 host (a product tree under `tree.root`), the first population of the tree is the
+    expert's: once the owner has written the goals and their evaluators and opened an issue that
+    says what to populate, `agent_os/bin/agent_task.sh expert <issue> --dry-run` shows the class,
+    the identity and the prompt it would run with, and without `--dry-run` it opens one pull request
+    on the tree and comments a summary (`docs/AGENT_OS.md` section 4.9). The host's
+    `config/agents.yaml` needs the `expert` class from `config.example.yaml`; its App is
+    `project.role_apps.expert`, else the planner's, and it needs the permissions the workers have
+    (Contents push, Pull requests create). It is launched by hand: nothing runs it unattended.
 
 ## 6. Pulling improvements, and sending one back
 

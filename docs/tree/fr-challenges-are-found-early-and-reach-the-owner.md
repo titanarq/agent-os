@@ -18,7 +18,7 @@ mechanism: |-
   branch on the progress board.
 implementation: 'The challenge field with its reason and the not-hardenable property it gives a node and its dependents:
   agent_os/product/tree/models.py, agent_os/product/tree/hardening.py (#113). Flagging, the question session
-  and the progress board are not built.'
+  and the progress board are not built. The expert flags a challenge on the node and lists it for the owner in its summary (prompts/expert.md, #118).'
 ---
 Whether the product can be finished, with guarantees, is known as early as possible: a use case with
 no known solution, no way to test it, or a cost its goal does not accept is found early and reaches

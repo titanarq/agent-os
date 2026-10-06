@@ -14,6 +14,7 @@ mechanism: |-
   question session carries a digest of what was decided without the owner, and a reclaimed decision
   becomes a question of what. In a product, the refiner revises soft decisions with a record and the
   owner revises hard ones; in Agentos's method, a change of how is adopted with evidence.
+implementation: 'The expert role reads every question first, settles a how itself or records an open spike, and sends only a what, with its default, to the owner, with a digest of what it decided alone: prompts/expert.md, agent_task.sh expert, class expert (#118). The question session and the running of spikes are not built.'
 ---
 When the goal is clear and the doubt is between one way and another of meeting it,
 Agentos tries, measures and keeps the better one. The owner is not asked.

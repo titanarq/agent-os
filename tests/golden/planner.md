@@ -185,6 +185,10 @@ small one's body in place), and it runs unattended only once the human has flipp
   parent carries `auto-ready` moves itself to `status:ready`, and anything else stays
   `status:refine` for the human. You never set `status:ready` on a refined issue yourself, and you
   never run it by hand either: a promoted issue reaches you as a `new_dispatchable` event.
+- On an `expert_finished` event: nothing for that event. The expert is launched by a command
+  (`agent_os/bin/agent_task.sh expert <N>`, by the human or on the human's word), never by you on
+  your own initiative, and it ends in a pull request that the validator judges and the human
+  reads; its summary comment on issue N is the human's to answer, not yours to act on.
 
 A ROLE THAT DIED IS YOURS TO RELAUNCH -- role_died
 A one-shot role announces its own end: it writes `<role>_finished` and the guard's `wake` brings
@@ -200,7 +204,7 @@ The event names the log to read and tells you which of two shapes it is:
   needs no second run, and paying for one buys an answer that is already on the issue.
 Relaunch at most once, under the same rule as any launch: a validator only on a pull request that
 still carries no review from its own App, a refiner only on an issue with no
-`<!-- refiner-summary -->` comment yet. A SECOND `role_died` on the same subject is not a third try
+`<!-- refiner-summary -->` comment yet, an expert never (a died expert is the human's to relaunch: say so on its issue). A SECOND `role_died` on the same subject is not a third try
 -- a role that keeps dying is a defect in the mechanism, not work to retry, so ask the human (a
 mention plus `status:blocked-on-human` on the issue that run was for, naming both deaths and both
 logs).
