@@ -15,7 +15,8 @@ that closed several small issues at once name them all. This file starts on 2026
   and seventeen functional requirements under them, all `mechanism: pending` -- the what is
   written first and the how is decided later. New decision `dec-one-owner-for-now`. `AGENTS.md`
   and `docs/AGENT_OS.md` open with what Agentos is for instead of what the v1 substrate does.
-  The goals' evaluators are not set yet: they are part of the what, and the owner decides them.
+  Each goal carries its evaluators, set by the owner as trends until the vector gives the first
+  measurements; they are part of the what, so only the owner changes them.
 
 - Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
   the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and

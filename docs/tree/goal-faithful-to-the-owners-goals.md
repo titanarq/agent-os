@@ -13,4 +13,9 @@ However long it runs, the product stays the one its owner asked for: every piece
 answers to one of the owner's goals, and drift is caught before it costs more than one
 step.
 
-Evaluators: not set yet. They are part of the what, so the owner decides them.
+Evaluators (set by the owner on 2026-10-06; trends until the vector gives the first measurements,
+numeric thresholds after):
+- The tests of the product's own goals pass.
+- Unverified exposure per branch: low.
+- Rework decays over time.
+- Work lost when a step is undone: at most one step.

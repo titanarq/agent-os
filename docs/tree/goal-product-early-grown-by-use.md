@@ -12,4 +12,8 @@ The owner has a product to use very early, and it grows from that use rather tha
 specification written before anyone used it. Over-specifying before use is what stops a
 product; real use is what tells which part of it matters.
 
-Evaluators: not set yet. They are part of the what, so the owner decides them.
+Evaluators (set by the owner on 2026-10-06; trends until the vector gives the first measurements,
+numeric thresholds after):
+- Time from the owner writing a product's goals to a first usable product: short.
+- Share of use served by consolidated parts: grows.
+- Defects found after a part is consolidated: few.

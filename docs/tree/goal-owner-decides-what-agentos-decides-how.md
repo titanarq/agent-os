@@ -12,4 +12,9 @@ The owner's authority is over what the product is for and over what counts as me
 Agentos settles how, with evidence. The owner's attention is the scarcest resource there
 is, and it is spent only on what only the owner can decide.
 
-Evaluators: not set yet. They are part of the what, so the owner decides them.
+Evaluators (set by the owner on 2026-10-06; trends until the vector gives the first measurements,
+numeric thresholds after):
+- Doubts about how that reach the owner: none.
+- Questions and owner time per session: do not grow.
+- Judgments Agentos takes alone with its accuracy held: grow.
+- Owner reversals: few.
