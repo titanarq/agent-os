@@ -33,7 +33,11 @@ ADR = (
 def section_of_the_tree_doc() -> str:
     text = AGENT_OS_DOC.read_text()
     start = text.index("### 4.6 The product tree and the decision ledger")
-    return text[start : text.index("\n## 5. ", start)]
+    # Up to the next heading of any level that is a section: a subsection that follows (the puntal
+    # driver's, 4.7) is another feature's text and must not satisfy this one's documentation.
+    following = re.search(r"\n#{2,3} ", text[start + 1 :])
+    assert following, "the tree section is the last in the document, so where does it end?"
+    return text[start : start + 1 + following.start()]
 
 
 def test_the_docs_table_lists_every_check_the_doctor_has():

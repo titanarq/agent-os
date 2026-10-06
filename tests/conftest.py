@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
+import shlex
 import shutil
 
 import pytest
@@ -135,4 +136,32 @@ def _no_cache_leaks_into_the_checkout(request):
         f"{request.node.nodeid} wrote a .cache/ into the checkout (agent-os#25): {listing}. "
         "Point WORKER_CACHE_DIR / PLANNER_CACHE_DIR / AGENT_CACHE_DIR at tmp_path.",
         pytrace=False,
+    )
+
+
+# Where `bench/puntal/measure.py` counts REAL calls when nothing says otherwise: per user, so the cap
+# spans checkouts. No test may add to it.
+_REAL_CALL_COUNTER = pathlib.Path.home() / ".cache" / "agent-os" / "puntal-bench-real-calls.json"
+
+
+@pytest.fixture
+def no_real_backend(tmp_path_factory, monkeypatch):
+    """Whatever a puntal test launches, the `claude` it can reach is a trap. A fake backend is passed
+    to the driver explicitly (`PUNTAL_CLAUDE_BIN`); this is the second wall, for the day a test forgets
+    to, or a code path resolves the bare name `claude` through PATH: that resolves HERE, records that it
+    happened, and exits 99. The test then fails, and so does any run that touched the real call counter
+    of the measurement script, which is the other thing a test must never reach."""
+    trap_dir = tmp_path_factory.mktemp("trap-claude")
+    marker = trap_dir / "REAL-CLAUDE-WAS-CALLED"
+    trap = trap_dir / "claude"
+    trap.write_text(f'#!/bin/sh\necho "$@" >> {shlex.quote(str(marker))}\nexit 99\n')
+    trap.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{trap_dir}:{os.environ['PATH']}")
+    monkeypatch.delenv("PUNTAL_CLAUDE_BIN", raising=False)
+    counter_before = _REAL_CALL_COUNTER.stat().st_mtime_ns if _REAL_CALL_COUNTER.exists() else None
+    yield trap_dir
+    assert not marker.exists(), f"a test reached the real `claude`: {marker.read_text()}"
+    counter_after = _REAL_CALL_COUNTER.stat().st_mtime_ns if _REAL_CALL_COUNTER.exists() else None
+    assert counter_after == counter_before, (
+        "a test touched the real-call counter of the measurement"
     )
