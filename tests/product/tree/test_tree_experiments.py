@@ -8,7 +8,7 @@ import json
 import pathlib
 
 import pytest
-from tree_helpers import write_node, write_sound_tree
+from tree_helpers import experiment_entry, write_node, write_sound_tree
 
 from agent_os.product.tree.checks import check_tree
 from agent_os.product.tree.hardening import hardening_blockers, is_hardenable
@@ -19,11 +19,7 @@ DATE = "2026-10-07"
 
 
 def experiment(kind="spike", outcome="feasible", **fields) -> dict:
-    entry = {"kind": kind, "question": "does it work", "outcome": outcome, "date": DATE}
-    if outcome != "open":
-        entry["finding"] = "it does"
-    entry.update(fields)
-    return entry
+    return experiment_entry(outcome, kind=kind, question="does it work", **fields)
 
 
 def tree_with(root: pathlib.Path, **fields):

@@ -12,6 +12,7 @@ import typing
 
 import pytest
 from tree_helpers import (
+    experiment_entry,
     node_frontmatter,
     write_decision,
     write_node,
@@ -464,17 +465,7 @@ def test_a_node_that_is_its_own_parent_is_a_cycle(tmp_path):
         {"state": "improvised"},
         {"state": "implemented"},
         {"depends_on": ["fr-offline"]},
-        {
-            "experiments": [
-                {
-                    "kind": "spike",
-                    "question": "q",
-                    "outcome": "feasible",
-                    "finding": "f",
-                    "date": "2026-10-04",
-                }
-            ]
-        },
+        {"experiments": [experiment_entry("feasible")]},
     ],
 )
 def test_a_goal_cannot_carry_work_fields(tmp_path, fields):

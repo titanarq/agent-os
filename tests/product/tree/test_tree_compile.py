@@ -15,7 +15,7 @@ import subprocess
 
 import pytest
 from conftest import EXAMPLE_CONFIG
-from tree_helpers import write_decision, write_node, write_sound_tree
+from tree_helpers import experiment_entry, write_decision, write_node, write_sound_tree
 
 from agent_os import issues
 from agent_os.lib import is_dispatchable, load_agents_config, validate_issue_body
@@ -425,13 +425,9 @@ def test_a_pending_mechanism_that_an_experiment_found_infeasible_escalates(tmp_p
         parent="fr-offline",
         verification=[{"command": "true"}],
         experiments=[
-            {
-                "kind": "spike",
-                "question": "can it run in the browser",
-                "outcome": "infeasible",
-                "finding": "no storage quota",
-                "date": "2026-10-04",
-            }
+            experiment_entry(
+                "infeasible", question="can it run in the browser", finding="no storage quota"
+            )
         ],
     )
     result = compiled(tmp_path)
@@ -451,13 +447,9 @@ def test_an_infeasible_experiment_does_not_stop_a_node_whose_mechanism_is_known(
         mechanism="Use the file system instead",
         verification=[{"command": "true"}],
         experiments=[
-            {
-                "kind": "spike",
-                "question": "can it run in the browser",
-                "outcome": "infeasible",
-                "finding": "no storage quota",
-                "date": "2026-10-04",
-            }
+            experiment_entry(
+                "infeasible", question="can it run in the browser", finding="no storage quota"
+            )
         ],
     )
     assert [t.node_id for t in compiled(tmp_path).tickets] == ["uc-edit"]
@@ -472,20 +464,8 @@ def test_a_feasible_or_inconclusive_experiment_does_not_block_dispatch(tmp_path)
         parent="fr-offline",
         verification=[{"command": "true"}],
         experiments=[
-            {
-                "kind": "spike",
-                "question": "q1",
-                "outcome": "feasible",
-                "finding": "f",
-                "date": "2026-10-04",
-            },
-            {
-                "kind": "spike",
-                "question": "q2",
-                "outcome": "inconclusive",
-                "finding": "f",
-                "date": "2026-10-04",
-            },
+            experiment_entry("feasible", question="q1"),
+            experiment_entry("inconclusive", question="q2"),
         ],
     )
     assert [t.node_id for t in compiled(tmp_path).tickets] == ["uc-edit"]
@@ -498,15 +478,7 @@ def test_a_node_can_escalate_for_both_reasons(tmp_path):
         "uc-both",
         "use-case",
         parent="fr-offline",
-        experiments=[
-            {
-                "kind": "spike",
-                "question": "q",
-                "outcome": "infeasible",
-                "finding": "f",
-                "date": "2026-10-04",
-            }
-        ],
+        experiments=[experiment_entry("infeasible")],
     )
     codes = sorted(e.code for e in compiled(tmp_path).escalations if e.node_id == "uc-both")
     assert codes == ["mechanism-unresolvable", "missing-verification"]

@@ -117,3 +117,13 @@ def write_sound_tree(root: pathlib.Path) -> dict[str, pathlib.Path]:
         ),
         "dec-local-first": write_decision(root, "dec-local-first"),
     }
+
+
+def experiment_entry(
+    outcome: str = "feasible", *, kind: str = "spike", question: str = "q", **fields
+) -> dict:
+    """One `experiments` entry; a closed one has a finding, an `open` one has not yet."""
+    entry = {"kind": kind, "question": question, "outcome": outcome, "date": "2026-10-04"}
+    if outcome != "open":
+        entry["finding"] = "f"
+    return {**entry, **fields}
