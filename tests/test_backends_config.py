@@ -214,7 +214,7 @@ def test_worktree_path_reads_the_backend_entry(tmp_path):
 def test_a_worker_s_default_model_is_read_off_the_classes_on_its_backend():
     # The example config: the worker classes run on qwen; claude carries only the one-shot roles.
     assert backend_default_model("qwen") == "qwen3.8-max"
-    assert backend_default_model("claude") == "claude-opus-5"
+    assert backend_default_model("claude") == "claude-sonnet-5-5"
     with pytest.raises(KeyError, match="no class"):
         backend_default_model("foo")
 

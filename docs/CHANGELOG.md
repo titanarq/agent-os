@@ -28,10 +28,120 @@ that closed several small issues at once name them all. This file starts on 2026
   and is reported once. The tick's `worker_cut` event names the issue it cut. `agent-os-doctor`
   checks every slot's worktree, `planner_task.sh` adds every slot's worktree to the planner's
   `--add-dir`, `worker_progress.sh` reports per slot. `prompts/planner.md` resumes with
-  `--issue <N>` and says a backend may have several slots (ADR
+  `--issue <N>` and says a backend may have several slots. The worker class's launch gate (#95)
+  keeps both its behaviours on a slot: the refusal reads the backend's quota verdict (so it is the
+  same on every slot), and `escalate:` reads how the previous process ended off the launching
+  slot's own state file (ADR
   `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`). Host follow-up: none to keep
   today's behaviour. To run two workers on one backend: set `slots: 2` on it, raise
   `planner.max_parallel_issues`, and run `worker_task.sh <backend> init` to create `<worktree>-2`.
+- Agentos v2, what Agentos is for (owner design discussion of 2026-10-05/06; no issue, branch
+  `feat/v2-global-goals`) -- Agentos's own tree moves from `docs/ledger/` to `docs/tree/` and gains
+  its goals: four goals (a usable product early, grown by real use; faithful to its owner's goals
+  over months; the owner decides what, Agentos decides how; Agentos improves with every product)
+  seventeen functional requirements under them and six use cases (what the owner does with
+  Agentos), all `mechanism: pending` -- the what is
+  written first and the how is decided later. New decision `dec-one-owner-for-now`. `AGENTS.md`
+  and `docs/AGENT_OS.md` open with what Agentos is for instead of what the v1 substrate does.
+  Each goal carries its evaluators, set by the owner as trends until the vector gives the first
+  measurements; they are part of the what, so only the owner changes them.
+
+- Agentos v2, Phase 0 (`docs/AGENTOS_V2_PLAN.md`) -- the puntal spike. A **puntal** answers one live
+  UI action with one headless `claude -p`, reading the action's node slice and reading and writing
+  state only through the app's persistence API. New `bin/puntal_task.sh` (a thin shell half) and
+  `agent_os/puntal.py`: the brief is rendered from the new `prompts/puntal.md`, the run is launched
+  in an empty scratch directory with `--safe-mode`, `--tools=Bash`, `--permission-mode dontAsk` and one
+  allow rule for the persistence shim `./state`, the stream is audited as it arrives and the run is
+  cut at the first tool call outside that contract, at a passed ceiling, or at the safety timeout.
+  Every invocation appends one JSON line of telemetry (action, node, session, latencies including
+  time-to-first-signal, tokens, cost, tool calls, response, gap note) and one `runs.tsv` row. New
+  `TaskClass.role: puntal` (`classes.puntal`: its three ceilings bind one invocation; a `fallback:`
+  on it is refused at load) and a `puntal:` config section (`persistence_command`,
+  `persistence_api_file`, `timeout_seconds`, `max_tool_calls`, `effort`), all optional with the
+  defaults in `config.example.yaml`; a puntal logs under `.cache/puntal/` and the guard reads those
+  logs as role quota observations. `bench/puntal/`, outside the package: a toy helpdesk over a JSON
+  document store, five actions (one whose node is deliberately silent, to exercise the gap note), a
+  reference model of their rules, a fake `claude`, and `measure.py`, the measurement -- real calls
+  need `--allow-real-calls`, never run under pytest and are capped at 30 in code by a persistent
+  counter, after free `--help`/`--version` checks of the real CLI and a calibration whose second
+  call proves the persistence tool ran; `summarize` computes p50/p95 latency, time-to-first-signal, cost per action and
+  persisted-state coherence across three sessions from the raw files alone. Tests stub the backend
+  and fail on a trap `claude` (`no_real_backend`). ADR
+  `2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`;
+  `docs/AGENT_OS.md` §4.7. Numbers and the go/no-go are `docs/spikes/2026-10-puntal-latency.md`
+  (no-go on time-to-first-signal, go on the other three criteria). Hosts: a `subtree pull`; nothing to configure unless you run puntales.
+
+- Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
+  the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and
+  console script `agent-os-tree`: a node (goal, functional requirement, use case) and a decision are
+  each one Markdown file with YAML frontmatter under one root (`tree.root`, default `product`, or
+  `--root`), validated with pydantic in the repo's strict style (an unknown field is an error).
+  `validate` (alias `doctor`) is a red check the way host literals are: 23 named codes, one line per
+  defect with the file path, exit 1 (orphan files, missing or unknown fields, duplicate ids, id
+  and filename or prefix mismatches, dangling or mistyped or cyclic parents, a hardened node
+  without implementation or verification, a node pointing at a superseded decision, a superseded
+  decision without an existing successor, ...). Tests run top-down from the goals: a goal may carry
+  a `verification` (acceptance, never work: it still carries no mechanism, implementation, spike,
+  foundation flag or state, and is never a ticket), and a node with children is a container whether
+  or not it has a verification, so an upper node's verification is the acceptance of its subtree
+  and never a ticket. `context NODE [--json]` emits the slice -- the node, its ancestors up to the
+  goal with the verification each carries (labelled as the acceptance the node's work serves and
+  must not break), the decisions in force on that chain (an `under-review` one labelled as still
+  obeyed), their sources -- deterministic, and bounded by one chain whatever the size of the tree.
+  `compile [--json] [--out-dir]` renders dispatch tickets from pending leaves that have an
+  executable verification (shape checked by `validate_issue_body`, address `<!-- node: <id> -->`)
+  and reports an escalation for each that lacks one; it renders only, no issue is created (Phase
+  2). New optional config section `tree:` (`root`, `ticket_budget_class`, `ticket_labels`). The
+  plan's six founding decisions are the ledger's first entries, in `docs/ledger/`, run through the
+  doctor and the slicing by a test. ADR
+  `2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`.
+  Hosts: a `subtree pull`; nothing to configure until a host adopts v2 (Phase 3), and then
+  `agent-os-tree validate` goes in its test command.
+
+- agent-os#95 — a worker class's launch reads its own `fallback:`, and can escalate its model. A
+  worker class could declare `fallback:` (it parsed on every class) but only the one-shot roles'
+  drivers read it, so it was inert for the launch and still silenced the guard's
+  `quota_exhausted_no_fallback` page. Now `worker_task.sh` asks the new `agent_lib worker-launch`
+  (the roles' `role_launch_plan`, applied to the issue's class) at `start`/`resume`: a fresh
+  `exhausted` verdict plus a declared `fallback:` **refuses** the launch before any side effect and
+  names the backend/model/ceilings for the planner to redispatch on — it cannot swap the CLI in
+  place, because the worker's worktree, branch, state and event stream are per backend (the
+  premise "substitutes at launch" does not hold for a worker, `docs/AGENT_OS.md` §3). New optional
+  class field `escalate: {model, after: [commit_cut, stage_failed]}`: the process `resume` launches
+  after a cut or commitless stage runs the stronger model on the same backend, logged as
+  `model: <m> (ESCALATED: ...)`; validated at load (worker classes only, a different model, a
+  non-empty list of known triggers). The launched model is now the issue's class's own when it runs
+  on the driver's backend (it was the first worker class on the backend). Left for a follow-up:
+  direction rules beyond the existing default (a class without `fallback:` never leaves its
+  backend; `qwen_fallback_eligible` remains the Claude to Qwen switch). Hosts: a `subtree pull`;
+  add `escalate:`/`fallback:` to a class when wanted.
+
+- agent-os#96 — agent models are config, and Claude roles default to Sonnet 5.5. The `model:` of
+  `agents/*.md` was a literal (`opus` in the control plane), so moving a role to another model
+  meant editing a generated file that `agent-os-install --force` overwrites. New
+  `project.agent_models` (`control_plane` `sonnet`, `worker_runner` `sonnet`, `task_writer` `opus`),
+  rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`; an
+  unknown key fails the load. An agent definition has a single model, so task writing (Duty 1) is
+  split out of the control plane into the new `agents/task-writer.md` (default `opus`), which
+  `agent-os-install` now writes too; the control plane keeps the other duties and routes "escribe la
+  tarea X" to it. `config.example.yaml`: planner and validator classes move to `claude-sonnet-5-5`,
+  the refiner stays on `claude-opus-5`, a commented Sonnet worker class is added, and it states
+  that model ids are opaque and cost is CLI-reported. `docs/AGENT_OS.md` documents that the quota
+  verdict is per backend, not per model. Golden: `tests/golden/validator.md` now reads "Reviewed by
+  the validator on claude (claude-sonnet-5-5)." (the example config's class model, one line).
+  ADR `2026-09-29-claude-roles-default-to-sonnet-5-5-and-agent-models-are-config.md`. Hosts: after
+  the `subtree pull`, run `agent-os-install --force` to regenerate `.claude/agents/`, and set
+  `classes.<role>.model` / `project.agent_models` to keep any model you do not want moved.
+
+- agent-os#97 — the refiner and planner see the worker classes from config. New optional
+  `classes.<name>.description` (one line: when to choose the class), and `prompts/refiner.md` and
+  `prompts/planner.md` carry a `__WORKER_CLASSES__` block rendered from `classes:` (worker classes
+  only: name, backend, model, description). A host no longer names a model in its
+  `prompt_extras.refiner`, so changing the model behind a class cannot leave the prompt lying;
+  `config.example.yaml` describes its two classes. `agent-os-doctor` gains a warning (exit status
+  untouched) when a `prompt_extras` file names a class that `classes:` does not define. Hosts: a
+  `subtree pull`, then add `description:` to each worker class and drop model names from the
+  prompt_extras file. `tier`/`cost_hint` were not added: nothing reads them.
 
 - agent-os#92 — Qwen's context was double-counted. Current Qwen builds report
   `cache_read_input_tokens` as a part of `input_tokens`, and the shared Claude parser added the two,

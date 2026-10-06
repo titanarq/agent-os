@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -35,8 +36,10 @@ from agent_os.lib import (
     CONFIG_LOAD_ERRORS,
     DEFAULT_AGENTS_CONFIG,
     ProjectConfig,
+    TaskClass,
     config_load_failure,
     load_project,
+    load_task_classes,
     worker_slot_key,
     worker_slot_worktree,
     worker_slots,
@@ -52,9 +55,12 @@ class Check:
     name: str
     ok: bool
     detail: str
+    # A finding worth reading that does not fail the run: `ok` stays True, so the exit status is
+    # untouched, and the line says `warn` instead of `ok`.
+    warning: bool = False
 
     def line(self) -> str:
-        mark = "ok  " if self.ok else "FAIL"
+        mark = "FAIL" if not self.ok else "warn" if self.warning else "ok  "
         return f"[{mark}] {self.name}: {self.detail}"
 
 
@@ -267,6 +273,46 @@ def check_notify_topic(project: ProjectConfig, root: pathlib.Path) -> Check:
     )
 
 
+# A class name as a prompt writes it: hyphenated lowercase words, either inside backticks or as
+# the value of the `<!-- budget: ... -->` line a body ends with.
+_BACKTICKED_HYPHENATED_NAME = re.compile(r"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`")
+_BUDGET_LINE_NAME = re.compile(r"<!--\s*budget:\s*([A-Za-z0-9_-]+)\s*-->")
+
+
+def check_prompt_extras_classes(
+    project: ProjectConfig, classes: dict[str, TaskClass], root: pathlib.Path
+) -> Check:
+    """Warn when a `prompt_extras` file names a class that `classes:` does not define (#97): the
+    name of a class outlives the model behind it, so a renamed or removed class is the one edit a
+    host's prose does not follow. A `budget:` line is unambiguous; a backticked hyphenated word is
+    only taken for a class name when it shares a hyphen-separated word with one that exists (so
+    `complex-claude` is caught next to `complex-qwen`, and a label like `auto-ready` is not).
+    There is no model-name matching: what a class runs on is rendered into the prompt itself."""
+    known_words = {word for name in classes for word in name.split("-")}
+    unknown_by_role: dict[str, list[str]] = {}
+    for role, relative in project.prompt_extras.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        named = set(_BUDGET_LINE_NAME.findall(text))
+        named |= {
+            name
+            for name in _BACKTICKED_HYPHENATED_NAME.findall(text)
+            if known_words & set(name.split("-"))
+        }
+        unknown = sorted(name for name in named if name not in classes)
+        if unknown:
+            unknown_by_role[role] = unknown
+    if unknown_by_role:
+        detail = "; ".join(
+            f"prompt_extras.{role} names {names}, not in classes:"
+            for role, names in unknown_by_role.items()
+        )
+        return Check("prompt_extras name known classes", True, detail, warning=True)
+    return Check("prompt_extras name known classes", True, "every class named exists")
+
+
 def check_guard_timer(project: ProjectConfig) -> Check:
     if not project.guard_unit:
         return Check("guard timer active", False, "project.guard_unit is not set")
@@ -339,6 +385,10 @@ def check_pull_request_ci(root: pathlib.Path) -> Check:
     )
 
 
+def _prompt_extras_classes(project: ProjectConfig, root: pathlib.Path) -> Check:
+    return check_prompt_extras_classes(project, load_task_classes(), root)
+
+
 def _guarded(name: str, check: Callable[..., Check], *args) -> Check:
     """`check(*args)`, or a [FAIL] under `name` carrying the error when the check cannot finish:
     `gh_json` answers a failed `gh` call with `sys.exit(message)`, and a binary that is not
@@ -368,6 +418,7 @@ def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Ch
         check_notify_topic(project, root),
         _guarded("guard timer active", check_guard_timer, project),
         check_pull_request_ci(root),
+        _guarded("prompt_extras name known classes", _prompt_extras_classes, project, root),
     ]
 
 

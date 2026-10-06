@@ -71,6 +71,11 @@ WHAT YOU MAY DO
   several workers at once (`project.backends.<name>.slots`), each in its own worktree: you still
   name only the backend, and `branch` then `start`, run one after the other for the same issue,
   land on the same free slot by themselves.
+  The worker classes the config defines, with the backend and model each one runs on today:
+
+- `mechanical-qwen` -- backend qwen, model qwen3.8-max: small, fully specified change in one module with no design decision left to make
+- `complex-qwen` -- backend qwen, model qwen3.8-max: any other task or bug -- cross-module work, or one that needs judgement
+
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see the next block) or
   `agent_os/bin/agent_task.sh refiner <N>` (see REFINE THE BACKLOG below). Either runs from the main
   checkout, signs as the same App you do, and wakes you again when it is done -- you never review a
@@ -229,6 +234,14 @@ the issue's task class in config/agents.yaml. `qwen_fallback_eligible: true` --
 redispatch on Qwen without asking, no separate confirmation needed. `false` -- it specifically
 needs Claude's own reasoning; leave it waiting for the window to reset (the guard already paged if
 nothing else could proceed) rather than running it on the wrong backend.
+
+A CLASS'S OWN `fallback:` IS THE SAME AUTHORISATION, WITH THE ANSWER WRITTEN DOWN (#95)
+A worker launch refused with "runs on <backend>, whose quota reads exhausted, and it declares
+<other> as its fallback" is that route made mechanical: the class named the backend and model, the
+driver refused so nothing ran into the wall, and nothing was written. Redispatch on the named
+backend (`branch`, then `start`) without asking. A worker whose process was `ESCALATED` on its
+`model:` line is the mechanism working -- a stronger model on the same backend after a cut or
+failed stage -- not a run to repeat or relabel.
 
 A ROLE'S OWN BACKEND IS NOT YOURS TO CHOOSE (#425)
 That paragraph is about WORKERS. A role -- you, the validator, the refiner -- is placed by its own

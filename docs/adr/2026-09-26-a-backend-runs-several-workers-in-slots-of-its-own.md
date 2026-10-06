@@ -80,5 +80,10 @@ says how many a backend has.
 - `resume` on a backend with several slots needs `--issue` (or `--slot`); a bare `resume` there is
   a usage error rather than a guess. The planner's prompt says `--issue <N>` everywhere it
   resumes, and the tick's `worker_cut` event now names the issue it cut, as the exit hook's did.
+- **The worker class's launch gate (#95) reads the backend's verdict and the slot's ending.** The
+  refusal of a class whose backend reads `exhausted` is the backend's, so it is the same on every
+  slot and a free slot of that backend is no way round it; the "previous process ended as
+  `commit_cut` / `stage_failed`" that `escalate:` reads comes from the state file of the slot being
+  launched, never another slot's. Both happen before any side effect on the slot.
 - Out of scope, as #90 says: load-balancing across *different* backends. The class keeps choosing
   the backend.

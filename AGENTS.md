@@ -1,9 +1,16 @@
 # agent-os — agent instructions
 
 ## What this is
-The agent operating system: a guard, a planner, workers and one-shot role drivers (validator,
-refiner) that run a host project's GitHub backlog through headless coding agents, plus the tracker
-CLI they share. It is **project-agnostic and configured, not coded**: a host extends it through its
+Agentos lets one person build and evolve software products far beyond their individual capacity
+without losing control of what gets built. It is a system of agents that turns its owner's goals
+into a working product, keeps that product faithful to those goals as it grows, and improves the
+way it does so with every product. Its own goals and requirements are the tree in `docs/tree/`
+(`python -m agent_os.tree validate --root docs/tree`); the construction plan is
+`docs/AGENTOS_V2_PLAN.md`.
+
+Underneath sits the execution substrate (v1): a guard, a planner, workers and one-shot role drivers
+(validator, refiner) that run a host project's GitHub backlog through headless coding agents, plus
+the tracker CLI they share. It is **project-agnostic and configured, not coded**: a host extends it through its
 own `config/agents.yaml` and never by editing a file in here
 (`docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md`,
 `docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md`).

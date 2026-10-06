@@ -2078,6 +2078,9 @@ import time
 prompt = sys.argv[-1]
 with pathlib.Path(os.environ["FAKE_BACKEND_PROMPTS"]).open("a") as handle:
     handle.write(prompt + "\\n=== end of prompt ===\\n")
+if os.environ.get("FAKE_BACKEND_ARGV"):
+    with pathlib.Path(os.environ["FAKE_BACKEND_ARGV"]).open("a") as handle:
+        handle.write(" ".join(sys.argv[1:-1]) + "\\n")
 
 mode = os.environ.get("FAKE_BACKEND_MODE", "hang")
 if mode == "stage_commit":

@@ -1,0 +1,8 @@
+The persistence API takes these subcommands. Each prints JSON on stdout; a failure prints
+`store: <reason>` on stderr and exits with status 1. Single-quote a JSON argument.
+- `__STATE_COMMAND__ get <collection> <id>`: one document.
+- `__STATE_COMMAND__ put <collection> <id> '<json>'`: create or replace a document.
+- `__STATE_COMMAND__ update <collection> <id> '<json>'`: merge fields into an existing document.
+- `__STATE_COMMAND__ list <collection>`: every document of a collection, in id order.
+- `__STATE_COMMAND__ delete <collection> <id>`: remove a document.
+- `__STATE_COMMAND__ next-id <counter>`: increment a counter and print its new value.

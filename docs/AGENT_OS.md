@@ -1,5 +1,13 @@
 # The agent operating system
 
+**What Agentos is for (v2).** Agentos lets one person build and evolve software products far beyond
+their individual capacity without losing control of what gets built: a system of agents that turns
+its owner's goals into a working product, keeps that product faithful to those goals as it grows,
+and improves the way it does so with every product. Its goals and requirements are the tree in
+`docs/tree/`; the construction plan is `docs/AGENTOS_V2_PLAN.md`. What follows describes the
+mechanism as it stands today: the execution substrate (v1) and the product tree (§4.6) v2 is built
+on.
+
 A mechanism for running a software project's backlog through headless coding agents on top of
 GitHub Issues and a GitHub Project, for a host project (`titanarq/roedor` is the one instance that
 exists today) and the one human who owns it.
@@ -17,11 +25,12 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 |---|---|---|---|
 | Human | Writes/approves issues, flips `auto-ready`, answers `blocked-on-human`, merges PRs | the one collaborator account (e.g. `MatillaM`) | — |
 | Guard | Deterministic tick: budget, liveness, stall, quota, drift-logging, event-writing | acts through whichever identity a driver already minted; posts no comments of its own except the ntfy page | no LLM — pure Python (`agent_os.guard`) |
-| Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, `claude-opus-5`, 40k ctx / $2 |
+| Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, model per `classes.planner.model` (example: `claude-sonnet-5-5`), 40k ctx / $2 |
 | Worker (qwen) | Writes code for one issue, in its own worktree — **every** worker task runs here | its own App (`project.backends.qwen.app`) | classes `mechanical-qwen` (400k ctx / $5) and `complex-qwen` (400k ctx / $20), both `qwen3.8-max` |
 | Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
-| Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, `claude-opus-5`, 200k ctx / $5 |
-| Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, `claude-opus-5`, 200k ctx / $5 |
+| Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
+| Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
+| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, Phase 0 spike, §4.7); reads and writes state only through the app's persistence API | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -78,7 +87,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | Open issue carries `project.labels.wake_planner` → label removed + `nudged` event | Guard (`tick`) | the label found on an OPEN issue — the tick removes it every time it sees it, whoever set it (a timeline it cannot read leaves it for the next tick). A `nudged` event is written only when the timeline says the human login (`project.human_login`, via `agent_lib.is_human_comment`) set it; a mechanism identity setting it is removed and ignored, so the planner cannot wake itself in a loop. While the tracking epic carries `status:agents-paused` the tick returns before ever reaching this check, so the label stays put until unpaused. **Not** rate-limited: an edge happens once (`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`, #413) | removes `project.labels.wake_planner`; one event file, subject = issue number, detail names who set it and when, and points the planner at the latest human comment on that issue for the reason | `agent_os.guard` `_write_nudged_events`; `project.labels.wake_planner` in `config/agents.yaml`; the label is also the sanctioned lever `.claude/agents/control-plane.md` uses to wake the planner early |
 | `status:review` → `done` (close) | Human, or the control plane acting in the human's name under its five merge conditions (§2.4, "Duty 4") | human decision, or the control plane verifying all five conditions itself against GitHub and the diff | the human's own merge, or the control plane's REST merge pinned to the verified head with `project.merge_method` (§2.4; no script does this) + `issues.py move N done` closes the issue | confirmed by grep: no script contains `pr merge`; `docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md`; `agent_os/docs/adr/2026-09-17-the-control-plane-merges-a-pr-in-the-humans-name-under-five-conditions.md`; `agent_os.issues:1102-1122` |
 | closed by GitHub's own `Closes #N`, still carrying `status:*` → `done` | Guard (`tick`) | every tick, for every closed issue that still holds a state label (#365) | `issues.py move N done` — strips the label, leaves the closed issue closed, mirrors the board column | `agent_os.guard` `closed_issues_with_status_label`/`reconcile_closed_issues`, through `_move_issue` |
-| Claude quota exhausted → fallback to Qwen | Planner | `CUT_BY_GUARD reason=quota` or `quota_changed`; class allows `qwen_fallback_eligible: true` | redispatch on Qwen (prompt instruction) | `agent_os/bin/planner_task.sh:181-187`; mechanical detection `agent_os.lib:518-533`. **Inert since 2026-09-16**: no worker class runs on Claude, so no worker run can hit a Claude quota wall |
+| Claude quota exhausted → fallback to Qwen | Planner | `CUT_BY_GUARD reason=quota` or `quota_changed`; class allows `qwen_fallback_eligible: true`, or a worker launch was refused because the class declares `fallback:` (§3, #95) | redispatch on Qwen (prompt instruction) | `agent_os/bin/planner_task.sh:181-187`; mechanical detection `agent_os.lib:518-533`. **Inert since 2026-09-16**: no worker class runs on Claude, so no worker run can hit a Claude quota wall |
 | Quota exhausted, no eligible fallback | Guard, mechanically | `_tick_backend` sees `quota` and the class disallows Qwen | `notify.sh` (ntfy) | `agent_os.guard:724-728` |
 | Nothing dispatchable, everything blocked/capped | Planner's own judgment | after acting on its events, everything named is `blocked-on-human` or at its relaunch cap | `notify.sh` (ntfy) | `agent_os/bin/planner_task.sh:199-205` |
 | Daily planner-run cap reached | Guard (`wake`), mechanically | `planner.max_runs_per_day` (40) | one ntfy page (`paged-<date>`); events wait for tomorrow | `agent_os.guard:531-541, 560-578` |
@@ -154,9 +163,12 @@ something an agent applies to itself.
 ### 2.4 The control-plane role
 
 The human's side of the flow (§2.1–§2.3) is delegable in part. The **control plane**, defined in
-`.claude/agents/control-plane.md`, is the human's delegate over this mechanism: it writes issues,
-answers doubts, grooms the backlog, approves and merges validated PRs, and reports on progress and
-spend. It never runs a worker or the planner itself — the mechanism still does that. Every `gh`
+`.claude/agents/control-plane.md`, is the human's delegate over this mechanism: it answers doubts, grooms the backlog, approves and merges validated PRs, and reports on progress and
+spend. It does not write issues: an agent definition has one model, and task writing is the
+duty that stays on the stronger one, so it is its own definition, `.claude/agents/task-writer.md`
+(`project.agent_models.task_writer`, default `opus`); asked to write a task, the control plane
+says the main thread should use `task-writer`. It never runs a worker or the planner itself — the
+mechanism still does that. Every `gh`
 call it makes is authenticated as the human (`project.human_login` in `config/agents.yaml`) and
 signed with their name, so the bar for any write it makes is *would they do exactly this, given what
 is written down?*
@@ -234,13 +246,51 @@ and never removes: **`status:agents-paused` on the tracking epic** (`project.tra
 **Where it is set.** The issue template ends with `<!-- budget: <class> -->`
 (`.github/ISSUE_TEMPLATE/task.md:26`, `bug.md:27`, default `mechanical-qwen`); the class resolves
 against `config/agents.yaml`'s `classes:` (`backend`, `model`, `max_context`, `max_cost_usd`,
-`max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`). These are
+`max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, and for a worker the optional `fallback` and `escalate`, below). These are
 **placeholder numbers today** — the file says so (`config/agents.yaml:6-7`) — real tuning from
 recorded runs is a separate, open task in the host project (#342). The five `max_total_tokens`
 values are placeholders resting on one measurement rather than guesses: #363, the first real
 dispatch, spent 49,526,715 tokens on `mechanical-qwen`, and `mechanical-qwen`'s 80 M ceiling is
 1.6× that worst measured case (#390 spent 14,405,623 over four stages, #387 14,265,855 over four of
 its five — both re-derived with `agent_lib.py cumulative-tokens .cache/spend/<issue>/*.jsonl`).
+
+**A worker class's launch gate (#95).** `worker_task.sh` asks `agent_lib worker-launch <class>
+--backend <its own>` when it launches a stage (`start`, `resume`; a chained stage reads only the
+model), on the class the issue's budget line names, and acts on two optional declarations:
+
+- **`fallback: {backend, model, ceilings}`**, the same field a role declares. When the guard's
+  persisted verdict on the class's backend reads `exhausted` inside `mechanism.quota_verdict_ttl_minutes`
+  (older reads as unknown, exactly as for the roles), the driver **refuses** the launch before any
+  side effect (no brief, no `doing` label, no state) and prints the fallback backend, model and
+  ceilings. It does not swap the CLI in place: a worker runs in a per-backend worktree with a
+  per-backend branch, pidfile, state file, event stream and stream parser, and the branch the
+  planner cut for the issue is checked out in that worktree, so the only safe route is the
+  planner's redispatch onto the fallback backend's own worktree — the route `qwen_fallback_eligible`
+  already uses, now driven by the class's declared `backend`/`model`. `allows_backend_fallback` is
+  true for a worker class exactly when it declares `fallback:` (or `qwen_fallback_eligible`), which
+  is when a refusal names a way round, so the guard's `quota_exhausted_no_fallback` page stays
+  quiet only for a class something can reroute. Only a backend with a `quota:` detector ever has an
+  `exhausted` verdict, so a `fallback:` on a `quota: none` backend never triggers.
+- **`escalate: {model, after: [commit_cut, stage_failed]}`**, a stronger model on the **same**
+  backend for the process `resume` launches after a stage that did not land. The trigger is read
+  off the state file the previous process left: `stage_failed` is `CUT_BY_GUARD
+  reason=no_stage_commit` (it ran and committed nothing), `commit_cut` is any other
+  `CUT_BY_GUARD` except `quota` (a stronger model on an exhausted window is the wrong answer),
+  `paused` and `issue_unreadable`. The launch prints `model: <stronger> (ESCALATED: ...)`. A fresh
+  `start` and the stages the run chains after a green one run the class's own model again; an
+  operator's `WORKER_MODEL` pins the model and outranks both. Escalation is not a way round a
+  quota wall and does not count for `allows_backend_fallback`.
+
+On a backend with `slots: N > 1` (#90) the gate reads the backend's verdict and the slot's ending:
+the quota verdict is the backend's (`agent_guard_<backend>.json`, shared by every slot), so the
+refusal is the same whichever slot would have taken the issue and a free slot of that backend is no
+way round it; the previous process's ending is read off the state file of the slot being launched
+(`worker_<backend>-<slot>.state` from the second slot on), so a run cut on slot 1 never escalates
+the relaunch on slot 2.
+
+Whatever the declarations, the launched model is now the issue's class's own `model` when that class
+runs on the backend the driver was dispatched for (before, it was the first worker class on the
+backend, whichever class the issue named).
 
 **Unit and who measures it.** Tokens and dollars, never wall-clock time
 (`agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md`). A turn's size
@@ -299,6 +349,10 @@ per-turn sum; the follow-up is §7 row (v).
   `.cache/<role>/runs.tsv` (timestamp, context, model, turns, cost) — `agent_os.lib:1034`
   (`planner_run_row`), `agent_os/bin/agent_task.sh:74-80` (`agent_append_run_row`).
 - A full, never-truncated log per run: `.cache/planner/<ts>.log`, `.cache/<role>/<ts>.log`.
+- Per puntal invocation (§4.7): `.cache/puntal/runs.tsv` (the same five columns), a per-run log
+  `.cache/puntal/<ts>-<µs>-<pid>.log` and, beside them, `.cache/puntal/telemetry.jsonl` -- one JSON
+  line per invocation with latencies, tokens, cost and tool calls, which is not a spend record but the
+  usage record the refiner will consume.
 - Those files are the drivers' own, never a role's (agent-os#33): each planner, validator and
   refiner run is handed `AGENT_RUN_SCRATCH`, an empty `mktemp -d` directory under `$TMPDIR`
   (outside the run dir and the checkout) for its working files, and the driver removes it on every
@@ -338,6 +392,19 @@ sums by feature (via `gh issue view --json parent`) and nothing reports spend to
 (#367 owns that, and it must read TOKENS — a report built on `cumulative_cost_usd` prints 0.00 USD
 for every worker issue, because every worker runs on the backend that reports no cost).
 
+### Quota is per backend, not per model
+
+The guard's quota verdict (`project.backends.<name>.quota`, e.g. `claude_rate_limit`, persisted
+under `.cache/`) belongs to a **backend**, never to a backend plus a model. Two classes on the same
+backend with different models — the refiner on `claude-opus-5` beside the planner, the validator and
+a Sonnet worker class on `claude-sonnet-5-5` — read and write the same verdict. Anthropic's usage
+windows may be counted per model family, so it can happen that Opus is exhausted while Sonnet still
+has room; the mechanism cannot tell, and an `exhausted` verdict cut on one family parks every role
+and worker on `claude` until the verdict expires (`mechanism.quota_verdict_ttl_minutes`), each falling back
+per its own `fallback:` where it declares one. This is deliberate and errs safe: a host that wants
+the families isolated declares a second backend for the other model (its own `command`, `worktree`
+and `quota` entry) and points those classes at it. Nothing else changes: model ids stay opaque.
+
 ## 4. What the mechanism consists of
 
 ### 4.1 The one directory, and the host's shims
@@ -367,24 +434,29 @@ agent_os/
 │   ├── install.py                 agent-os-install: systemd units + copy-if-absent templates
 │   ├── issues.py                  tracker CLI over gh: list/show/create/update/validate/move/…
 │   ├── lib.py                     config models, dispatch/budget predicates, jsonl event reading
+│   ├── puntal.py                  the puntal driver's Python half (§4.7)
 │   └── render.py                  __TOKEN__ substitution for the agents/*.md templates
-├── agents/                      templates for the two .claude/agents/*.md prompts
+├── agents/                      templates for the .claude/agents/*.md prompts
 │   ├── control-plane.md
+│   ├── task-writer.md
 │   └── worker-runner.md
 ├── bin/                         the shell drivers
 │   ├── agent_task.sh              one-shot driver for validator/refiner
 │   ├── notify.sh                  pages the project's ntfy topic
 │   ├── planner_task.sh            planner driver, one `claude -p` per decision
+│   ├── puntal_task.sh             puntal driver, one `claude -p` per UI action (§4.7)
 │   ├── _python.sh                 the one interpreter/host-root resolver every driver sources
 │   ├── qwen_task.sh               compatibility wrapper (`exec worker_task.sh qwen "$@"`)
 │   ├── worker_progress.sh         what the workers have done lately and spent, one screen
 │   └── worker_task.sh             worker driver: init/branch/start/status/watch/collect/open-pr/…
+├── bench/puntal/                the puntal spike's instrument, outside the package (§4.7)
 ├── bootstrap.sh                 builds agent_os/.venv, installs the package editable; idempotent
 ├── config.example.yaml          every §4.2 key, filled in for an invented project
 ├── docs/                        the mechanism's own docs
 │   └── AGENT_OS.md                 this document
 ├── prompts/                     one template per role, rendered by agent_lib.render_prompt
 │   ├── planner.md
+│   ├── puntal.md
 │   ├── refiner.md
 │   ├── validator.md
 │   └── worker.md
@@ -412,7 +484,8 @@ and `gh`/backend/`git` stubs only, no database, no network — except `test_agen
 | File | Role | Agnostic? |
 |---|---|---|
 | `.claude/agents/worker-runner.md` | Prompt for the subagent that operates `worker_task.sh` from Claude Code | Yes |
-| `.claude/agents/control-plane.md` | Prompt for the subagent that acts as the human's delegate over the mechanism (§2.4) | Yes |
+| `.claude/agents/control-plane.md` | Prompt for the subagent that acts as the human's delegate over the mechanism (§2.4), without task writing | Yes |
+| `.claude/agents/task-writer.md` | Prompt for the subagent that writes template-conformant task issues (§2.4); its own definition because it runs on its own model | Yes |
 | `.github/workflows/ci.yml` | Lint (touched files only), the host's `pytest -m "not db"`, and — since #508 — `bash agent_os/bootstrap.sh` followed by `agent_os/.venv/bin/pytest agent_os/tests -q`; since #512 a further step copies `agent_os/` to a directory outside this checkout, makes that copy a git repository with the copied files committed (`git init`, `git add -A`, one commit — the mechanism assumes git throughout, so a bare `cp -r` is not yet the reproduction `host_root()`'s own fallback expects, and an empty commit checks out nothing for the launch-path tests that cut a real worktree off HEAD), bootstraps it and runs `pytest tests -q` there, proving the suite passes with no roedor checkout on `sys.path` | Yes |
 | `.github/ISSUE_TEMPLATE/task.md`, `bug.md` | Issue templates, already carry `<!-- budget: mechanical-qwen -->` | Yes |
 
@@ -440,6 +513,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `project.modules` | the project's own module names, one per `docs/modules/*.md`; the `module:<name>` half of the fixed label set `issues.py` creates | `ingest`, `metrics`, `workers`, … |
 | `project.test_command` | the project's own compact test wrapper, injected as `__TEST_COMMAND__` | `scripts/test.sh` |
 | `project.merge_method` | how the control plane merges a verified PR: `merge`, `squash` or `rebase`, the `merge_method` of GitHub's REST merge endpoint, rendered into `.claude/agents/control-plane.md` as `__MERGE_METHOD__` (§2.4). Any other value fails the config load (agent-os#88) | `merge` (the default) |
+| `project.agent_models` | the `model:` of each `.claude/agents/*.md` definition, rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__` (agent-os#96): `control_plane` (default `sonnet`), `worker_runner` (default `sonnet`), `task_writer` (default `opus`). A value is whatever `claude --model` accepts, an alias or a full id, and is opaque to the mechanism: it keeps no allowlist and no price table, and a run's cost is the `total_cost_usd` the CLI reports in its result event. An unknown key fails the config load. The one-shot roles are not here: their model is `classes.<name>.model` | `agent_models: {task_writer: claude-opus-5}` |
 | `project.worktree_links` | paths (relative to the host root) symlinked from the main checkout into a fresh worktree — the validator's throwaway one and a worker's on `init` — when the checkout has them and the worktree does not (agent-os#41) | `[.venv, .env]` |
 | `project.worktree_setup_command` | a command run by `bash -c` inside a fresh worktree after the links and before any backend starts; non-zero refuses the run (no validator launched, `init` removes the tree and its branch). For a host whose environment is not a root `.venv` — a monorepo's `uv sync`, an `npm ci` (agent-os#41) | empty: nothing runs |
 | `project.lint_commands` | the linters the validator runs on the files a PR touches, each with the file list appended, rendered as `__LINT_RULES__`; empty renders no lint bullet (agent-os#41) | empty (`config.example.yaml`: `.venv/bin/ruff check`, `.venv/bin/ruff format --check`) |
@@ -457,7 +531,11 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `planner.idle_wake_minutes` | rate limit on the `idle_dispatchable`/`refine_pending` events; `pr_merged` and `nudged` are edges and bypass it (§1) | `120` |
 | `planner.max_runs_per_day` | hard cap on planner runs, across every event kind | `40` (12 once a round completes unattended) |
 | `planner.refiner_unattended` | gates whether `tick` ever writes `refine_pending` | `true` (after a human reviewed a dry run) |
-| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` | see §3 |
+| `tree.root` | the directory of the product tree and the decision ledger (§4.6), relative to the host's root; `agent-os-tree --root` overrides it for one run | `product` (the default) |
+| `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-qwen` |
+| `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
+| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -506,7 +584,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
   `ExecStart=` on the mechanism's own interpreter and never the host's `.venv` (#51); never
   overwrites an existing file without `--force`, and never arms, restarts or reloads a unit —
   `systemctl --user enable --now` stays a human decision (`docs/runbooks/agent_monitor.md`). The
-  same command also copies `.claude/agents/{control-plane,worker-runner}.md` (rendered from
+  same command also copies `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from
   `agent_os/agents/*.md`, #510, absent until that PR lands — `install` reports "no templates dir,
   skipped" and does nothing else for that step), `.github/ISSUE_TEMPLATE/{task,bug}.md` and
   `.github/workflows/ci-agent-os.yml`, copied as-is if absent, and `.github/workflows/ci-host.yml`,
@@ -532,6 +610,318 @@ directory and a description string); `.secrets/gh_apps/*.json`+`*.pem`; `.secret
 themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
 `agent_os/.gitignore`); every `.cache/worker_*`, `.cache/planner*`, `.cache/<role>/runs.tsv` file
 (generated at run time, correctly gitignored).
+
+### 4.6 The product tree and the decision ledger (`agent-os-tree`)
+
+Phase 1 of `docs/AGENTOS_V2_PLAN.md`. The product layer of Agentos v2 describes a host's product as
+a **tree** of nodes (global goals, then functional requirements, then use cases) and a **ledger** of
+the decisions that bind it, both stored as Markdown files in the host's own repository. The package
+`agent_os.tree` defines the format, checks it, cuts the slice of it one agent needs and renders
+dispatch tickets from the nodes that are ready to be worked. It touches no network and no backend;
+creating the issues from what `compile` renders is Phase 2's wiring. The binding decisions on the
+format are in `docs/adr/2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`.
+
+**Layout.** One directory -- `tree.root` of `config/agents.yaml` (default `product`, relative to the
+host's root) or `--root DIR` -- holding Markdown files with YAML frontmatter, nodes and decisions
+together, in whatever subdirectories the host likes. What a file is comes from its frontmatter
+`type` and never from where it sits; its id is its filename without `.md`, so moving a file between
+folders breaks no pointer. Files whose name starts with a dot are ignored; everything else under the
+root that is not a record is a red check. A worker writes node files back, so the root must not be
+in `project.forbidden_paths`.
+
+**Ids** are `<prefix>-<slug>`: the prefix says what the record is (`goal-`, `fr-`, `uc-`, `dec-`),
+the slug is lowercase words joined by hyphens, chosen once and never changed. An id encodes no
+position in the tree -- re-parenting a node edits one `parent:` line.
+
+**A node** (`type`: `goal`, `functional-requirement` or `use-case`). The description is the Markdown
+body; every other field is frontmatter. An unknown field is an error.
+
+| Field | Required | What it is |
+|---|---|---|
+| `id`, `type`, `title` | always | the address, the kind, one line of name |
+| *(body)* | always | the `description`; blank is an error |
+| `parent` | functional requirement, use case | the id of its goal (for a requirement) or its requirement (for a use case); a goal has none |
+| `sources` | always, at least one | where the node's content comes from: free text |
+| `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
+| `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
+| `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
+| `verification` | optional on a goal or a node with children (its acceptance); **mandatory for dispatch** of a leaf | list of `command` (exits 0 when the node holds) and optional `expects` (what a pass proves) |
+| `state` | optional, default `pending` | `pending`, `improvised`, `hardened` |
+| `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
+| `spikes` | optional | timeboxed spike results: `question`, `outcome` (`feasible`, `infeasible`, `inconclusive`), `finding`, `date` |
+
+A goal carries none of `mechanism`, `implementation`, `spikes`, `foundation` or a state other than
+`pending`: it is not something to build. It *may* carry a `verification`, which is acceptance and
+never dispatched work: **tests run top-down from the goals.** A goal's verification (and a
+requirement's, once it has use cases) is the evaluator that keeps the work under it from drifting;
+the tests written bottom-up at the leaves consolidate reliability. A node with children is a
+container whether or not it has a verification (see Tickets), so an upper node's verification is
+the acceptance of its subtree and never a ticket of its own.
+
+**A decision.** The statement -- what was decided and what it binds -- is the Markdown body.
+
+| Field | Required | What it is |
+|---|---|---|
+| `id`, `type: decision`, `title` | always | `title` is the decision in one line |
+| *(body)* | always | the `statement`; blank is an error |
+| `state` | always | `in-force`, `under-review` (still obeyed: "obey while challenging"), `superseded` |
+| `superseded_by` | exactly when `superseded` | the successor's id, which must exist |
+| `decided` | always | the date; a review trigger can be measured in time |
+| `sources` | always, at least one | where the decision was taken |
+| `premises` | always, **at least one** | what it stands on; when one stops being true the decision is due for review |
+| `rejected_alternatives` | always, at least one | each `option`, `reason`, and `basis`: `stated` when the source argues against it, `implied` when the ledger only infers it |
+| `review_triggers` | always, **at least one** | any one firing puts the decision under review; "A, or B" is two entries |
+| `friction` | optional | entries accumulated against the decision: `date`, `summary`, optional `node` and `evidence` |
+
+**The doctor** (`agent-os-tree validate`, alias `doctor`) is a red check the way host literals are
+(`tests/test_no_host_literals.py`): one line per defect, `<file>: <code>: <what is wrong>`, exit 1
+if there is any. `check_tree` (`agent_os.tree.checks`) is the one implementation, and a host's own
+test command or CI step runs it: add `agent-os-tree validate` to `project.test_command`'s script, or
+call `check_tree(load_tree(root))` from a test. It reads one snapshot of the tree, so it does not
+check that a state *transition* was legal, nor run a verification, nor resolve an implementation
+pointer.
+
+| Code | A defect when |
+|---|---|
+| `orphan-file` | a file under the root is neither a node nor a decision: not Markdown, no frontmatter, or a `type` that is none of the record types |
+| `bad-frontmatter` | the frontmatter is not valid YAML (a duplicate key and an impossible date included), or not a mapping |
+| `schema` | a field is missing, unknown, of the wrong type or empty (a decision's premises, rejected alternatives and review triggers are mandatory and non-empty), or the Markdown body is blank |
+| `duplicate-id` | two files claim the same id |
+| `id-filename-mismatch` | the `id` is not the filename without `.md` |
+| `id-prefix-mismatch` | the `id` does not start with its type's prefix |
+| `parent-missing` | a functional requirement or use case has no `parent` |
+| `goal-has-parent` | a goal has a `parent` |
+| `dangling-parent` | the `parent` is not the id of any node |
+| `parent-type-mismatch` | a requirement is not under a goal, or a use case not under a requirement |
+| `parent-cycle` | the `parent` pointers loop |
+| `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `spikes`, `foundation`, or a state other than `pending`); `verification` is not one |
+| `missing-work-field` | a requirement or use case has no `mechanism` (write `pending` to defer it) |
+| `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal issues, and the shell does not go live until they are hardened |
+| `hardened-needs-implementation` | a hardened node has no `implementation` |
+| `hardened-needs-verification` | a hardened node has no `verification` |
+| `dangling-decision` | a node's `decisions` names an id that is not a decision |
+| `superseded-decision-in-use` | a node's `decisions` names a superseded decision; the line names the live successor |
+| `superseded-without-successor` | a superseded decision has no `superseded_by` |
+| `successor-without-supersession` | a decision that is not superseded has a `superseded_by` |
+| `dangling-successor` | `superseded_by` is not the id of any decision |
+| `successor-cycle` | the `superseded_by` pointers loop |
+| `dangling-friction-node` | a friction entry's `node` is not the id of any node |
+
+A reference to a file that exists but failed to load is not also reported as dangling: the target
+has its own defect, and one fault is one line.
+
+**The slice** (`agent-os-tree context NODE [--json]`) is the unit of context an agent is handed,
+never the tree: the node in full, its ancestors up to the goal (description, sources and the
+verification each one carries, labelled as the acceptance the node's work serves and must not
+break, in `--json` as each ancestor's `verification` list), and the
+decisions in force on that chain -- the node's own and its ancestors' -- each with its statement,
+premises, rejected alternatives, review triggers and the *count* of its friction entries. An
+`under-review` decision is in the slice labelled "UNDER REVIEW -- still obeyed while it is
+challenged"; a superseded one never is. It contains no sibling, no descendant and no decision that
+does not bind the node, so its size is bounded by one chain of ancestors however large the tree
+grows (the evaluators above are part of the chain, a sibling's or a descendant's never are), and it
+is deterministic: the same tree gives the same bytes. It is refused when a file it is
+made of fails the doctor (the doctor's lines are printed); a defect elsewhere does not stop it.
+
+**Tickets** (`agent-os-tree compile [--json] [--out-dir DIR] [--budget-class C] [--label L]`)
+renders; it creates no issue. A node becomes a ticket when it is a functional requirement or use
+case with no children, `pending`, has an executable `verification`, and its mechanism can be resolved (written, or
+`pending` with no spike having found it `infeasible`). A node that is pending but lacks a
+verification (a leaf), or whose pending mechanism a spike found infeasible, is reported as an
+**escalation** -- `missing-verification` or `mechanism-unresolvable` -- and never as a ticket. A goal,
+a node past `pending`, and a container (any node with children, whether or not it has a
+verification: its use cases are the work, and its own verification is the acceptance of its
+subtree) are skipped. A ticket has the shape of the repository's dispatchable issues:
+`## Objective` (the node), `## Acceptance criteria` (the node's own verification commands),
+`## Stages` (one to resolve and write back a pending mechanism, one to implement), `## Context`
+(the slice, which carries the verification of every ancestor as acceptance not to break),
+`## Not included`, `## Dependencies` (`none`), `## Definition of done`, then
+`<!-- budget: <class> -->` and the address `<!-- node: <id> -->`; every body is checked by
+`validate_issue_body` before it is returned. The class is `--budget-class` or
+`tree.ticket_budget_class`, a worker class, never a guess; the labels are the task type label,
+`tree.ticket_labels` and `--label`. `compile` refuses a tree the doctor finds anything in.
+
+Agentos's own tree is `docs/tree/`: its goals and functional requirements (the what, with every
+`mechanism: pending` until the how is decided), the plan's founding decisions as the ledger's first
+entries, and the decisions taken since. `tests/test_tree_founding_decisions.py` runs the doctor and
+the slicing over it.
+
+### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
+
+A **puntal** is the shore that props a building up: the product's interface goes live early, every
+action in it is bound to a use case, and an action nobody has implemented yet is answered, live, by a
+headless agent instead of by code (`docs/AGENTOS_V2_PLAN.md`, "Puntal layer"). `bin/puntal_task.sh`
+is that agent's driver -- a sibling of `worker_task.sh`, founding decision 6 -- and Phase 0 builds it
+as a **spike**: it exists to be measured, and whether a process per click is fast and cheap enough is
+the question `docs/spikes/2026-10-puntal-latency.md` answers once the measurement below has been
+run. The binding decisions are in
+`docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`.
+
+**Calling it.** The node slice (the use case and the goals above it), the payload and the relevant
+persisted state are plain text, from a file or from stdin (`-`); this driver knows nothing of the
+product tree that will one day produce a slice.
+
+```
+agent_os/bin/puntal_task.sh --action ACTION --node-file NODE.md [--payload TEXT | --payload-file F]
+    [--state-file F] [--node-id ID] [--session-id S] [--invocation-id ID] [--label KEY=VALUE ...]
+    [--model M] [--effort E] [--timeout SECONDS] [--persistence-command CMD]
+    [--telemetry-file F] [--dry-run]
+```
+
+STDOUT is the response and nothing else, and it is empty unless the run was answered; stderr carries
+the diagnostics. The exit status says how it ended: `0` answered, `1` the backend failed, `2` not run
+(refused before anything was spent), `3` the run broke the contract, `4` a ceiling cut it, `124` the
+safety timeout killed it. `--dry-run` prints the resolved launch -- flags, contract, brief -- and
+spends nothing. Unlike the other role drivers it does not detach, mints no GitHub identity, writes no
+planner event and wakes nobody: the caller is waiting for the answer on stdout.
+
+**What it launches.** One `claude -p` in a throwaway, empty scratch directory (so no project
+`CLAUDE.md`, `.claude/`, `.mcp.json`, memory or git status reaches the context), with the contract
+`prompts/puntal.md` as the whole system prompt and the brief -- node slice, action, payload, state --
+as the first message. The flags, and why each one is there:
+
+| Flag | Why |
+|---|---|
+| `-p --output-format stream-json --verbose --include-partial-messages` | streaming: the driver stamps every event on arrival, which is what makes time-to-first-signal measurable |
+| `--safe-mode` | the user's `CLAUDE.md` and rules, skills, plugins, hooks, MCP servers, custom agents, LSP and auto memory stay out of the context. Works with a subscription login (`--bare` does not: it reads `ANTHROPIC_API_KEY` only) |
+| `--system-prompt <contract>` | replaces Claude Code's own system prompt wholesale, so the contract is all of it |
+| `--tools=Bash` | the only built-in tool in the model's context is Bash; Read, Write, Edit, WebFetch, Task... are not there to be misused. Written `--name=value`: a variadic option followed by a space swallows the prompt that follows |
+| `--permission-mode dontAsk` `--allowedTools=Bash(./state *)` | a call that would ask for approval is denied, so the one Bash command that runs is the persistence shim |
+| `--max-budget-usd <classes.puntal.max_cost_usd>` | the CLI's own per-invocation dollar cut |
+| `--no-session-persistence` | no transcript is written under `~/.claude` for a throwaway run |
+| `--model`, `--effort` | `classes.puntal.model` / `--model`; `puntal.effort` / `--effort` |
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` is exported to the backend (version checks and telemetry
+are start-up latency a person waiting on a click should not pay). The driver also prints, in every
+telemetry record, the exact flag list the run was launched with (`launch.flags`).
+
+**How "the puntal never writes code" is enforced**, as far as the CLI allows, in layers
+(`agent_os/puntal.py` docstring):
+
+1. *Availability*: `--tools=Bash`; no file-writing tool is in the model's context.
+2. *Permission*: `dontAsk` plus one allow rule. The shim `./state` -- written into the scratch
+   directory by the driver -- runs the app's persistence command from the host's root with whatever
+   arguments the puntal gives it, and it is the only command the rule lets through.
+3. *Audit*: every `tool_use` is checked as its block closes, before its result can return
+   (`audit_tool_call`): it must be Bash, run `./state`, and carry no shell operator, command
+   substitution or second line. The first violation SIGTERMs the run's process group; the run ends as
+   `contract_violation` (exit 3) and hands the app no response.
+4. *Record*: every tool call and its command, every violation, every file found in the scratch
+   directory after the run (`scratch_extra_entries`) and the CLI's own count of denied calls
+   (`permission_denials`) are in the telemetry, so "the puntal wrote no code" is a query over the
+   log, and the bench's summary prints it as a verdict.
+
+**The known hole**: Claude Code auto-approves *read-only* Bash commands (`cat`, `ls`...) whatever the
+permission rules say, so layers 1 and 2 do not stop the model reading a file; layer 3 cuts the run at
+the first such call and layer 4 records it, but one such command may have run by then. An MCP server
+exposing the persistence API as its only tool would close it, and was not used: `--safe-mode` drops
+every non-SDK MCP server (read in the CLI's own source, v2.1.289), and without `--safe-mode` the
+user's own plugins, connectors and hooks are back in the context.
+
+**Budget class and ceilings.** `classes.puntal` (`role: puntal`) is the budget class. Its three
+ceilings bind **one invocation**, not an issue: `max_context` (the largest single turn) and
+`max_total_tokens` (all turns) are checked on the live stream and cut the run (`ceiling_cut`, exit
+4); `max_cost_usd` is handed to the CLI (`--max-budget-usd`) and checked again on the result;
+`puntal.max_tool_calls` cuts a loop. `puntal.timeout_seconds` SIGKILLs a hung process group
+(`timeout`, exit 124): a safety for a person waiting on a click, never a budget
+(`docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-budget.md`). The numbers in
+`config.example.yaml` are placeholders until the spike measures a real floor. There is no launch
+gate: a puntal never substitutes a backend, and a `fallback:` on its class is refused at load.
+
+**What it leaves.** `.cache/puntal/runs.tsv` (the five columns every role's has, via the same
+helper), one log per run `.cache/puntal/<ts>-<µs>-<pid>.log` (never reused: parallel clicks are the
+point) with its `.exited` marker, and the telemetry line. `AGENT_CACHE_DIR` moves the first two, as
+it does for the validator and the refiner. The log carries the `backend:` header and the raw stream,
+and the class is a non-worker role, so **the guard reads a puntal run as one more quota observation**
+(`role_log_quota_observations`): a puntal that meets the rate-limit wall updates the backend's verdict
+like any role. There is no PID file and the role is not in `ONE_SHOT_ROLES`: no `role_died` event
+exists for a run whose caller is waiting for it.
+
+**The telemetry record.** One JSON object per line in `.cache/puntal/telemetry.jsonl` (or
+`--telemetry-file`), appended under a lock, for every invocation whatever its outcome. This file is
+the telemetry the refiner will consume to choose what to harden into code. Latencies are in seconds
+from the moment `puntal_task.sh` was entered -- the click reaching the driver -- so the shell, the
+interpreter's start-up and the config load are inside them. `schema` is bumped on an incompatible
+change.
+
+| Field | Meaning |
+|---|---|
+| `schema` | the record's version (`1`) |
+| `invocation_id` | a UUID, or the caller's `--invocation-id`; the join key to anything the caller keeps |
+| `started_at` | UTC, millisecond precision |
+| `action`, `node` | the UI action, and the node it is bound to (`--node-id`, else the node file's stem) |
+| `node_digest` | `sha256:` and 16 hex digits of the node slice: tells a node that changed between two clicks |
+| `session_id` | the APP's session (`--session-id`): groups the clicks of one user session |
+| `backend_session_id` | the backend's own session id of this process |
+| `labels` | the caller's `--label KEY=VALUE` pairs, free-form (the bench puts `stage` and `step` here) |
+| `class`, `backend`, `model`, `effort` | what ran; `effort` is null when the CLI's default was used |
+| `outcome`, `outcome_detail` | `ok`, `error`, `timeout`, `contract_violation` or `ceiling_cut`, and why |
+| `exit_code` | the backend process's, null if it never started |
+| `latency_s` | `total` (entry to response complete); `python_startup` (entry to the interpreter being ready: shell, imports); `launch_overhead` (entry to the backend being spawned); `first_event` (first stream line, the CLI's init); `first_message` (first `message_start`); `first_tool_call`; **`first_text_delta`**: the first assistant text delta of any message, which is the **time-to-first-signal** -- the first thing a UI could show; `final_answer_first_delta` (the first delta of the message that carries the answer, after the tool calls); `backend_reported` (the CLI's own `duration_ms`, `duration_api_ms` and `ttft_ms` when it reports them, a cross-check). A milestone that never happened is null |
+| `usage` | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_tokens`, `first_turn` (the four counters of the very first turn, before any tool result) and `context_tokens_first_turn` (their context sum: **the context floor of the call**, system prompt, tool definitions and brief), `context_tokens_peak` (the largest single turn) and `turns` (null for a run that was cut before its `result`) |
+| `cost_usd` | the CLI's `total_cost_usd`; under a subscription it is notional (API-equivalent). Null when the run produced no `result` |
+| `tool_calls` | per call: `name`, `command` (Bash only), `at_s`, `violation`, `is_error`, `result_chars` |
+| `tool_violations` | the audit's findings; empty means the puntal ran only `./state` |
+| `init` | what the CLI said it started with: `tools`, `mcp_servers`, `permission_mode`, `claude_code_version` -- evidence the confinement took |
+| `permission_denials` | how many calls the CLI itself denied |
+| `ceilings` | the four ceilings and the timeout this run was bound by, and `exceeded` (any passed, cut or not) |
+| `launch` | `flags` (the exact confining flags) and `persistence_command` |
+| `scratch_extra_entries` | files found in the scratch directory after the run, other than the shim |
+| `response` | the response the app received (empty text for a run that did not finish) |
+| `gap_note` | the *gap note*, below, or null |
+| `stderr_tail` | the last non-JSON lines the backend printed, kept only when the run was not `ok` |
+
+**The gap note.** When the action asks for something its node does not describe, the contract tells
+the puntal to do the closest safe thing and end its final message with one line,
+`GAP: asked for <what>; the node does not describe it`. The driver strips that line from the response
+(the last line starting with `GAP:`) and records it in `gap_note`: the telemetry the refiner reads to
+find use cases that need a node written or sharpened.
+
+**The bench and the measurement** (`bench/puntal/`, outside the `agent_os` package and so outside the
+wheel: it is an instrument, not mechanism, and nothing imports it). A helpdesk of tickets over a JSON
+document store (`store.py`, a CLI of atomic file writes with a locked counter), four nodes bound to
+five actions -- `create_ticket`, `change_status`, `show_board`, `board_report`, and `export_csv`
+bound to the show-board node that says nothing of exporting, the deliberate gap -- a reference model
+of their rules (`domain.py`), a fake `claude` that plays a perfect or a faulty puntal
+(`fake_claude.py`), and `measure.py`:
+
+```
+measure.py calibrate --dry-run             # 2 calls -> the context floor: the smallest brief, cold cache; then warm cache + ONE read through the persistence tool
+measure.py main --session 1 --dry-run      # 3 sessions of 8 over ONE store, a fresh process per call
+measure.py main --session 2                #   (replace --dry-run by --allow-real-calls to spend)
+measure.py main --session 3
+measure.py reserve --count 2 --model M     # up to 4 adaptive probes on the same store: another model, effort...
+measure.py summarize [--json]              # latency, cost, coherence: from the raw files only
+measure.py status | check-store
+```
+
+Run it with the mechanism's interpreter, `.venv/bin/python bench/puntal/measure.py <stage> ...`: it
+imports the package and `pyyaml`. Everything lands in `--workdir` (default `.cache/puntal-bench/`): the shared store, `telemetry.jsonl`
+(the driver's records), `trace.jsonl` (the harness's: action, payload and the whole store before and
+after each call) and the generated `agents.yaml`. **Real calls are guarded in code**: they need
+`--allow-real-calls`; the script refuses under pytest; every real call is counted in a persistent
+file (`~/.cache/agent-os/puntal-bench-real-calls.json`, so the count spans checkouts) *before* it is
+made, and the 31st is refused -- `REAL_CALL_CAP` is a constant, not a setting; a stage that would not
+fit in what remains is refused whole before it starts; a dry run never touches the counter. Before
+a real stage's first call it runs `claude --help` and `claude <the driver's flags> --version` -- the
+only other commands it ever runs on the real CLI -- to check that every flag is still listed and
+every value still accepted; the calibration's second call makes one read through the persistence
+tool and the stage stops if that call did not run (a denied or missing tool would fail every action
+of every session the same way), and no real session starts before the calibration passed; two
+failed invocations in a row stop a stage (one stops the calibration), so a setup that fails
+systematically does not burn the cap. The tests stub the backend
+and fail if a trap `claude` on PATH is ever reached.
+
+`summarize` reports p50/p95 of full-response latency and of time-to-first-signal (and the other
+milestones), cost per action (mean, and tokens), the prompt-cache split, the calibration floor, and
+**coherence** from three oracles that blame different things: the store's invariants (sequential ids,
+the derived `summary/board` equal to a recount, status and resolution consistent), a one-step replay of
+each action's rules from the store as it was before the call, and a ledger replayed from the empty
+store and compared with the store at every session boundary -- a fact established in session N that
+is no longer true in N+1, or reported differently in N+1, is listed with its evidence. It states its
+own sample size (`p95` of 24 is the 23rd value; one slow call moves it) and that `total_cost_usd` is
+notional. It judges the plan's starting points (first signal < 5 s, full response p95 < 30 s, mean
+cost < $0.10, zero contradictions) and adds one of its own, that the puntal ran only `./state`.
 
 ## 5. Export recipe
 
@@ -589,7 +979,7 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
    §7r): the two worktrees (`init`, idempotent, one call per backend); the systemd units, from
    `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, never
    overwritten without `--force` and never armed (`systemctl --user enable --now` stays §6's own
-   human step, below); `.claude/agents/{control-plane,worker-runner}.md` rendered from
+   human step, below); `.claude/agents/{control-plane,task-writer,worker-runner}.md` rendered from
    `agent_os/agents/*.md` (#510) if that directory exists yet; `.github/ISSUE_TEMPLATE/{task,bug}.md`
    and `.github/workflows/ci-agent-os.yml`, copied as-is if absent, plus `.github/workflows/ci-host.yml`
    running `project.test_command` on every pull request. `--dry-run` prints every path
@@ -690,9 +1080,12 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column. `move N [N …] STATE` takes several numbers in one invocation: the target label and the board's `Status` field are resolved once for all of them, an issue that fails is reported under its number without stopping the rest, and the command exits non-zero naming every issue that did not move. A move costs three GraphQL requests of ~1 point each, whatever the board's size (the board field, once per invocation; the issue's item; the column edit) — the issue and its labels are read and written over REST, on the separate core quota (agent-os#27). The GraphQL quota is 5000 points an hour per user, shared by every host and tool the human runs, and separate from the REST `core` one (`gh api rate_limit --jq .resources.graphql`, not the top-level `.rate`). `validate` reads over REST too (agent-os#70). A rate limit is checked against the login's quotas before it is retried: a bucket at zero fails at once, naming it and its reset time; a secondary limit waits at least a minute per retry |
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume --issue <M>` the slot that recorded issue M, `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot` |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
-| `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active` — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
+| `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
+| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
+| `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.7). Not a role the planner launches |
+| `bench/puntal/measure.py calibrate\|main\|reserve\|summarize\|status` | the lead, once, deliberately | the puntal spike's measurement; the only place real calls are authorised, capped at 30 in code (§4.7) |
 | `agent_os.guard check <backend> [--slot N]\|tick\|wake\|promote-refined\|event` | exit hook (`check`), systemd timer (`tick`), `wake`/drivers (`event`), a human (`promote-refined`, by hand), or control-plane via `issues.py update --add-label wake:planner` (never this script directly) | exit-hook bookkeeping; the periodic budget/liveness/quota/drift check, which also reconciles mechanical state (closed → `done`, `promote_refined`, `orphan_doing`) and reports a one-shot role run whose PID is dead with its PID file still on disk as `role_died` (#400); advances `merged_seen.json` and may write `pr_merged`; removes any `wake:planner` label found and may write `nudged` (#413); the `flock`-guarded planner invocation; write a `<kind>` event; the `status:refine → status:ready` sweep, which the tick now runs on every fire |
 | `agent_os/bin/notify.sh "<message>"` | guard, planner | one ntfy.sh POST to the project's single topic |
 | `agent_os/bin/worker_progress.sh [issue] [--hours H]` | human | what the workers have done lately and what they have spent, in one screen |

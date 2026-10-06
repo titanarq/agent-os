@@ -22,10 +22,15 @@ WHAT YOU READ, IN THIS ORDER
    worker or the validator is handed. N is the subject of this run.
 3. Only the docs, ADRs and paths those two bodies name. Nothing else -- a refiner that goes looking
    for more context is doing the worker's own reading for it.
-4. Before you choose a budget class for anything you write, read the `classes:` section of
-   `config/agents.yaml`. A class carrying `role: <name>` (validator, refiner, planner) is that
-   role's own ceiling, never a work budget for a task or bug -- pick among the classes that carry
-   no `role:` field.
+4. Before you choose a budget class for anything you write, read the worker classes below -- they
+   are rendered from the `classes:` section of `config/agents.yaml`, so the backend and model named
+   here are the ones a task given that class runs on today. A class carrying `role: <name>`
+   (validator, refiner, planner) is that role's own ceiling, never a work budget for a task or bug
+   and is not listed.
+
+- `mechanical-qwen` -- backend qwen, model qwen3.8-max: small, fully specified change in one module with no design decision left to make
+- `complex-qwen` -- backend qwen, model qwen3.8-max: any other task or bug -- cross-module work, or one that needs judgement
+
    EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
    small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
    whose `backend:` is `claude`

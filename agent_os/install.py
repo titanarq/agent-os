@@ -37,6 +37,7 @@ CI_SNIPPET_SOURCE = AGENT_OS_DIR / "templates" / "ci-agent-os.yml"
 HOST_CI_WORKFLOW_SOURCE = AGENT_OS_DIR / "templates" / "ci-host.yml"
 HOST_CI_WORKFLOW_NAME = "ci-host.yml"
 AGENT_TEMPLATES_DIR = AGENT_OS_DIR / "agents"
+AGENT_TEMPLATE_NAMES = ("control-plane.md", "task-writer.md", "worker-runner.md")
 
 # The standard systemd/POSIX default -- present on every Linux box regardless of what this one
 # happens to have installed under `~`, and the same tail the units armed by hand on this machine
@@ -247,14 +248,14 @@ def plan_host_ci_workflow(project: ProjectConfig, root: pathlib.Path) -> list[Ac
 def plan_agent_templates(
     project: ProjectConfig, root: pathlib.Path
 ) -> tuple[list[Action], str | None]:
-    """The `.claude/agents/{control-plane,worker-runner}.md` prompts, rendered from
+    """The `.claude/agents/{control-plane,task-writer,worker-runner}.md` prompts, rendered from
     `agent_os/agents/*.md` by the generic `__TOKEN__` renderer (`agent_os.render`). `agent_os/agents/`
     is #510's own deliverable, landing in parallel -- absent here, this reports "no templates dir,
     skipped" instead of failing, exactly as the issue asks."""
     if not AGENT_TEMPLATES_DIR.is_dir():
         return [], "no templates dir (agent_os/agents/), skipped"
     actions = []
-    for name in ("control-plane.md", "worker-runner.md"):
+    for name in AGENT_TEMPLATE_NAMES:
         source = AGENT_TEMPLATES_DIR / name
         if not source.is_file():
             continue
