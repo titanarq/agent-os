@@ -44,13 +44,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# One `backend<TAB>worktree path` line per configured backend, resolved once here rather than by
-# the interpreter below -- `agent_os.lib worktree-path` is the one place that reads
-# `project.backends` (#510, #514).
-worktree_lines=""
-for backend in "${all_backends[@]}"; do
-  worktree_lines+="$backend"$'\t'"$("$python" -m agent_os.lib worktree-path "$backend")"$'\n'
-done
+# One `<backend> <slot> <key> <worktree>` line per worker slot (#90), resolved once here rather
+# than by the interpreter below -- `agent_os.lib worker-slots` is the one place that derives a
+# slot's key and worktree from `project.backends` (#510, #514). A backend with one slot is one
+# line keyed by its own name, exactly the report this printed before slots existed.
+worktree_lines=$("$python" -m agent_os.lib worker-slots)
 
 exec "$python" - \
   "${WORKER_CACHE_DIR:-$main/.cache}" "$hours" "$max_lines" "$issue" "$backends" \
@@ -65,7 +63,8 @@ cache, hours, max_lines, issue, backends, all_backends, worktree_lines = sys.arg
 cache = pathlib.Path(cache)
 hours, max_lines = float(hours), int(max_lines)
 all_backends = all_backends.split()
-worktrees = dict(line.split("\t", 1) for line in worktree_lines.splitlines() if line)
+slots = [line.split("\t") for line in worktree_lines.splitlines() if line]
+worktrees = {key: worktree for _, _, key, worktree in slots}
 cutoff = dt.datetime.now() - dt.timedelta(hours=hours)
 window = f"since {cutoff:%H:%M} ({hours:g} h)"
 
@@ -89,16 +88,16 @@ def recent_progress(backend):
     return inside
 
 
-def spend(issue_number, backend):
+def spend(issue_number, backend, key):
     """Only this backend's logs, and only this issue's. A stage log is named
-    `<ts>-<backend>-stage<N>.jsonl`; the live log belongs to whatever issue the backend is on right
-    now, named in `.cache/worker_<backend>.issue`, so it is added only when that is this issue --
+    `<ts>-<backend>-stage<N>.jsonl`; the live log belongs to whatever issue the slot is on right
+    now, named in `.cache/worker_<key>.issue`, so it is added only when that is this issue --
     otherwise a finished issue's total silently grows with the next one's turns."""
     paths = sorted((cache / "spend" / issue_number).glob(f"*-{backend}-stage*.jsonl"))
     if not paths:
         return []
-    live = cache / f"worker_{backend}.jsonl"
-    issuefile = cache / f"worker_{backend}.issue"
+    live = cache / f"worker_{key}.jsonl"
+    issuefile = cache / f"worker_{key}.issue"
     on_this_issue = issuefile.is_file() and issuefile.read_text().strip() == issue_number
     if live.is_file() and on_this_issue:
         paths.append(live)
@@ -166,17 +165,19 @@ def doing_issue():
         return ""
 
 
-for backend in ([backends] if backends else all_backends):
-    print(f"== worker {backend} — {window} ==")
-    for line in recent_progress(backend):
+for backend, _, key, _ in slots:
+    if backends and backend != backends:
+        continue
+    print(f"== worker {key} — {window} ==")
+    for line in recent_progress(key):
         print(f"  {line}")
     number = issue or doing_issue()
-    rows = spend(number, backend) if number else []
+    rows = spend(number, backend, key) if number else []
     if rows:
         print(f"  -- spend on #{number} --")
         for row in rows:
             print(row)
     elif number:
-        print(f"  -- no {backend} stages on #{number} --")
+        print(f"  -- no {key} stages on #{number} --")
     print()
 PY

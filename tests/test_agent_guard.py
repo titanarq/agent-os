@@ -1273,7 +1273,7 @@ def _stub_tick(
     wake_labeled=(),
 ):
     monkeypatch.setattr(
-        agent_guard, "_tick_backend", lambda backend, *, main, now=None: results[backend]
+        agent_guard, "_tick_backend", lambda backend, *, main, now=None, slot=1: results[backend]
     )
     monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: paused)
     monkeypatch.setattr(agent_guard, "_check_human_replies", lambda *, main: list(woken))
@@ -1287,7 +1287,7 @@ def _stub_tick(
     monkeypatch.setattr(
         agent_guard,
         "backend_worktree_dirt",
-        lambda backend, *, main: list((dirt or {}).get(backend, [])),
+        lambda backend, *, main, slot=1: list((dirt or {}).get(backend, [])),
     )
     monkeypatch.setattr(agent_guard, "dispatchable_issues", lambda *, main: list(scan.issues))
     # `tick` always calls `_write_refine_pending_event_if_due`, which reads the REAL
@@ -1858,7 +1858,7 @@ def _worktrees_present(monkeypatch, present=True):
         (lambda backend: present) if isinstance(present, bool) else (lambda b: present[b]),
     )
     # And clean: a present worktree is then read for dirt (#86), which is the same kind of fact.
-    monkeypatch.setattr(agent_guard, "backend_worktree_dirt", lambda backend, *, main: [])
+    monkeypatch.setattr(agent_guard, "backend_worktree_dirt", lambda backend, *, main, slot=1: [])
 
 
 def test_dispatchable_issues_keeps_only_what_a_worker_could_actually_start_on(
@@ -2359,7 +2359,7 @@ def _dirt_by_backend(monkeypatch) -> dict[str, list[str]]:
     monkeypatch.setattr(
         agent_guard,
         "backend_worktree_dirt",
-        lambda backend, *, main: list(listing.get(backend, [])),
+        lambda backend, *, main, slot=1: list(listing.get(backend, [])),
     )
     return listing
 

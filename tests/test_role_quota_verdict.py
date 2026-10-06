@@ -417,7 +417,7 @@ def test_tick_folds_before_it_checks_any_worker(tmp_path, monkeypatch):
     _role_log(tmp_path, "20260918T084846Z", REJECTED_RUN, age_seconds=30, now=now)
     seen_by_worker_check: list[str] = []
 
-    def tick_backend(backend, *, main, now=None):
+    def tick_backend(backend, *, main, now=None, slot=1):
         seen_by_worker_check.append(_verdict(main, datetime.now(UTC)).status)
         return agent_guard.TickResult(backend, f"{backend}: never started")
 
@@ -545,7 +545,7 @@ def test_a_failing_fold_prints_one_line_and_the_tick_still_checks_every_worker(
 
     checked: list[str] = []
 
-    def tick_backend(backend, *, main, now=None):
+    def tick_backend(backend, *, main, now=None, slot=1):
         checked.append(backend)
         return agent_guard.TickResult(backend, f"{backend}: never started")
 
@@ -656,7 +656,9 @@ def test_a_permission_denied_event_does_not_kill_the_tick(tmp_path, monkeypatch)
     monkeypatch.setattr(
         agent_guard,
         "_tick_backend",
-        lambda backend, *, main, now=None: agent_guard.TickResult(backend, f"{backend}: idle"),
+        lambda backend, *, main, now=None, slot=1: agent_guard.TickResult(
+            backend, f"{backend}: idle"
+        ),
     )
     monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: True)
 

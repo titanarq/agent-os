@@ -22,6 +22,7 @@ import pytest
 import yaml
 from conftest import EXAMPLE_CONFIG
 from pydantic import ValidationError
+from test_worker_slots import _driver
 from test_worker_task import (
     _resume,
     _staged_body,
@@ -38,6 +39,7 @@ from agent_os.lib import (
     load_task_classes,
     quota_verdict_file,
     worker_launch,
+    worker_slot_key,
 )
 
 VERDICT_TTL_SECONDS = 60 * 60
@@ -332,3 +334,141 @@ def test_resume_refuses_an_exhausted_backend_with_a_fallback_too(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert "qwen" in result.stdout
     assert not (tmp / "argv.txt").exists()
+
+
+# ---- the gate on a backend's second slot (#90 with #95) -------------------------------------
+#
+# A backend is a CLI and its quota, a slot is one worker on it. The refusal reads the BACKEND's
+# verdict (`agent_guard_<backend>.json`, shared by every slot), so a free slot elsewhere is no way
+# round an exhausted window; the escalation reads how the previous process ended off the SLOT's own
+# state file, so a cut run on slot 1 must not make slot 2's unrelated relaunch run the stronger
+# model.
+
+SECOND_SLOT = 2
+
+
+def _two_slot_claude_run(
+    tmp_path, *, state_by_slot=None, issue_by_slot=None, verdict=None, **fields
+):
+    config = _config_with(tmp_path, **fields)
+    data = yaml.safe_load(config.read_text())
+    data["project"]["backends"]["claude"]["slots"] = 2
+    data["planner"]["max_parallel_issues"] = 2
+    config.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    environment, cache, _worktree, tmp = _staged_environment(
+        tmp_path,
+        stage_titles=("Write the failing test", "Make it pass"),
+        mode="hang",
+        subjects=("stage 1/2: Write the failing test",),
+        config_path=config,
+    )
+    environment["GH_STUB_BODY"] = _staged_body("Write the failing test", "Make it pass").replace(
+        "complex-qwen", "dev-claude"
+    )
+    environment["FAKE_BACKEND_ARGV"] = str(tmp / "argv.txt")
+    for slot, state in (state_by_slot or {}).items():
+        key = worker_slot_key("claude", slot)
+        (cache / f"worker_{key}.state").write_text(state + "\n")
+        (cache / f"worker_{key}.issue").write_text(f"{(issue_by_slot or {})[slot]}\n")
+        (cache / f"worker_{key}.brief.md").write_text("brief\n")
+    if verdict is not None:
+        _write_verdict(cache, verdict)
+    return environment, cache, tmp
+
+
+def _stop_both_slots(environment):
+    for slot in (1, SECOND_SLOT):
+        _driver(environment, "stop", "--slot", str(slot))
+
+
+def test_the_stage_after_a_cut_one_on_the_second_slot_escalates_off_that_slots_own_state(tmp_path):
+    environment, cache, tmp = _two_slot_claude_run(
+        tmp_path,
+        state_by_slot={1: "DONE", SECOND_SLOT: "CUT_BY_GUARD reason=stall"},
+        issue_by_slot={1: 346, SECOND_SLOT: 347},
+        escalate=ESCALATE,
+    )
+    try:
+        result = _driver(environment, "resume", "--issue", "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert _launched_model(tmp) == "claude-opus-5-5"
+        assert "ESCALATED" in result.stdout
+        assert (cache / "worker_claude-2.pid").is_file()
+        assert not (cache / "worker_claude.pid").exists()
+    finally:
+        _stop_both_slots(environment)
+
+
+def test_another_slots_cut_run_does_not_escalate_the_second_slots_relaunch(tmp_path):
+    # Slot 1 was cut by a stall (a trigger the class escalates on); slot 2's last process ended on
+    # the quota, which never escalates. Reading slot 1's state file for slot 2 would run opus.
+    environment, _cache, tmp = _two_slot_claude_run(
+        tmp_path,
+        state_by_slot={1: "CUT_BY_GUARD reason=stall", SECOND_SLOT: "CUT_BY_GUARD reason=quota"},
+        issue_by_slot={1: 346, SECOND_SLOT: 347},
+        escalate=ESCALATE,
+    )
+    try:
+        result = _driver(environment, "resume", "--issue", "347")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert _launched_model(tmp) == "claude-sonnet-5-5"
+        assert "escalat" not in result.stdout.lower()
+    finally:
+        _stop_both_slots(environment)
+
+
+def test_a_fresh_start_on_the_second_slot_runs_the_classs_own_model(tmp_path):
+    environment, _cache, tmp = _two_slot_claude_run(
+        tmp_path,
+        state_by_slot={1: "CUT_BY_GUARD reason=stall"},
+        issue_by_slot={1: 346},
+        escalate=ESCALATE,
+    )
+    try:
+        result = _driver(environment, "start", "347", "--slot", str(SECOND_SLOT))
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert _launched_model(tmp) == "claude-sonnet-5-5"
+    finally:
+        _stop_both_slots(environment)
+
+
+def test_the_refusal_names_the_route_and_writes_nothing_on_the_second_slot(tmp_path):
+    environment, cache, tmp = _two_slot_claude_run(tmp_path, verdict="exhausted", fallback=FALLBACK)
+    before = sorted(path.name for path in cache.iterdir())
+    result = _driver(environment, "start", "347", "--slot", str(SECOND_SLOT))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "qwen" in result.stdout and "qwen3.8-max" in result.stdout
+    assert "exhausted" in result.stdout
+    assert not (tmp / "argv.txt").exists(), "a backend was launched"
+    assert sorted(path.name for path in cache.iterdir()) == before
+
+
+def test_a_free_slot_is_no_way_round_an_exhausted_backend(tmp_path):
+    # Without `--slot` the driver picks a free slot itself, and the pick must not dodge the gate:
+    # the quota verdict is the backend's, whichever slot would take the issue.
+    environment, cache, tmp = _two_slot_claude_run(tmp_path, verdict="exhausted", fallback=FALLBACK)
+    before = sorted(path.name for path in cache.iterdir())
+    result = _driver(environment, "start", "347")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "qwen" in result.stdout and "exhausted" in result.stdout
+    assert not (tmp / "argv.txt").exists()
+    assert sorted(path.name for path in cache.iterdir()) == before
+
+
+def test_resume_on_the_second_slot_refuses_an_exhausted_backend_and_leaves_its_state_alone(
+    tmp_path,
+):
+    environment, cache, tmp = _two_slot_claude_run(
+        tmp_path,
+        state_by_slot={SECOND_SLOT: "CUT_BY_GUARD reason=quota"},
+        issue_by_slot={SECOND_SLOT: 347},
+        verdict="exhausted",
+        fallback=FALLBACK,
+    )
+    state_before = (cache / "worker_claude-2.state").read_text()
+    result = _driver(environment, "resume", "--issue", "347")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "qwen" in result.stdout
+    assert not (tmp / "argv.txt").exists()
+    assert (cache / "worker_claude-2.state").read_text() == state_before
+    assert not (cache / "worker_claude-2.pid").exists()

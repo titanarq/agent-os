@@ -108,6 +108,9 @@ from agent_os.lib import (
     role_app_slug,
     usage_failed,
     usage_summary,
+    worker_slot_key,
+    worker_slot_worktree_path,
+    worker_slots,
 )
 from agent_os.streams.interface import event_message
 
@@ -137,6 +140,35 @@ BACKENDS: tuple[str, ...] = tuple(
 BACKEND_WORKTREES = {
     name: str((HOST_ROOT / PROJECT.backends[name].worktree).resolve()) for name in BACKENDS
 }
+# A backend runs as many workers at once as its `slots:` says (#90, agent_os/docs/adr/2026-09-26-a-
+# backend-runs-several-workers-in-slots-of-its-own.md). Slot 1 IS the backend as it always was --
+# `BACKEND_WORKTREES`, `worker_<backend>.*` -- so only the other slots' worktrees are kept here.
+EXTRA_SLOT_WORKTREES: dict[tuple[str, int], str] = {
+    (name, slot): str(worker_slot_worktree_path(name, slot, main=HOST_ROOT, project=PROJECT))
+    for name, slot in worker_slots(PROJECT)
+    if slot > 1
+}
+
+
+def backend_slots(backend: str) -> list[int]:
+    """The slots `backend` runs workers in, 1 first -- `[1]` for a backend with one slot, and for a
+    name this config does not give several, so every caller that loops over slots still sees the
+    backend itself."""
+    return [1, *sorted(slot for name, slot in EXTRA_SLOT_WORKTREES if name == backend)]
+
+
+def worker_slot_pairs() -> list[tuple[str, int]]:
+    """Every (backend, slot) a worker can be alive in: the unit the tick checks, the cap counts
+    and the module exclusion compares -- a worker, never a backend name (#90)."""
+    return [(backend, slot) for backend in BACKENDS for slot in backend_slots(backend)]
+
+
+def slot_worktree(backend: str, slot: int = 1) -> str | None:
+    """One slot's worktree, resolved, or None for a backend (or a slot) with none configured."""
+    if slot == 1:
+        return BACKEND_WORKTREES.get(backend)
+    return EXTRA_SLOT_WORKTREES.get((backend, slot))
+
 
 # The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each and that announce their own
 # end as an event: their per-run logs and PID files live in `.cache/<role>/`, and the run removes
@@ -532,7 +564,16 @@ class WorkerPaths:
     startref: Path
     statefile: Path
     issuefile: Path
+    # This slot's stall bookkeeping -- and, for slot 1, the backend's quota verdict as well, the
+    # one file both have always lived in.
     bookkeeping: Path
+    slot: int = 1
+    # `worker_slot_key`: what this slot's files, messages and events are named after -- the
+    # backend's own name for slot 1.
+    key: str = ""
+    # The backend's quota verdict (`agent_guard_<backend>.json`), which every slot of the backend
+    # shares (#90): an exhausted window is the subscription's, not one worker's.
+    quota_verdict: Path | None = None
 
 
 def cache_dir(main: Path = HOST_ROOT) -> Path:
@@ -583,19 +624,29 @@ def tokens_spent_on_issue(
     )
 
 
-def worker_paths(backend: str, main: Path = HOST_ROOT) -> WorkerPaths:
-    worktree = Path(os.environ.get("WORKER_WORKTREE") or BACKEND_WORKTREES[backend])
+def worker_paths(backend: str, main: Path = HOST_ROOT, *, slot: int = 1) -> WorkerPaths:
+    """One slot's files, the same names `worker_task.sh`'s `use_slot` derives: `worker_<key>.*`
+    where `<key>` is the backend's own name for slot 1 (#90)."""
+    configured = slot_worktree(backend, slot)
+    override = os.environ.get("WORKER_WORKTREE")
+    if not override and configured is None:
+        raise KeyError(backend if slot == 1 else f"{backend} slot {slot}")
+    worktree = Path(override or configured)
     cache = cache_dir(main)
+    key = worker_slot_key(backend, slot)
     return WorkerPaths(
         backend=backend,
         main=main,
         worktree=worktree,
-        pidfile=cache / f"worker_{backend}.pid",
-        events=cache / f"worker_{backend}.jsonl",
-        startref=cache / f"worker_{backend}.startref",
-        statefile=cache / f"worker_{backend}.state",
-        issuefile=cache / f"worker_{backend}.issue",
-        bookkeeping=cache / f"agent_guard_{backend}.json",
+        pidfile=cache / f"worker_{key}.pid",
+        events=cache / f"worker_{key}.jsonl",
+        startref=cache / f"worker_{key}.startref",
+        statefile=cache / f"worker_{key}.state",
+        issuefile=cache / f"worker_{key}.issue",
+        bookkeeping=cache / f"agent_guard_{key}.json",
+        slot=slot,
+        key=key,
+        quota_verdict=cache / f"agent_guard_{backend}.json",
     )
 
 
@@ -916,7 +967,13 @@ def notify(message: str, *, main: Path = HOST_ROOT) -> None:
 
 
 def cut_run(
-    backend: str, reason: CutReason, *, worktree: Path, statefile: Path, main: Path = HOST_ROOT
+    backend: str,
+    reason: CutReason,
+    *,
+    worktree: Path,
+    statefile: Path,
+    main: Path = HOST_ROOT,
+    slot: int = 1,
 ) -> None:
     """agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-relaunches.md:
     stop the process and freeze what it left, both reused from worker_task.sh -- never
@@ -927,7 +984,10 @@ def cut_run(
     and the `.env` link stay out and `git add -A` appears nowhere. The guard never restarts
     anything -- only the planner does, later."""
     driver = str(AGENT_OS_DIR / "bin" / "worker_task.sh")
-    subprocess.run([driver, backend, "stop"], check=False)
+    # `WORKER_SLOT` names the slot the tick measured, the way the run's own subshell names it
+    # (#90): the stop and the freeze must reach THAT run, never another slot's.
+    slot_env = {**os.environ, "WORKER_SLOT": str(slot)}
+    subprocess.run([driver, backend, "stop"], check=False, env=slot_env)
     # `WORKER_WORKTREE` is the one override the driver reads its worktree from, so the tree this
     # tick measured is the tree that gets frozen; the driver passes it the same way when it
     # dispatches a sibling `open-pr`. Whatever the freeze does or fails to do, the terminal state
@@ -935,7 +995,7 @@ def cut_run(
     subprocess.run(
         [driver, backend, "freeze", reason],
         check=False,
-        env={**os.environ, "WORKER_WORKTREE": str(worktree)},
+        env={**slot_env, "WORKER_WORKTREE": str(worktree)},
     )
     write_state_line1(statefile, f"CUT_BY_GUARD reason={reason}")
 
@@ -1015,13 +1075,16 @@ def post_stall_warning(
     )
 
 
-def check(backend: str, *, main: Path = HOST_ROOT) -> str:
+def check(backend: str, *, main: Path = HOST_ROOT, slot: int = 1) -> str:
     """The exit hook. Runs inside worker_task.sh's own subshell, in the same process, right after
     the backend CLI exits on its own -- there is nothing left to evaluate, only the terminal state
     to record. A tick that cut this same run raced it (the SIGTERM that stops the run also kills
     this subshell before it reaches this call, in the common case) -- CUT_BY_GUARD is never
     overwritten regardless."""
-    paths = worker_paths(backend, main)
+    paths = worker_paths(backend, main, slot=slot)
+    # The slot's key names the event: `claude` for slot 1, exactly as before slots, and
+    # `claude-2` for the second one -- the planner resumes it with `--issue`, named below.
+    name = paths.key
     state, _, _ = read_state_marker(paths.statefile)
     issue = paths.issuefile.read_text().strip() if paths.issuefile.is_file() else ""
     where = f" on issue #{issue}" if issue else ""
@@ -1029,62 +1092,104 @@ def check(backend: str, *, main: Path = HOST_ROOT) -> str:
         # The event detail carries the state VERBATIM, which is what makes a failed launch
         # escalate its own cause on the planner's first tick: `FAILED_LAUNCH command=qwen` names
         # the missing executable where `CUT_BY_GUARD reason=no_stage_commit` named a symptom.
-        write_event("worker_cut", backend, detail=f"{backend} {state}{where}", main=main)
+        write_event("worker_cut", name, detail=f"{name} {state}{where}", main=main)
         print(wake(main=main))
-        return f"{backend}: already {state}"
+        return f"{name}: already {state}"
     write_state_line1(paths.statefile, "DONE")
-    write_event(
-        "worker_finished", backend, detail=f"{backend} finished on its own{where}", main=main
-    )
+    write_event("worker_finished", name, detail=f"{name} finished on its own{where}", main=main)
     print(wake(main=main))
-    return f"{backend}: DONE"
+    return f"{name}: DONE"
 
 
 @dataclass
 class TickResult:
-    """What one backend's check this tick found -- enough for `tick` to both print a line and
-    decide, alongside the other backend's result, whether the planner needs a run."""
+    """What one worker slot's check this tick found -- enough for `tick` to both print a line and
+    decide, alongside the other slots' results, whether the planner needs a run. `backend` is the
+    slot's key: the backend's own name for slot 1 (#90), which is what names its events."""
 
     backend: str
     message: str
     cut_reason: CutReason | None = None
     quota_changed: bool = False
+    # The issue a cut run was on, so its `worker_cut` event names what `resume --issue` takes --
+    # the one way to address a run on a backend with several slots (#90).
+    issue: str = ""
 
 
 def _tick_backend(
-    backend: str, *, main: Path = HOST_ROOT, now: datetime | None = None
+    backend: str, *, main: Path = HOST_ROOT, now: datetime | None = None, slot: int = 1
 ) -> TickResult:
-    """One worker backend's check, holding that backend's verdict-file lock for its whole length:
-    the worker path and `fold_role_quota_observations` are the file's two write sites inside this
-    one module, and they can run in two processes at once (a timer's tick, a role's exit-hook
-    `wake`), so the lock is what makes a lost update of the stall bookkeeping unreachable."""
-    bookkeeping_path = worker_paths(backend, main).bookkeeping
-    if not bookkeeping_path.parent.is_dir():
+    """One worker slot's check, holding its BACKEND's verdict-file lock for its whole length: the
+    worker path and `fold_role_quota_observations` are the file's two write sites inside this one
+    module, and they can run in two processes at once (a timer's tick, a role's exit-hook `wake`),
+    so the lock is what makes a lost update of the stall bookkeeping unreachable. One lock per
+    backend, not per slot: every slot writes the shared verdict (#90)."""
+    paths = worker_paths(backend, main, slot=slot)
+    if not paths.bookkeeping.parent.is_dir():
         # No cache directory, so no worker has ever run here and there is nothing to race on.
-        return _tick_backend_locked(backend, main=main, now=now)
-    with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
+        return _tick_backend_locked(backend, main=main, now=now, slot=slot)
+    with _bookkeeping_lock_path(paths.quota_verdict or paths.bookkeeping).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _tick_backend_locked(backend, main=main, now=now)
+        return _tick_backend_locked(backend, main=main, now=now, slot=slot)
 
 
-def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> TickResult:
-    paths = worker_paths(backend, main)
+def _backend_quota_across_slots(
+    backend: str, own_status: str, *, slot: int, main: Path, parser: StreamParser
+) -> str:
+    """The backend's quota as every live slot sees it (#90): `exhausted` when ANY of its live
+    workers' streams says so, else what this slot's own stream says. One subscription is behind
+    every slot, so the slot that hit the wall speaks for all of them -- the verdict must not flap
+    back to `allowed` on the next slot's tick, and every live slot must be cut on it. A backend
+    with one slot reads nothing beyond its own stream, exactly as before."""
+    if own_status == "exhausted":
+        return own_status
+    for other in backend_slots(backend):
+        if other == slot:
+            continue
+        paths = worker_paths(backend, main, slot=other)
+        state, _, _ = read_state_marker(paths.statefile)
+        if state.startswith(RUN_ENDED_STATES) or not _is_alive(paths.pidfile):
+            continue
+        if quota_status(read_events(paths.events), parser=parser) == "exhausted":
+            return "exhausted"
+    return own_status
+
+
+def _save_worker_bookkeeping(paths: WorkerPaths, bookkeeping: StallBookkeeping) -> None:
+    """This slot's stall bookkeeping, and the backend's shared verdict with it. Slot 1 keeps both
+    in the one file they always shared; any other slot writes its own stall fields beside it and
+    folds only `last_quota_status` into the backend's file, leaving slot 1's stall fields there as
+    they were -- under the backend's lock, which `_tick_backend` holds."""
+    _save_bookkeeping(paths.bookkeeping, bookkeeping)
+    if paths.quota_verdict is None or paths.quota_verdict == paths.bookkeeping:
+        return
+    verdict = _load_bookkeeping(paths.quota_verdict)
+    verdict.last_quota_status = bookkeeping.last_quota_status
+    _save_bookkeeping(paths.quota_verdict, verdict)
+
+
+def _tick_backend_locked(
+    backend: str, *, main: Path, now: datetime | None, slot: int = 1
+) -> TickResult:
+    paths = worker_paths(backend, main, slot=slot)
+    # What this slot's lines and events are named after: the backend itself for slot 1.
+    name = paths.key
     now = now or datetime.now()  # noqa: DTZ005 -- naive, matches progress.log's own timestamps
 
     if not paths.statefile.is_file():
-        return TickResult(backend, f"{backend}: never started")
+        return TickResult(name, f"{name}: never started")
     state, _, _ = read_state_marker(paths.statefile)
     if state.startswith(RUN_ENDED_STATES):
-        return TickResult(backend, f"{backend}: {state}")
+        return TickResult(name, f"{name}: {state}")
 
     if not _is_alive(paths.pidfile):
         # Died without the exit hook firing (crash, reboot) -- the same mechanical write, just late.
         write_state_line1(paths.statefile, "DONE")
-        return TickResult(backend, f"{backend}: DONE (reaped by tick)")
+        return TickResult(name, f"{name}: DONE (reaped by tick)")
 
     if not paths.issuefile.is_file():
         return TickResult(
-            backend, f"{backend}: alive, no recorded issue -- cannot resolve a budget, skipping"
+            name, f"{name}: alive, no recorded issue -- cannot resolve a budget, skipping"
         )
     issue = paths.issuefile.read_text().strip()
     body = subprocess.run(
@@ -1095,13 +1200,11 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         check=False,
     )
     if body.returncode != 0:
-        return TickResult(backend, f"{backend}: alive, could not read issue #{issue}, skipping")
+        return TickResult(name, f"{name}: alive, could not read issue #{issue}, skipping")
     task_class_name = parse_budget_line(body.stdout)
     classes = load_task_classes()
     if not task_class_name or task_class_name not in classes:
-        return TickResult(
-            backend, f"{backend}: alive, issue #{issue} has no resolvable budget, skipping"
-        )
+        return TickResult(name, f"{name}: alive, issue #{issue} has no resolvable budget, skipping")
     task_class = classes[task_class_name]
 
     stream_parser = backend_stream_parser(backend)
@@ -1120,7 +1223,7 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         else run_started_at
     )
     for warning in unparsable_cutoff_lines(progress_text):
-        print(f"{backend}: {progress_log} {warning}")
+        print(f"{name}: {progress_log} {warning}")
     commit_ts = _commit_timestamps(paths.worktree, paths.startref)
     bookkeeping = scoped_to_run(_load_bookkeeping(paths.bookkeeping), _run_identity(paths, issue))
     tier, since_commit, bookkeeping = stall_detected(
@@ -1130,10 +1233,21 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
     # Tracked for both backends alike (Qwen's is always "allowed", per agent_lib's own quota_
     # exhausted docstring -- no signal, not a guess), so a change is only ever reported once a
     # prior tick has actually observed a baseline to compare against.
-    current_quota = quota_status(events, parser=stream_parser)
-    quota_changed = (
-        bookkeeping.last_quota_status is not None and bookkeeping.last_quota_status != current_quota
+    current_quota = _backend_quota_across_slots(
+        backend,
+        quota_status(events, parser=stream_parser),
+        slot=slot,
+        main=main,
+        parser=stream_parser,
     )
+    # The baseline is the BACKEND's verdict, whichever slot last wrote it (#90): a change is
+    # reported once, by the first slot's tick that sees it, never once per slot.
+    previous_quota = (
+        bookkeeping.last_quota_status
+        if paths.quota_verdict in (None, paths.bookkeeping)
+        else _load_bookkeeping(paths.quota_verdict).last_quota_status
+    )
+    quota_changed = previous_quota is not None and previous_quota != current_quota
     bookkeeping.last_quota_status = current_quota
 
     reason: CutReason | None = None
@@ -1157,8 +1271,15 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
         reason = "stall"
 
     if reason:
-        cut_run(backend, reason, worktree=paths.worktree, statefile=paths.statefile, main=main)
-        _save_bookkeeping(paths.bookkeeping, bookkeeping)
+        cut_run(
+            backend,
+            reason,
+            worktree=paths.worktree,
+            statefile=paths.statefile,
+            main=main,
+            slot=slot,
+        )
+        _save_worker_bookkeeping(paths, bookkeeping)
         # The page is for the case where nothing can proceed without a human, so it fires only for
         # a class that declares NO way round the exhausted window -- either route counts, the
         # planner's redispatch of a worker (`qwen_fallback_eligible`) and a role's own launch gate
@@ -1184,19 +1305,20 @@ def _tick_backend_locked(backend: str, *, main: Path, now: datetime | None) -> T
             else:
                 notify(page, main=main)
         return TickResult(
-            backend,
-            f"{backend}: CUT_BY_GUARD reason={reason}",
+            name,
+            f"{name}: CUT_BY_GUARD reason={reason}",
             cut_reason=reason,
             quota_changed=quota_changed,
+            issue=issue,
         )
 
     if tier == "warn" and bookkeeping.warned_at_turn_count != summary.turns:
         post_stall_warning(issue, since_commit, worktree=paths.worktree, main=main)
         bookkeeping.warned_at_turn_count = summary.turns
-    _save_bookkeeping(paths.bookkeeping, bookkeeping)
+    _save_worker_bookkeeping(paths, bookkeeping)
     return TickResult(
-        backend,
-        f"{backend}: alive, {since_commit} turns since last commit (class {task_class_name})",
+        name,
+        f"{name}: alive, {since_commit} turns since last commit (class {task_class_name})",
         quota_changed=quota_changed,
     )
 
@@ -1466,12 +1588,12 @@ class DispatchableScan:
     dirty_worktree: dict[str, list[int]] = field(default_factory=dict)
 
 
-def backend_worktree_present(backend: str) -> bool:
+def backend_worktree_present(backend: str, slot: int = 1) -> bool:
     """The same test `worker_task.sh` applies before it refuses a dispatch with `no worktree at
     <path>`: `[ -e "$worktree/.git" ]` -- a file in a linked worktree, a directory in a plain
     clone, absent in a directory `gh pr merge --delete-branch` removed out from under the
-    mechanism (#392)."""
-    path = BACKEND_WORKTREES.get(backend)
+    mechanism (#392). Of one slot's worktree, slot 1's by default (#90)."""
+    path = slot_worktree(backend, slot)
     return bool(path) and (Path(path) / ".git").exists()
 
 
@@ -1481,18 +1603,19 @@ def backend_worktree_present(backend: str) -> bool:
 SCRATCH_DIR = "scratchpad/"
 
 
-def backend_worktree_dirt(backend: str, *, main: Path = HOST_ROOT) -> list[str]:
+def backend_worktree_dirt(backend: str, *, main: Path = HOST_ROOT, slot: int = 1) -> list[str]:
     """What `worker_task.sh start`/`resume`/`branch` would refuse to run over on `backend`'s
     worktree right now, as `git status --porcelain` entries -- or nothing, when there is no
     worktree (#392's own condition) or a run on it is alive, whose uncommitted work is simply its
     work in progress. Mirrors the driver's `uncommitted_work`: the `.env` link the driver creates
     itself (#404) and untracked scratch (#86) are not dirt. Dirt on an idle worktree clears itself
     on no event, which is what makes it a page (#86). A `git status` that fails is reported as the
-    one entry, not read as clean: the driver would refuse over that worktree just the same."""
-    path = BACKEND_WORKTREES.get(backend)
+    one entry, not read as clean: the driver would refuse over that worktree just the same. Of
+    one slot's worktree, slot 1's by default (#90)."""
+    path = slot_worktree(backend, slot)
     if not path or not (Path(path) / ".git").exists():
         return []
-    if _is_alive(worker_paths(backend, main).pidfile):
+    if _is_alive(worker_paths(backend, main, slot=slot).pidfile):
         return []
     listing = subprocess.run(
         ["git", "-C", path, "status", "--porcelain", "-z", "--untracked-files=normal"],
@@ -1519,6 +1642,38 @@ def backend_worktree_dirt(backend: str, *, main: Path = HOST_ROOT) -> list[str]:
             continue
         dirt.append(entry)
     return dirt
+
+
+def backend_has_a_worktree(backend: str) -> bool:
+    """Whether ANY slot of `backend` has its worktree on disk -- the backend is held back for a
+    missing worktree only when none has (#392, #90). One slot is exactly
+    `backend_worktree_present`."""
+    slots = backend_slots(backend)
+    if slots == [1]:
+        return backend_worktree_present(backend)
+    return any(backend_worktree_present(backend, slot=slot) for slot in slots)
+
+
+def backend_dispatch_dirt(backend: str, *, main: Path = HOST_ROOT) -> list[str]:
+    """What holds `backend`'s ready issues back as dirt (#86), across its slots (#90): nothing
+    while some slot could take a dispatch -- an idle slot with a clean worktree, or no idle slot at
+    all, which is the cap's and the driver's business -- and otherwise the first dirty idle slot's
+    listing, which is the refusal `start` would print. One slot is exactly
+    `backend_worktree_dirt`, which already reads a live run's worktree as no dirt."""
+    slots = backend_slots(backend)
+    if slots == [1]:
+        return backend_worktree_dirt(backend, main=main)
+    first_dirt: list[str] = []
+    for slot in slots:
+        if not backend_worktree_present(backend, slot=slot):
+            continue
+        if _is_alive(worker_paths(backend, main, slot=slot).pidfile):
+            continue
+        dirt = backend_worktree_dirt(backend, main=main, slot=slot)
+        if not dirt:
+            return []
+        first_dirt = first_dirt or dirt
+    return first_dirt
 
 
 def dispatchable_scan(*, main: Path = HOST_ROOT) -> DispatchableScan:
@@ -1564,7 +1719,7 @@ def dispatchable_scan(*, main: Path = HOST_ROOT) -> DispatchableScan:
             continue
         backend = task_class.backend
         if backend not in present:
-            present[backend] = backend_worktree_present(backend)
+            present[backend] = backend_has_a_worktree(backend)
         if not present[backend]:
             without_worktree.setdefault(backend, []).append(number)
             continue
@@ -1572,7 +1727,7 @@ def dispatchable_scan(*, main: Path = HOST_ROOT) -> DispatchableScan:
         # this dispatch with `worktree is dirty`, and the planner run woken to try it would be
         # spent for nothing -- over and over, since no event ever cleans a worktree.
         if backend not in dirt:
-            dirt[backend] = backend_worktree_dirt(backend, main=main)
+            dirt[backend] = backend_dispatch_dirt(backend, main=main)
         if dirt[backend]:
             dirty_worktree.setdefault(backend, []).append(number)
         else:
@@ -1683,17 +1838,21 @@ def _page_dirty_worktree_if_due(scan: DispatchableScan, *, main: Path = HOST_ROO
     and pages at once, and a clean worktree deletes the marker so the next time it gets dirty is
     paged too. Returns the journal lines, one per dirty backend, plus one per page sent."""
     lines: list[str] = []
-    for backend in sorted(BACKENDS):
-        marker = cache_dir(main) / "guard" / f"paged-dirty-worktree-{backend}"
-        dirt = backend_worktree_dirt(backend, main=main)
+    # Every slot's worktree, each under its own key (#90) -- the backend's own name for slot 1, so
+    # a backend with one slot keeps its marker and its lines. A dirty slot is paged even while
+    # another slot keeps the backend dispatchable: nothing clears it but a human.
+    for backend, slot in sorted(worker_slot_pairs()):
+        name = worker_slot_key(backend, slot)
+        marker = cache_dir(main) / "guard" / f"paged-dirty-worktree-{name}"
+        dirt = backend_worktree_dirt(backend, main=main, slot=slot)
         if not dirt:
             marker.unlink(missing_ok=True)
             continue
-        worktree = BACKEND_WORKTREES.get(backend, "(unconfigured)")
+        worktree = slot_worktree(backend, slot) or "(unconfigured)"
         held_back = scan.dirty_worktree.get(backend, [])
         shown = ", ".join(dirt[:5]) + (f" (+{len(dirt) - 5} more)" if len(dirt) > 5 else "")
         lines.append(
-            f"backend {backend} worktree {worktree} is dirty and idle: {shown} -- "
+            f"backend {name} worktree {worktree} is dirty and idle: {shown} -- "
             f"{len(held_back)} ready issue(s) held back"
         )
         if marker.is_file() and marker.read_text().strip() == shown:
@@ -1701,7 +1860,7 @@ def _page_dirty_worktree_if_due(scan: DispatchableScan, *, main: Path = HOST_ROO
         try:
             page = render_human_message(
                 "backend_worktree_dirty",
-                backend=backend,
+                backend=name,
                 worktree=worktree,
                 paths=shown,
                 issue_count=len(held_back),
@@ -1712,7 +1871,7 @@ def _page_dirty_worktree_if_due(scan: DispatchableScan, *, main: Path = HOST_ROO
             print(f"ntfy: no page for the dirty worktree -- {error}")
         else:
             notify(page, main=main)
-            lines.append(f"paged: {backend} worktree dirty")
+            lines.append(f"paged: {name} worktree dirty")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(f"{shown}\n")
     return lines
@@ -1985,17 +2144,18 @@ def reconcile_closed_issues(*, main: Path = HOST_ROOT, now: datetime) -> list[st
 
 
 def live_worker_issues(main: Path = HOST_ROOT) -> dict[str, int]:
-    """backend -> the issue its worker is running RIGHT NOW, for every backend whose process is
-    alive and whose `.cache/worker_<backend>.issue` marker is readable. The liveness half is
-    load-bearing wherever this is used: the marker outlives the run that wrote it, so reading
-    every marker regardless would count a finished run as a live one."""
+    """worker -> the issue it is running RIGHT NOW, for every slot whose process is alive and
+    whose `.cache/worker_<key>.issue` marker is readable, keyed by the slot's key (the backend's
+    own name for slot 1, #90). The liveness half is load-bearing wherever this is used: the marker
+    outlives the run that wrote it, so reading every marker regardless would count a finished run
+    as a live one."""
     running = {}
-    for backend in BACKENDS:
-        paths = worker_paths(backend, main)
+    for backend, slot in worker_slot_pairs():
+        paths = worker_paths(backend, main, slot=slot)
         if not _is_alive(paths.pidfile) or not paths.issuefile.is_file():
             continue
         try:
-            running[backend] = int(paths.issuefile.read_text().strip())
+            running[paths.key] = int(paths.issuefile.read_text().strip())
         except ValueError:
             continue
     return running
@@ -2386,7 +2546,11 @@ def _occupied_worker_slots(*, main: Path) -> tuple[int, int]:
     `new_dispatchable` edge the tick suppresses for lack of a slot can never disagree with what the
     driver would have said about the same moment (#436) -- one implementation of "is there a free
     slot", not a second one that can drift from it."""
-    alive = sum(1 for backend in BACKENDS if _is_alive(worker_paths(backend, main).pidfile))
+    alive = sum(
+        1
+        for backend, slot in worker_slot_pairs()
+        if _is_alive(worker_paths(backend, main, slot=slot).pidfile)
+    )
     return alive, load_planner_config().max_parallel_issues
 
 
@@ -2825,7 +2989,7 @@ def fold_role_quota_observations(
     line: it is the worker path's to rewrite, and guessing its stall bookkeeping would be worse."""
     lines = []
     for backend, observation in sorted(role_log_quota_observations(main=main, now=now).items()):
-        bookkeeping_path = worker_paths(backend, main).bookkeeping
+        bookkeeping_path = cache_dir(main) / f"agent_guard_{backend}.json"
         bookkeeping_path.parent.mkdir(parents=True, exist_ok=True)
         with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
             try:
@@ -2883,14 +3047,17 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     # First, so every launch this tick leads to reads a verdict that already includes the roles'
     # own rejections; each worker check below then overwrites it with its live stream (#429).
     _fold_role_quota_observations_or_say_why(main=main, now=now)
-    results = [_tick_backend(backend, main=main) for backend in BACKENDS]
+    results = [
+        _tick_backend(backend, main=main, slot=slot) for backend, slot in worker_slot_pairs()
+    ]
     for result in results:
         print(result.message)
 
     # LOG ONLY, never a planner event (#350 Part 4) -- run regardless of status:agents-paused
     # below, since this is visibility, not an action the pause is meant to stop.
-    for backend in BACKENDS:
-        drift_line = _log_state_drift(backend, worker_paths(backend, main).statefile, main=main)
+    for backend, slot in worker_slot_pairs():
+        paths = worker_paths(backend, main, slot=slot)
+        drift_line = _log_state_drift(paths.key, paths.statefile, main=main)
         if drift_line:
             print(drift_line)
 
@@ -2915,7 +3082,8 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
             write_event(
                 "worker_cut",
                 result.backend,
-                detail=f"{result.backend} was cut (reason={result.cut_reason})",
+                detail=f"{result.backend} was cut (reason={result.cut_reason})"
+                + (f" on issue #{result.issue}" if result.issue else ""),
                 main=main,
                 now=now,
             )
@@ -2993,7 +3161,10 @@ def tick(*, main: Path = HOST_ROOT, now: datetime | None = None) -> None:
     # is skipped this tick: `wake` would group both into ONE planner run anyway, so this only avoids
     # a redundant event whose content `pr_merged`'s detail already carries, and keeps the idle
     # clock (`planner.idle_wake_minutes`) from being spent on a wake the merge already caused.
-    any_alive = any(_is_alive(worker_paths(backend, main).pidfile) for backend in BACKENDS)
+    any_alive = any(
+        _is_alive(worker_paths(backend, main, slot=slot).pidfile)
+        for backend, slot in worker_slot_pairs()
+    )
     merged_outcome = _write_pr_merged_event_if_gained(
         scan.issues, any_alive=any_alive, main=main, now=now
     )
@@ -3015,6 +3186,8 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     check_parser = sub.add_parser("check")
     check_parser.add_argument("backend", choices=BACKENDS)
+    # The slot whose run just ended (#90); the run's own subshell passes it, 1 when it is absent.
+    check_parser.add_argument("--slot", type=int, default=1)
     sub.add_parser("tick")
     sub.add_parser("wake")
     sub.add_parser("promote-refined")
@@ -3026,7 +3199,9 @@ def main() -> None:
     event_parser.add_argument("--detail", default="")
     args = parser.parse_args()
     if args.command == "check":
-        print(check(args.backend))
+        if args.slot not in backend_slots(args.backend):
+            parser.error(f"backend {args.backend} has no slot {args.slot}")
+        print(check(args.backend, slot=args.slot))
     elif args.command == "tick":
         tick()
     elif args.command == "wake":
