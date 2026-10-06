@@ -8,6 +8,33 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Agentos v2, Phase 1 (`docs/AGENTOS_V2_PLAN.md`; no issue, branch `feat/v2-phase1-tree-schema`) --
+  the product tree and the decision ledger, with their doctor. New package `agent_os.tree` and
+  console script `agent-os-tree`: a node (goal, functional requirement, use case) and a decision are
+  each one Markdown file with YAML frontmatter under one root (`tree.root`, default `product`, or
+  `--root`), validated with pydantic in the repo's strict style (an unknown field is an error).
+  `validate` (alias `doctor`) is a red check the way host literals are: 23 named codes, one line per
+  defect with the file path, exit 1 (orphan files, missing or unknown fields, duplicate ids, id
+  and filename or prefix mismatches, dangling or mistyped or cyclic parents, a hardened node
+  without implementation or verification, a node pointing at a superseded decision, a superseded
+  decision without an existing successor, ...). Tests run top-down from the goals: a goal may carry
+  a `verification` (acceptance, never work: it still carries no mechanism, implementation, spike,
+  foundation flag or state, and is never a ticket), and a node with children is a container whether
+  or not it has a verification, so an upper node's verification is the acceptance of its subtree
+  and never a ticket. `context NODE [--json]` emits the slice -- the node, its ancestors up to the
+  goal with the verification each carries (labelled as the acceptance the node's work serves and
+  must not break), the decisions in force on that chain (an `under-review` one labelled as still
+  obeyed), their sources -- deterministic, and bounded by one chain whatever the size of the tree.
+  `compile [--json] [--out-dir]` renders dispatch tickets from pending leaves that have an
+  executable verification (shape checked by `validate_issue_body`, address `<!-- node: <id> -->`)
+  and reports an escalation for each that lacks one; it renders only, no issue is created (Phase
+  2). New optional config section `tree:` (`root`, `ticket_budget_class`, `ticket_labels`). The
+  plan's six founding decisions are the ledger's first entries, in `docs/ledger/`, run through the
+  doctor and the slicing by a test. ADR
+  `2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`.
+  Hosts: a `subtree pull`; nothing to configure until a host adopts v2 (Phase 3), and then
+  `agent-os-tree validate` goes in its test command.
+
 - agent-os#95 — a worker class's launch reads its own `fallback:`, and can escalate its model. A
   worker class could declare `fallback:` (it parsed on every class) but only the one-shot roles'
   drivers read it, so it was inert for the launch and still silenced the guard's
