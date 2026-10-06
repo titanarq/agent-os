@@ -20,11 +20,12 @@ from agent_os.lib import TreeConfig
 from agent_os.product.tree.checks import CHECKS
 from agent_os.product.tree.compile import MECHANISM_UNRESOLVABLE, MISSING_VERIFICATION
 from agent_os.product.tree.models import (
+    Challenge,
     Decision,
+    Experiment,
     FrictionEntry,
     Node,
     RejectedAlternative,
-    SpikeResult,
     Verification,
 )
 
@@ -67,7 +68,8 @@ def test_the_docs_name_the_two_escalation_codes():
 
 
 @pytest.mark.parametrize(
-    "model", [Node, Verification, Decision, SpikeResult, RejectedAlternative, FrictionEntry]
+    "model",
+    [Node, Verification, Decision, Experiment, Challenge, RejectedAlternative, FrictionEntry],
 )
 def test_the_docs_name_every_field_of_every_schema(model):
     section = section_of_the_tree_doc()

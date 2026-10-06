@@ -52,6 +52,18 @@ that closed several small issues at once name them all. This file starts on 2026
   models and backends it names; re-run `agent-os-install --force` to take the new CI step, and give
   commits that touch the tree their trailer from then on (`docs/AGENT_OS.md` §4.6,
   `docs/ADOPTION.md` step 20).
+- #113 -- Agentos v2, Stage 1: the tree format. New node state `implemented` (between `improvised` and
+  `hardened`). `experiments` replaces `spikes` (kind `spike | demand-probe | question | lookup`,
+  outcome may be `open`; a `question` carries its `scope` `what | how` and its `default_answer`);
+  a node still using `spikes` is now a `schema` error, so a host tree migrates the field name and
+  adds a `kind` to each entry after its next subtree pull. New `depends_on:` (a list of node ids)
+  with the doctor codes `dangling-dependency` and `dependency-cycle`, and `challenge:` (`reason`
+  `no-solution | no-verification | over-cost`). "Not hardenable" (an open `what` question, or a
+  challenge on the node or on what it depends on) is `agent_os.product.tree.hardening`; `compile` does
+  not use it yet. `context` shows state, dependencies, hardenability, experiments and the challenge,
+  and `--json` carries them. See the dated note of ADR
+  `2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md` and
+  `docs/AGENT_OS.md` §4.6 (26 codes now).
 - Agentos v2, Stage 1 (#114) -- code-quality checks on every pull request. A deterministic ratchet,
   `agent-os-quality --base REF` (`agent_os/quality/`), blocks in CI: new files and folders must be
   within `quality.max_lines_per_file` (300) and `quality.max_entries_per_folder` (12), and a touched
