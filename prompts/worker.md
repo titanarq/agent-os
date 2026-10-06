@@ -22,6 +22,20 @@ WHERE YOU WORK
 - The brief file is a copy; the issue is the source. Report on the issue, not on the copy, and if
   the brief and the issue disagree, the issue wins.
 
+NODE-CHANGE TRAILER -- WHEN A COMMIT TOUCHES THE PRODUCT TREE
+Any commit that changes a file under the product tree (the directory `tree.root` of
+`config/agents.yaml` names, `product/` unless the host says otherwise) ends its message with exactly
+ONE trailer line `Node-Change: <value>`, after a blank line. The host's CI fails a pull request
+holding a commit that touches the tree without one, or with two, or with any other value. Pick the
+value by what caused the change, not by how large it is:
+- `usage` -- feedback from using the product: someone ran it and it taught something the node did
+  not say.
+- `rework` -- a correction after a validation or a rejection showed the node was wrong or
+  incomplete.
+- `owner` -- the owner's own word changed it: the issue or the owner's comment says so, and you
+  can cite it.
+A commit that touches no file under the tree carries no such trailer.
+
 ONE STAGE PER PROCESS
 - The issue is the whole task, but this process has ONE stage of it, named in the instruction
   below. Do that stage and nothing else, however obvious the next one looks from here.

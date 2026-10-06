@@ -286,7 +286,7 @@ def check_prompt_extras_classes(
     name of a class outlives the model behind it, so a renamed or removed class is the one edit a
     host's prose does not follow. A `budget:` line is unambiguous; a backticked hyphenated word is
     only taken for a class name when it shares a hyphen-separated word with one that exists (so
-    `complex-claude` is caught next to `complex-qwen`, and a label like `auto-ready` is not).
+    `complex-claude` is caught next to `complex-sonnet`, and a label like `auto-ready` is not).
     There is no model-name matching: what a class runs on is rendered into the prompt itself."""
     known_words = {word for name in classes for word in name.split("-")}
     unknown_by_role: dict[str, list[str]] = {}

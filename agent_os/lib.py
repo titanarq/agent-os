@@ -640,11 +640,18 @@ class AgentModels(Strict):
     `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`. A definition
     has exactly one model, so a duty that needs a different one is its own definition
     (`task-writer`, split out of the control plane). The value is opaque to the tool: whatever
-    `claude --model` accepts, an alias (`sonnet`, `opus`) or a full id (agent-os#96)."""
+    `claude --model` accepts, an alias (`sonnet`, `opus`) or a full id (agent-os#96).
+
+    Every role defaults to Sonnet; only the custodian and the consolidator default to Opus
+    (`docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`). Those two roles arrive in
+    Stage 2 of `docs/AGENTOS_V2_PLAN.md`: their keys exist so a host can set them, and nothing
+    reads them yet."""
 
     control_plane: str = "sonnet"
     worker_runner: str = "sonnet"
-    task_writer: str = "opus"
+    task_writer: str = "sonnet"
+    custodian: str = "opus"
+    consolidator: str = "opus"
 
 
 class ProjectConfig(Strict):

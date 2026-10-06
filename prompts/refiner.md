@@ -90,6 +90,21 @@ Write it as the ordered checklist the template shows, one `- [ ]` line per stage
 naming the deliverable (`agent_os.lib`'s `parse_stages` reads exactly that shape, and
 `section_failures` rejects a `## Stages` heading with no such line as `stages: no checklist line`).
 
+NODE-CHANGE TRAILER -- WHEN A COMMIT TOUCHES THE PRODUCT TREE
+Any commit that changes a file under the product tree (the directory `tree.root` of
+`config/agents.yaml` names, `product/` unless the host says otherwise) ends its message with exactly
+ONE trailer line `Node-Change: <value>`, after a blank line. The host's CI fails a pull request
+holding a commit that touches the tree without one, or with two, or with any other value. Pick the
+value by what caused the change, not by how large it is:
+- `usage` -- feedback from using the product: someone ran it and it taught something the node did
+  not say.
+- `rework` -- a correction after a validation or a rejection showed the node was wrong or
+  incomplete.
+- `owner` -- the owner's own word changed it: the issue or the owner's comment says so, and you
+  can cite it.
+You write issues, not commits, so this only binds when you do commit a change to the tree; a
+commit that touches no file under it carries no such trailer.
+
 EVERY BODY YOU WRITE
 - The seven sections, in this exact order, with these exact English headings: `## Objective`,
   `## Acceptance criteria`, `## Stages`, `## Context`, `## Not included`, `## Dependencies`,
