@@ -22,7 +22,7 @@ Which nodes become tickets (the rule is one place, `_classify`):
   as context, see `agent_os.product.tree.slicing`) and never a ticket of its own;
 - every other pending node needs an executable verification -- a `command`; a criterion an agent
   judges is acceptance and not executable -- and a mechanism that can be resolved (written, or
-  `pending` with no spike having found it infeasible). One that lacks either is an ESCALATION:
+  `pending` with no experiment having found it infeasible). One that lacks either is an ESCALATION:
   reported, with its reason, and never turned into a ticket. A node's judged criteria are still
   rendered in its ticket's acceptance criteria, labelled as judged by an agent.
 """
@@ -122,13 +122,13 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
                 ),
             )
         )
-    infeasible = [spike for spike in node.spikes if spike.outcome == "infeasible"]
+    infeasible = [e for e in node.experiments if e.outcome == "infeasible"]
     if node.mechanism == MECHANISM_PENDING and infeasible:
         reasons.append(
             (
                 MECHANISM_UNRESOLVABLE,
                 (
-                    "mechanism is `pending` and a spike found it infeasible "
+                    "mechanism is `pending` and an experiment found it infeasible "
                     f"({infeasible[0].question}: {infeasible[0].finding}); a mechanism has to be "
                     "found or the node revised before it can be dispatched"
                 ),
@@ -150,7 +150,7 @@ def _stages(node: Node, node_file: str) -> list[str]:
     stages = []
     if node.mechanism == MECHANISM_PENDING:
         stages.append(
-            f"- [ ] Resolve the solution mechanism of `{node.id}` (spike first if feasibility is "
+            f"- [ ] Resolve the solution mechanism of `{node.id}` (experiment first if feasibility is "
             f"in doubt) and write it into `mechanism` of `{node_file}`; verified by the tree "
             "doctor passing"
         )

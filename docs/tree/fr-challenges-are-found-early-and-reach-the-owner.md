@@ -16,6 +16,9 @@ mechanism: |-
   the goals or stops the work; the custodian may recommend stopping a branch, with its evidence. The
   finishing reliability -- the share of use cases hard to test against easy to test -- is shown per
   branch on the progress board.
+implementation: 'The challenge field with its reason and the not-hardenable property it gives a node and its dependents:
+  agent_os/product/tree/models.py, agent_os/product/tree/hardening.py (#113). Flagging, the question session
+  and the progress board are not built.'
 ---
 Whether the product can be finished, with guarantees, is known as early as possible: a use case with
 no known solution, no way to test it, or a cost its goal does not accept is found early and reaches
