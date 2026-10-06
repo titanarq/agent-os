@@ -52,6 +52,16 @@ that closed several small issues at once name them all. This file starts on 2026
   models and backends it names; re-run `agent-os-install --force` to take the new CI step, and give
   commits that touch the tree their trailer from then on (`docs/AGENT_OS.md` §4.6,
   `docs/ADOPTION.md` step 20).
+- Agentos v2, Stage 1 (#114) -- code-quality checks on every pull request. A deterministic ratchet,
+  `agent-os-quality --base REF` (`agent_os/quality/`), blocks in CI: new files and folders must be
+  within `quality.max_lines_per_file` (300) and `quality.max_entries_per_folder` (12), and a touched
+  one over a limit may not get worse than on the merge-base (a file may not grow, a folder may not
+  gain an entry); git-tracked entries only. New optional `quality:` config section with
+  `excluded_paths` (default `docs/`, `tests/golden/`, `config.example.yaml`, `uv.lock`; the tree
+  root and a vendored `agent_os/` are always excluded). Wired into `.github/workflows/ci.yml`
+  (checkout with `fetch-depth: 0`) and `templates/ci-host.yml`; `templates/ci-agent-os.yml` leaves
+  it to `ci-host.yml`. The validator prompt gains a "code quality of the diff" review (SOLID, long
+  names, comments only for a non-obvious why) that requests changes like any finding.
 - #112 -- the v2 subsystems move under `agent_os/product/` (`git mv`, no behaviour change):
   `agent_os.tree` is now `agent_os.product.tree` and `agent_os.puntal` is `agent_os.product.puntal`;
   their tests move to `tests/product/`. `agent-os-tree` and `bin/puntal_task.sh` keep their names.

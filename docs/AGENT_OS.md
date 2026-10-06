@@ -955,6 +955,38 @@ own sample size (`p95` of 24 is the 23rd value; one slow call moves it) and that
 notional. It judges the plan's starting points (first signal < 5 s, full response p95 < 30 s, mean
 cost < $0.10, zero contradictions) and adds one of its own, that the puntal ran only `./state`.
 
+### 4.8 The code-quality ratchet (`agent-os-quality`)
+
+Every pull request gets two checks on the shape of the code it adds
+(`docs/tree/dec-every-pull-request-gets-a-code-quality-review.md`). The first is deterministic and
+blocks in CI: `agent_os/quality/` compares the PR head against the **merge-base** with the base
+branch and fails when
+
+- a **new** file has more than `quality.max_lines_per_file` lines (default 300), or a **new**
+  folder holds more than `quality.max_entries_per_folder` tracked entries (default 12, files and
+  subfolders alike); or
+- a file or folder that was **already over** a limit got worse: a file grew, a folder gained an
+  entry. Staying as it was, or shrinking, passes, so splitting an offender is always allowed.
+
+Only git-tracked entries count. A renamed or moved file is a new file to the check (no rename
+detection), so split code by moving its pieces out and keeping the original smaller. Binary files
+count no lines. Output is one line per violation; exit 0 clean, 1 violations, 2 the check could
+not run (no merge-base: the CI checkout needs `fetch-depth: 0`; a config that does not load).
+
+```
+agent-os-quality --base origin/main [--root DIR] [--config PATH]
+```
+
+The `quality:` section of `config/agents.yaml` (`config.example.yaml` documents it) holds
+`max_entries_per_folder`, `max_lines_per_file` and `excluded_paths`: data and prose are not code, so
+by default `docs/`, `tests/golden/`, `config.example.yaml` and `uv.lock` are not measured and not
+entered (an excluded path still occupies one entry of its parent). Always excluded besides the
+list: `tree.root`, and the mechanism's own directory when it is vendored under a host
+(`agent_os/`, which only changes through `git subtree pull`). The mechanism's own CI calls it from
+`.github/workflows/ci.yml` and a host's from `templates/ci-host.yml`. The second check is the
+validator's: `prompts/validator.md` makes it review the diff for SOLID, long self-explanatory names
+and comments only for a non-obvious why, requesting changes like any other finding.
+
 ## 5. Export recipe
 
 1. **Copy `agent_os/` as a unit** — `git subtree add --prefix=agent_os <the split repo> main`,
@@ -1109,6 +1141,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 |---|---|---|
 | `bash agent_os/bootstrap.sh` | human, CI | build `agent_os/.venv` and install the package into it, editable. Idempotent; the one prerequisite of everything below |
 | `agent_os/.venv/bin/pytest agent_os/tests -q` | human, CI | the mechanism's own suite: no database, no network, no real backend. The run a second host can also make |
+| `agent-os-quality --base REF` | CI | the code-quality ratchet (§4.8): new files and folders must be within the line and entry limits, touched ones never worse than on the merge-base with REF. Exit 0/1/2 |
 | `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column. `move N [N …] STATE` takes several numbers in one invocation: the target label and the board's `Status` field are resolved once for all of them, an issue that fails is reported under its number without stopping the rest, and the command exits non-zero naming every issue that did not move. A move costs three GraphQL requests of ~1 point each, whatever the board's size (the board field, once per invocation; the issue's item; the column edit) — the issue and its labels are read and written over REST, on the separate core quota (agent-os#27). The GraphQL quota is 5000 points an hour per user, shared by every host and tool the human runs, and separate from the REST `core` one (`gh api rate_limit --jq .resources.graphql`, not the top-level `.rate`). `validate` reads over REST too (agent-os#70). A rate limit is checked against the login's quotas before it is retried: a bucket at zero fails at once, naming it and its reset time; a secondary limit waits at least a minute per retry |
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume --issue <M>` the slot that recorded issue M, `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot` |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |

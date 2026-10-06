@@ -20,10 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The code-quality ratchet needs the merge-base with the pull request's base branch.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      # New files and folders comply with the limits in `quality:` of `config/agents.yaml`, and a
+      # touched one never gets worse than on the base branch. The mechanism's own directory is
+      # skipped: it only ever changes through a `git subtree pull`.
+      - name: bootstrap the mechanism's own interpreter
+        run: bash agent_os/bootstrap.sh
+
+      - name: code-quality ratchet
+        run: agent_os/.venv/bin/python -m agent_os.quality --base origin/${{ github.base_ref }}
 
       - name: the host's test command
         run: __TEST_COMMAND__
