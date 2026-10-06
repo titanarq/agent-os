@@ -15,6 +15,10 @@ will be superseded by that tree's mechanisms as they are written (Stage 1 on).
 - **v2 wraps v1, it does not rewrite it.** The execution substrate (guard, planner, workers,
   validator, refiner, tracker CLI) stays as the hands. The new subsystems grow inside this
   repository and reach hosts through the same `git subtree` channel.
+- **The cycle applies at every scale** (2026-10-06, `docs/tree/dec-the-cycle-applies-at-every-scale.md`):
+  goal and use cases first, then agents that prop them up, then those agents turned into
+  deterministic implementation, little by little -- for a product's use case, for a single action
+  of a puntal, and for Agentos's own mechanisms. Hardening is not all or nothing.
 
 ## The three layers
 
@@ -143,8 +147,16 @@ Exit: the owner uses the product.
   the slice, never the tree; write-back discipline in the worker and refiner prompts; the validator
   validates against the node's verification, in a context separate from the worker's.
 - The shell: every action routes to code or to a puntal; the owner's feedback on a puntal answer
-  (accept, reject, retry) is recorded; a minimal test-session mode inside the app.
-- Minimal question sessions (where they happen is an open item).
+  (accept, reject, retry) is recorded; a minimal test-session mode inside the app; the UI shows
+  progress at once, and what counts as first signal is set per kind of action.
+- The puntal's contract becomes `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`: a
+  code pre-helper loads the state the node declares its action reads, the puntal plans in one model
+  turn with no tools (operations and answer), a code executor applies the operations atomically
+  through the app's API (which keeps derived data itself), post-helpers run off the critical path,
+  and the slow path (a read the node did not declare) stays as the escape. `bin/puntal_task.sh` and
+  `agent_os/puntal.py` change accordingly; the first real measurement is on the vector's actions.
+- Minimal question sessions: one GitHub issue per session, opened by the owner
+  (`docs/tree/dec-a-question-session-is-a-github-issue.md`).
 - The tree format gains `experiments` (spike, demand probe, question with scope `what` or `how` and
   a default answer, lookup; outcome `open` allowed); an open `what` question blocks the hardening of
   its node, and its default stays schematic.
@@ -156,6 +168,9 @@ Exit: the owner uses the product.
 
 Exit: branches with telemetry and hardened nodes.
 
+- Hardening step by step: a mechanical step a puntal keeps doing moves into a code helper (a
+  `component` of the app) before the whole action is hardened; the slow path's telemetry says
+  which reads a node should declare.
 - Hardening driven by use: `compile` emits hardening tickets for `improvised` nodes, in the order of
   use (frequency x the puntal's cost, latency and errors); verification extracted from interactions
   the owner accepted; `retired` for what nobody uses; `llm_by_design` for what must stay a model
@@ -200,7 +215,7 @@ Where each piece lives. "Host" is the product's repository (the vector first).
 | Product shell | Every action goes to code or to a puntal; test-session mode; records the owner's feedback | host, the app's own code (stack of the product) | 1 |
 | Progress board | Progress per branch; the owner's order of the backlog | the host repository's GitHub Project | 1 |
 | Test sessions | The owner tries a branch, accepts or rejects, answers the puntals' questions | inside the shell | 1 |
-| Question sessions | Batches of `what` questions; reviews of the tree and of method proposals | open item | 1 |
+| Question sessions | Batches of `what` questions; reviews of the tree and of method proposals | one GitHub issue per session, in the host repository | 1 |
 | Product tree | Goals, requirements, use cases, decisions, experiments, components | host `product/` (`tree.root`) | 1 |
 | Agentos's own tree | Agentos's goals, requirements, use cases and decisions | agent-os `docs/tree/` | done |
 | Components | Reusable pieces with a core and extensions | host `components/`, a package of its own; a shared repository in Stage 3 | 2 |
@@ -253,8 +268,10 @@ is part of compression, in Stage 3.
     of latency where they start improvised.
   - Reusable components start inside the vector, as a package of its own, and move to a shared
     repository when they are reused across products.
-- **Open doubts of the how pass**: what to do with the Phase 0 no-go (what to measure next, and what
-  "first signal" means in a real UI); where question sessions happen.
+- **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
+  (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
+  happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Next: the mechanism of each
+  requirement, goal by goal.
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,
