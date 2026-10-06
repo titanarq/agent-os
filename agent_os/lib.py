@@ -895,6 +895,24 @@ class PuntalConfig(Strict):
         return value
 
 
+class TreeConfig(Strict):
+    """Where a host's product tree lives and how the tickets compiled from it are named
+    (`agent_os.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
+
+    # The directory holding the product tree AND the decision ledger -- one directory of Markdown
+    # files, nodes and decisions together, in any subdirectories the host likes -- relative to the
+    # host's root. `agent-os-tree --root` overrides it for one run.
+    root: str = "product"
+    # The worker class a compiled ticket names in its `<!-- budget: <class> -->` line. Empty by
+    # default, like `project.guard_unit`: a mechanism that does not know a host's class names does
+    # not invent one, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
+    ticket_budget_class: str = ""
+    # Labels every compiled ticket carries besides its task type label -- a host marks the tickets
+    # that came from its tree, or names the module they belong to, here. The initial `status:*`
+    # label is deliberately not decided by `compile`: creating the issues is Phase 2's wiring.
+    ticket_labels: list[str] = []
+
+
 class AgentsConfig(Strict):
     project: ProjectConfig
     # The mechanism's own section, optional exactly as `planner:` is: a config that predates it
@@ -904,6 +922,8 @@ class AgentsConfig(Strict):
     # Optional exactly as `planner:` is: a config that predates the puntal still loads.
     puntal: PuntalConfig = PuntalConfig()
     classes: dict[str, TaskClass]
+    # The product tree's own section, optional exactly as `planner:` is.
+    tree: TreeConfig = TreeConfig()
 
     @model_validator(mode="after")
     def backends_are_configured_backends(self) -> AgentsConfig:
@@ -930,6 +950,22 @@ class AgentsConfig(Strict):
                     f"class '{name}' fallback names backend '{task_class.fallback.backend}', "
                     f"which is not a key of project.backends ({sorted(known)})"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def tree_tickets_name_a_worker_class(self) -> AgentsConfig:
+        """`tree.ticket_budget_class` is the class a compiled ticket's budget line names, so it
+        has to be one a worker can run: checked here, when the config loads, and not when the
+        first ticket is due."""
+        name = self.tree.ticket_budget_class
+        if not name:
+            return self
+        task_class = self.classes.get(name)
+        if task_class is None or task_class.role != "worker":
+            raise ValueError(
+                f"tree.ticket_budget_class names '{name}', which is not a worker class of "
+                f"classes ({sorted(n for n, c in self.classes.items() if c.role == 'worker')})"
+            )
         return self
 
 

@@ -67,7 +67,7 @@ hooks, tens of thousands of tokens that have nothing to do with the click.
    substitution would let it rewrite the brief.
 
 6. **The telemetry record is a contract.** One JSON line per invocation, whatever its outcome, with a
-   `schema` version and the fields documented in `docs/AGENT_OS.md` §4.6 (a test holds the code and the
+   `schema` version and the fields documented in `docs/AGENT_OS.md` §4.7 (a test holds the code and the
    table to the same list). Latencies run from the click's arrival at the shell driver. The
    **time-to-first-signal is the first assistant text delta of any message**; the first stream line,
    the first message, the first tool call and the first delta of the answer's own message are recorded

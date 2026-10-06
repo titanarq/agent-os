@@ -21,7 +21,7 @@ knows nothing about the product tree that will one day produce a slice.
 THE TELEMETRY RECORD. Every invocation appends exactly one JSON object, on one line, to the telemetry
 file (`--telemetry-file`, else `<run dir>/telemetry.jsonl`), whatever its outcome. That file is the
 telemetry the refiner will consume to decide which use cases deserve hardening into code, so its shape
-is a contract: `TELEMETRY_SCHEMA` is bumped on any incompatible change, and `docs/AGENT_OS.md` §4.6
+is a contract: `TELEMETRY_SCHEMA` is bumped on any incompatible change, and `docs/AGENT_OS.md` §4.7
 documents each field. Latencies are seconds from the moment `puntal_task.sh` was entered, which is
 the moment the click reaches the driver; `latency_s.first_text_delta` is the time-to-first-signal.
 
@@ -84,7 +84,7 @@ from agent_os.streams.claude_jsonl import result_total_tokens, turn_context_toke
 
 TELEMETRY_SCHEMA = 1
 # The top-level keys of one telemetry record, in the order they are written. Documented field by
-# field in `docs/AGENT_OS.md` §4.6; a test holds this tuple, the record `build_record` returns and
+# field in `docs/AGENT_OS.md` §4.7; a test holds this tuple, the record `build_record` returns and
 # that table to the same list.
 TELEMETRY_FIELDS = (
     "schema",

@@ -250,6 +250,26 @@ puntal:
   # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
   effort: ""
 
+# The product tree and the decision ledger (`agent-os-tree`, docs/AGENT_OS.md §4.6). Every key is
+# optional; the values below are the defaults except `ticket_budget_class`, which has none.
+tree:
+  # The directory holding the tree AND the ledger: one directory of Markdown files with YAML
+  # frontmatter, nodes and decisions together, in any subdirectories the host likes. Relative to
+  # the host's root; `agent-os-tree --root DIR` overrides it for one run. A worker writes node files
+  # back (the mechanism it resolved, the implementation pointer), so this directory must not be in
+  # `project.forbidden_paths`.
+  root: product
+  # The worker class a compiled ticket names in its `<!-- budget: <class> -->` line. Must be a
+  # worker class below -- the config fails to load otherwise. Empty (the default) makes
+  # `agent-os-tree compile` refuse until `--budget-class` says which: the mechanism does not know
+  # a host's class names and does not guess one.
+  ticket_budget_class: mechanical-qwen
+  # Labels every compiled ticket carries besides its task type label (`project.labels.types`): a
+  # marker for the tickets that came from the tree, the module they belong to. The initial
+  # `status:*` label is not decided here -- `compile` only renders; creating the issues and the
+  # state they start in is the wiring of Phase 2.
+  ticket_labels: []
+
 # The budget classes. `max_context` applies per stage process, fresh at every stage;
 # `max_cost_usd` and `max_total_tokens` apply to the whole issue. Every issue body names one in a
 # `<!-- budget: <class> -->` line; a class with a `role:` field belongs to that role instead.

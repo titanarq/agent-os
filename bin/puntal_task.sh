@@ -23,7 +23,7 @@
 # truncated, never reused) with its `.exited` marker, one `.cache/puntal/runs.tsv` row (ts, context,
 # model, turns, cost -- the columns of every role's), and one JSON line in the telemetry file
 # (`.cache/puntal/telemetry.jsonl`, or `--telemetry-file`) whose shape is documented in
-# agent_os/docs/AGENT_OS.md §4.6. `AGENT_CACHE_DIR` moves the first three, as it does for the
+# agent_os/docs/AGENT_OS.md §4.7. `AGENT_CACHE_DIR` moves the first three, as it does for the
 # validator and the refiner. `PUNTAL_<BACKEND>_BIN` names the backend binary, for a test or a bench
 # that stands a stub in for it.
 #

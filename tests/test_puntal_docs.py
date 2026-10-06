@@ -21,13 +21,13 @@ ADR = (
 
 
 def section_4_6() -> str:
-    return (DOCS / "AGENT_OS.md").read_text().split("### 4.6", 1)[1].split("\n## ", 1)[0]
+    return (DOCS / "AGENT_OS.md").read_text().split("### 4.7", 1)[1].split("\n## ", 1)[0]
 
 
 def test_every_telemetry_field_is_documented():
     section = section_4_6()
     missing = [name for name in puntal.TELEMETRY_FIELDS if f"`{name}`" not in section]
-    assert not missing, f"docs/AGENT_OS.md section 4.6 does not document {missing}"
+    assert not missing, f"docs/AGENT_OS.md section 4.7 does not document {missing}"
 
 
 def test_every_latency_milestone_is_documented():

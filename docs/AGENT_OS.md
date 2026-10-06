@@ -22,7 +22,7 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Worker (claude) | Declared, never dispatched: since 2026-09-16 no budget class names this backend | its own App (`project.backends.claude.app`) | — (reactivating it is one class in `config/agents.yaml`) |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
-| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, Phase 0 spike, §4.6); reads and writes state only through the app's persistence API | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
+| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, Phase 0 spike, §4.7); reads and writes state only through the app's persistence API | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -334,7 +334,7 @@ per-turn sum; the follow-up is §7 row (v).
   `.cache/<role>/runs.tsv` (timestamp, context, model, turns, cost) — `agent_os.lib:1034`
   (`planner_run_row`), `agent_os/bin/agent_task.sh:74-80` (`agent_append_run_row`).
 - A full, never-truncated log per run: `.cache/planner/<ts>.log`, `.cache/<role>/<ts>.log`.
-- Per puntal invocation (§4.6): `.cache/puntal/runs.tsv` (the same five columns), a per-run log
+- Per puntal invocation (§4.7): `.cache/puntal/runs.tsv` (the same five columns), a per-run log
   `.cache/puntal/<ts>-<µs>-<pid>.log` and, beside them, `.cache/puntal/telemetry.jsonl` -- one JSON
   line per invocation with latencies, tokens, cost and tool calls, which is not a spend record but the
   usage record the refiner will consume.
@@ -419,7 +419,7 @@ agent_os/
 │   ├── install.py                 agent-os-install: systemd units + copy-if-absent templates
 │   ├── issues.py                  tracker CLI over gh: list/show/create/update/validate/move/…
 │   ├── lib.py                     config models, dispatch/budget predicates, jsonl event reading
-│   ├── puntal.py                  the puntal driver's Python half (§4.6)
+│   ├── puntal.py                  the puntal driver's Python half (§4.7)
 │   └── render.py                  __TOKEN__ substitution for the agents/*.md templates
 ├── agents/                      templates for the .claude/agents/*.md prompts
 │   ├── control-plane.md
@@ -429,12 +429,12 @@ agent_os/
 │   ├── agent_task.sh              one-shot driver for validator/refiner
 │   ├── notify.sh                  pages the project's ntfy topic
 │   ├── planner_task.sh            planner driver, one `claude -p` per decision
-│   ├── puntal_task.sh             puntal driver, one `claude -p` per UI action (§4.6)
+│   ├── puntal_task.sh             puntal driver, one `claude -p` per UI action (§4.7)
 │   ├── _python.sh                 the one interpreter/host-root resolver every driver sources
 │   ├── qwen_task.sh               compatibility wrapper (`exec worker_task.sh qwen "$@"`)
 │   ├── worker_progress.sh         what the workers have done lately and spent, one screen
 │   └── worker_task.sh             worker driver: init/branch/start/status/watch/collect/open-pr/…
-├── bench/puntal/                the puntal spike's instrument, outside the package (§4.6)
+├── bench/puntal/                the puntal spike's instrument, outside the package (§4.7)
 ├── bootstrap.sh                 builds agent_os/.venv, installs the package editable; idempotent
 ├── config.example.yaml          every §4.2 key, filled in for an invented project
 ├── docs/                        the mechanism's own docs
@@ -516,8 +516,11 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `planner.idle_wake_minutes` | rate limit on the `idle_dispatchable`/`refine_pending` events; `pr_merged` and `nudged` are edges and bypass it (§1) | `120` |
 | `planner.max_runs_per_day` | hard cap on planner runs, across every event kind | `40` (12 once a round completes unattended) |
 | `planner.refiner_unattended` | gates whether `tick` ever writes `refine_pending` | `true` (after a human reviewed a dry run) |
+| `tree.root` | the directory of the product tree and the decision ledger (§4.6), relative to the host's root; `agent-os-tree --root` overrides it for one run | `product` (the default) |
+| `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-qwen` |
+| `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
-| `puntal.*` | the puntal driver's settings (§4.6), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -593,7 +596,140 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
 `agent_os/.gitignore`); every `.cache/worker_*`, `.cache/planner*`, `.cache/<role>/runs.tsv` file
 (generated at run time, correctly gitignored).
 
-### 4.6 The puntal driver (Agentos v2, Phase 0 spike)
+### 4.6 The product tree and the decision ledger (`agent-os-tree`)
+
+Phase 1 of `docs/AGENTOS_V2_PLAN.md`. The product layer of Agentos v2 describes a host's product as
+a **tree** of nodes (global goals, then functional requirements, then use cases) and a **ledger** of
+the decisions that bind it, both stored as Markdown files in the host's own repository. The package
+`agent_os.tree` defines the format, checks it, cuts the slice of it one agent needs and renders
+dispatch tickets from the nodes that are ready to be worked. It touches no network and no backend;
+creating the issues from what `compile` renders is Phase 2's wiring. The binding decisions on the
+format are in `docs/adr/2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`.
+
+**Layout.** One directory -- `tree.root` of `config/agents.yaml` (default `product`, relative to the
+host's root) or `--root DIR` -- holding Markdown files with YAML frontmatter, nodes and decisions
+together, in whatever subdirectories the host likes. What a file is comes from its frontmatter
+`type` and never from where it sits; its id is its filename without `.md`, so moving a file between
+folders breaks no pointer. Files whose name starts with a dot are ignored; everything else under the
+root that is not a record is a red check. A worker writes node files back, so the root must not be
+in `project.forbidden_paths`.
+
+**Ids** are `<prefix>-<slug>`: the prefix says what the record is (`goal-`, `fr-`, `uc-`, `dec-`),
+the slug is lowercase words joined by hyphens, chosen once and never changed. An id encodes no
+position in the tree -- re-parenting a node edits one `parent:` line.
+
+**A node** (`type`: `goal`, `functional-requirement` or `use-case`). The description is the Markdown
+body; every other field is frontmatter. An unknown field is an error.
+
+| Field | Required | What it is |
+|---|---|---|
+| `id`, `type`, `title` | always | the address, the kind, one line of name |
+| *(body)* | always | the `description`; blank is an error |
+| `parent` | functional requirement, use case | the id of its goal (for a requirement) or its requirement (for a use case); a goal has none |
+| `sources` | always, at least one | where the node's content comes from: free text |
+| `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
+| `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
+| `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
+| `verification` | optional on a goal or a node with children (its acceptance); **mandatory for dispatch** of a leaf | list of `command` (exits 0 when the node holds) and optional `expects` (what a pass proves) |
+| `state` | optional, default `pending` | `pending`, `improvised`, `hardened` |
+| `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
+| `spikes` | optional | timeboxed spike results: `question`, `outcome` (`feasible`, `infeasible`, `inconclusive`), `finding`, `date` |
+
+A goal carries none of `mechanism`, `implementation`, `spikes`, `foundation` or a state other than
+`pending`: it is not something to build. It *may* carry a `verification`, which is acceptance and
+never dispatched work: **tests run top-down from the goals.** A goal's verification (and a
+requirement's, once it has use cases) is the evaluator that keeps the work under it from drifting;
+the tests written bottom-up at the leaves consolidate reliability. A node with children is a
+container whether or not it has a verification (see Tickets), so an upper node's verification is
+the acceptance of its subtree and never a ticket of its own.
+
+**A decision.** The statement -- what was decided and what it binds -- is the Markdown body.
+
+| Field | Required | What it is |
+|---|---|---|
+| `id`, `type: decision`, `title` | always | `title` is the decision in one line |
+| *(body)* | always | the `statement`; blank is an error |
+| `state` | always | `in-force`, `under-review` (still obeyed: "obey while challenging"), `superseded` |
+| `superseded_by` | exactly when `superseded` | the successor's id, which must exist |
+| `decided` | always | the date; a review trigger can be measured in time |
+| `sources` | always, at least one | where the decision was taken |
+| `premises` | always, **at least one** | what it stands on; when one stops being true the decision is due for review |
+| `rejected_alternatives` | always, at least one | each `option`, `reason`, and `basis`: `stated` when the source argues against it, `implied` when the ledger only infers it |
+| `review_triggers` | always, **at least one** | any one firing puts the decision under review; "A, or B" is two entries |
+| `friction` | optional | entries accumulated against the decision: `date`, `summary`, optional `node` and `evidence` |
+
+**The doctor** (`agent-os-tree validate`, alias `doctor`) is a red check the way host literals are
+(`tests/test_no_host_literals.py`): one line per defect, `<file>: <code>: <what is wrong>`, exit 1
+if there is any. `check_tree` (`agent_os.tree.checks`) is the one implementation, and a host's own
+test command or CI step runs it: add `agent-os-tree validate` to `project.test_command`'s script, or
+call `check_tree(load_tree(root))` from a test. It reads one snapshot of the tree, so it does not
+check that a state *transition* was legal, nor run a verification, nor resolve an implementation
+pointer.
+
+| Code | A defect when |
+|---|---|
+| `orphan-file` | a file under the root is neither a node nor a decision: not Markdown, no frontmatter, or a `type` that is none of the record types |
+| `bad-frontmatter` | the frontmatter is not valid YAML (a duplicate key and an impossible date included), or not a mapping |
+| `schema` | a field is missing, unknown, of the wrong type or empty (a decision's premises, rejected alternatives and review triggers are mandatory and non-empty), or the Markdown body is blank |
+| `duplicate-id` | two files claim the same id |
+| `id-filename-mismatch` | the `id` is not the filename without `.md` |
+| `id-prefix-mismatch` | the `id` does not start with its type's prefix |
+| `parent-missing` | a functional requirement or use case has no `parent` |
+| `goal-has-parent` | a goal has a `parent` |
+| `dangling-parent` | the `parent` is not the id of any node |
+| `parent-type-mismatch` | a requirement is not under a goal, or a use case not under a requirement |
+| `parent-cycle` | the `parent` pointers loop |
+| `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `spikes`, `foundation`, or a state other than `pending`); `verification` is not one |
+| `missing-work-field` | a requirement or use case has no `mechanism` (write `pending` to defer it) |
+| `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal issues, and the shell does not go live until they are hardened |
+| `hardened-needs-implementation` | a hardened node has no `implementation` |
+| `hardened-needs-verification` | a hardened node has no `verification` |
+| `dangling-decision` | a node's `decisions` names an id that is not a decision |
+| `superseded-decision-in-use` | a node's `decisions` names a superseded decision; the line names the live successor |
+| `superseded-without-successor` | a superseded decision has no `superseded_by` |
+| `successor-without-supersession` | a decision that is not superseded has a `superseded_by` |
+| `dangling-successor` | `superseded_by` is not the id of any decision |
+| `successor-cycle` | the `superseded_by` pointers loop |
+| `dangling-friction-node` | a friction entry's `node` is not the id of any node |
+
+A reference to a file that exists but failed to load is not also reported as dangling: the target
+has its own defect, and one fault is one line.
+
+**The slice** (`agent-os-tree context NODE [--json]`) is the unit of context an agent is handed,
+never the tree: the node in full, its ancestors up to the goal (description, sources and the
+verification each one carries, labelled as the acceptance the node's work serves and must not
+break, in `--json` as each ancestor's `verification` list), and the
+decisions in force on that chain -- the node's own and its ancestors' -- each with its statement,
+premises, rejected alternatives, review triggers and the *count* of its friction entries. An
+`under-review` decision is in the slice labelled "UNDER REVIEW -- still obeyed while it is
+challenged"; a superseded one never is. It contains no sibling, no descendant and no decision that
+does not bind the node, so its size is bounded by one chain of ancestors however large the tree
+grows (the evaluators above are part of the chain, a sibling's or a descendant's never are), and it
+is deterministic: the same tree gives the same bytes. It is refused when a file it is
+made of fails the doctor (the doctor's lines are printed); a defect elsewhere does not stop it.
+
+**Tickets** (`agent-os-tree compile [--json] [--out-dir DIR] [--budget-class C] [--label L]`)
+renders; it creates no issue. A node becomes a ticket when it is a functional requirement or use
+case with no children, `pending`, has an executable `verification`, and its mechanism can be resolved (written, or
+`pending` with no spike having found it `infeasible`). A node that is pending but lacks a
+verification (a leaf), or whose pending mechanism a spike found infeasible, is reported as an
+**escalation** -- `missing-verification` or `mechanism-unresolvable` -- and never as a ticket. A goal,
+a node past `pending`, and a container (any node with children, whether or not it has a
+verification: its use cases are the work, and its own verification is the acceptance of its
+subtree) are skipped. A ticket has the shape of the repository's dispatchable issues:
+`## Objective` (the node), `## Acceptance criteria` (the node's own verification commands),
+`## Stages` (one to resolve and write back a pending mechanism, one to implement), `## Context`
+(the slice, which carries the verification of every ancestor as acceptance not to break),
+`## Not included`, `## Dependencies` (`none`), `## Definition of done`, then
+`<!-- budget: <class> -->` and the address `<!-- node: <id> -->`; every body is checked by
+`validate_issue_body` before it is returned. The class is `--budget-class` or
+`tree.ticket_budget_class`, a worker class, never a guess; the labels are the task type label,
+`tree.ticket_labels` and `--label`. `compile` refuses a tree the doctor finds anything in.
+
+The founding decisions of the plan are the ledger's first entries, in `docs/ledger/`;
+`tests/test_tree_founding_decisions.py` runs the doctor and the slicing over them.
+
+### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
 
 A **puntal** is the shore that props a building up: the product's interface goes live early, every
 action in it is bound to a use case, and an action nobody has implemented yet is answered, live, by a
@@ -928,10 +1064,11 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
+| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
-| `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.6). Not a role the planner launches |
-| `bench/puntal/measure.py calibrate\|main\|reserve\|summarize\|status` | the lead, once, deliberately | the puntal spike's measurement; the only place real calls are authorised, capped at 30 in code (§4.6) |
+| `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.7). Not a role the planner launches |
+| `bench/puntal/measure.py calibrate\|main\|reserve\|summarize\|status` | the lead, once, deliberately | the puntal spike's measurement; the only place real calls are authorised, capped at 30 in code (§4.7) |
 | `agent_os.guard check\|tick\|wake\|promote-refined\|event` | exit hook (`check`), systemd timer (`tick`), `wake`/drivers (`event`), a human (`promote-refined`, by hand), or control-plane via `issues.py update --add-label wake:planner` (never this script directly) | exit-hook bookkeeping; the periodic budget/liveness/quota/drift check, which also reconciles mechanical state (closed → `done`, `promote_refined`, `orphan_doing`) and reports a one-shot role run whose PID is dead with its PID file still on disk as `role_died` (#400); advances `merged_seen.json` and may write `pr_merged`; removes any `wake:planner` label found and may write `nudged` (#413); the `flock`-guarded planner invocation; write a `<kind>` event; the `status:refine → status:ready` sweep, which the tick now runs on every fire |
 | `agent_os/bin/notify.sh "<message>"` | guard, planner | one ntfy.sh POST to the project's single topic |
 | `agent_os/bin/worker_progress.sh [issue] [--hours H]` | human | what the workers have done lately and what they have spent, in one screen |
