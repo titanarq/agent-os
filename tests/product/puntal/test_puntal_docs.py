@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 
-from agent_os import puntal
 from agent_os.cli import AGENT_OS_DIR
+from agent_os.product import puntal
 
 DOCS = AGENT_OS_DIR / "docs"
 ADR = (

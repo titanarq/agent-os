@@ -1,4 +1,4 @@
-"""The slice (`agent_os.tree.slicing`): a node, its ancestors, the decisions in force on that chain,
+"""The slice (`agent_os.product.tree.slicing`): a node, its ancestors, the decisions in force on that chain,
 and nothing else -- and a size bounded by the chain, not by the tree.
 
 Pure filesystem under `tmp_path`.
@@ -12,8 +12,8 @@ import pathlib
 import pytest
 from tree_helpers import write_decision, write_node, write_sound_tree
 
-from agent_os.tree.loader import load_tree
-from agent_os.tree.slicing import (
+from agent_os.product.tree.loader import load_tree
+from agent_os.product.tree.slicing import (
     SliceError,
     build_slice,
     render_slice_json,

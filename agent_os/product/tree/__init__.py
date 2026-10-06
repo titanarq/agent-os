@@ -12,10 +12,10 @@ The binding decisions about its shape are
 
 The modules:
 
-- `agent_os.tree.models` -- the pydantic schemas of a node and of a decision.
-- `agent_os.tree.loader` -- reads a tree root into records, and into defects for what is not one.
-- `agent_os.tree.checks` -- the doctor: every rule a tree must satisfy, one named code each.
-- `agent_os.tree.slicing` -- the slice of one node: its chain of ancestors and the decisions on it.
-- `agent_os.tree.compile` -- dispatch tickets from dispatchable nodes, escalations from the rest.
-- `agent_os.tree.cli` -- `agent-os-tree validate|doctor|context|compile`.
+- `agent_os.product.tree.models` -- the pydantic schemas of a node and of a decision.
+- `agent_os.product.tree.loader` -- reads a tree root into records, and into defects for what is not one.
+- `agent_os.product.tree.checks` -- the doctor: every rule a tree must satisfy, one named code each.
+- `agent_os.product.tree.slicing` -- the slice of one node: its chain of ancestors and the decisions on it.
+- `agent_os.product.tree.compile` -- dispatch tickets from dispatchable nodes, escalations from the rest.
+- `agent_os.product.tree.cli` -- `agent-os-tree validate|doctor|context|compile`.
 """

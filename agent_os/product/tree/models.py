@@ -4,7 +4,7 @@ These models say what SHAPE a record has: which fields exist, which are required
 is, and that an unknown field is an error (`Strict`, the same closed-partition discipline
 `config/agents.yaml` has). The RULES a record or a whole tree must also satisfy -- an id that
 matches its filename, a parent of the right type, a hardened node that carries an implementation
-pointer -- are not here but in `agent_os.tree.checks`, one named code each, so every red check a
+pointer -- are not here but in `agent_os.product.tree.checks`, one named code each, so every red check a
 host can see has a name to grep for and a row in `docs/AGENT_OS.md`.
 
 A record is one Markdown file. Its YAML frontmatter holds every field below except the one that is
@@ -133,7 +133,7 @@ class Node(Strict):
     implementation: NonBlank | None = None
     # Commands and criteria an agent judges. An executable one (a `command`) is mandatory for
     # dispatch: a leaf node without any escalates instead of becoming a ticket
-    # (`agent_os.tree.compile`), and a hardened node needs one (`hardened-needs-verification`). On a
+    # (`agent_os.product.tree.compile`), and a hardened node needs one (`hardened-needs-verification`). On a
     # goal, or on any node with children, it is the acceptance of the subtree -- an evaluator the
     # work below must not break, never work itself -- and a goal must have at least one
     # (`goal-without-evaluators`).

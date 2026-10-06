@@ -3,6 +3,7 @@
 - Date: 2026-10-04
 - Status: accepted
 - Modules: tree (`agent_os/tree/`), config, docs
+- Note 2026-10-07 (#112): `agent_os/tree/` is now `agent_os/product/tree/`; the decision is unchanged.
 - Implements Phase 1 of `docs/AGENTOS_V2_PLAN.md`; the founding decision "Tree as repo files, issues
   as generated dispatch tickets" is `docs/tree/dec-tree-as-repo-files.md` (`docs/ledger/` until 2026-10-06)
 

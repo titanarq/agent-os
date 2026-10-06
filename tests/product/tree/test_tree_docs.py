@@ -17,9 +17,9 @@ import pytest
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import TreeConfig
-from agent_os.tree.checks import CHECKS
-from agent_os.tree.compile import MECHANISM_UNRESOLVABLE, MISSING_VERIFICATION
-from agent_os.tree.models import (
+from agent_os.product.tree.checks import CHECKS
+from agent_os.product.tree.compile import MECHANISM_UNRESOLVABLE, MISSING_VERIFICATION
+from agent_os.product.tree.models import (
     Decision,
     FrictionEntry,
     Node,

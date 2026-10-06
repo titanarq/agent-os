@@ -1,7 +1,7 @@
 """`agent-os-tree` end to end: exit statuses, the lines it prints, and where its root comes from.
 
 The command runs in this process (`main(argv, config_path=...)`) with a config of the test's own,
-and once as a real `python -m agent_os.tree` subprocess to prove the module form works. No
+and once as a real `python -m agent_os.product.tree` subprocess to prove the module form works. No
 network, no `gh`, no backend.
 """
 
@@ -18,7 +18,7 @@ from conftest import EXAMPLE_CONFIG
 from tree_helpers import write_node, write_sound_tree
 
 from agent_os.cli import AGENT_OS_DIR
-from agent_os.tree.cli import main
+from agent_os.product.tree.cli import main
 
 
 def run(argv, *, config_path=EXAMPLE_CONFIG):
@@ -295,7 +295,7 @@ def test_the_module_form_runs_as_a_real_process(tmp_path):
     write_sound_tree(tmp_path)
     # Stub-free on purpose: the module touches no backend, so there is nothing to put first in PATH.
     done = subprocess.run(
-        [sys.executable, "-m", "agent_os.tree", "validate", "--root", str(tmp_path)],
+        [sys.executable, "-m", "agent_os.product.tree", "validate", "--root", str(tmp_path)],
         capture_output=True,
         text=True,
         check=False,
@@ -305,7 +305,7 @@ def test_the_module_form_runs_as_a_real_process(tmp_path):
     assert done.stdout.startswith("ok: 3 node(s), 1 decision(s)")
     (tmp_path / "stray.txt").write_text("x")
     red = subprocess.run(
-        [sys.executable, "-m", "agent_os.tree", "doctor", "--root", str(tmp_path)],
+        [sys.executable, "-m", "agent_os.product.tree", "doctor", "--root", str(tmp_path)],
         capture_output=True,
         text=True,
         check=False,

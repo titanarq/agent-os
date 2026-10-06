@@ -3,7 +3,7 @@ nothing else.
 
 Two raw files feed this, both written by `measure.py` and both append-only JSON lines:
 
-- the TELEMETRY file: the driver's own record of each invocation (`agent_os/puntal.py`);
+- the TELEMETRY file: the driver's own record of each invocation (`agent_os/product/puntal.py`);
 - the TRACE file: what the harness saw around each invocation -- the action, its payload, the whole
   store before and after -- which only the harness can know.
 

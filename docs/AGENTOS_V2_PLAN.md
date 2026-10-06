@@ -169,7 +169,7 @@ Exit: the owner uses the product.
   turn with no tools (operations and answer), a code executor applies the operations atomically
   through the app's API (which keeps derived data itself), post-helpers run off the critical path,
   and the slow path (a read the node did not declare) stays as the escape. `bin/puntal_task.sh` and
-  `agent_os/puntal.py` change accordingly; the first real measurement is on the vector's actions.
+  `agent_os/product/puntal.py` change accordingly; the first real measurement is on the vector's actions.
 - Minimal question sessions: one GitHub issue per session, opened by the owner
   (`docs/tree/dec-a-question-session-is-a-github-issue.md`), each with a digest of what was decided
   without the owner so the owner can reclaim it (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`);
@@ -253,7 +253,7 @@ Where each piece lives. "Host" is the product's repository (the vector first).
 | Components | Reusable pieces with a core and extensions | host `components/`, a package of its own; a shared repository in Stage 3 | 2 |
 | Cited evidence | Telemetry records a node, a test or a decision cites | host `evidence/` | 2 |
 | Raw telemetry | Puntal invocations, owner feedback, judgments and their outcomes | host `.cache/` (never versioned) | 1 |
-| Tree CLI | Doctor, slice, compile; hardening tickets, slice cap, episodic digest | agent-os `agent_os/tree/` | 1-2 |
+| Tree CLI | Doctor, slice, compile; hardening tickets, slice cap, episodic digest | agent-os `agent_os/product/tree/` | 1-2 |
 | Indicators | Hardness, exposure, definition degree, priority, determinism ratio, iterations, accuracy, compression | agent-os, a module of its own | 2-3 |
 | Test selection and coverage | Per-branch selection, ratchet, mutation indicator, a full run every four hours of development | agent-os (mechanism) and the host's CI | 2 |
 | Expert | Populates the tree; experiments; foundations' verification | agent-os `prompts/`, class in host `config/agents.yaml` | 1 |

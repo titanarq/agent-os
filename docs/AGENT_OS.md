@@ -616,7 +616,7 @@ themselves; `agent_os/.venv` (built by `agent_os/bootstrap.sh`, gitignored by
 Phase 1 of `docs/AGENTOS_V2_PLAN.md`. The product layer of Agentos v2 describes a host's product as
 a **tree** of nodes (global goals, then functional requirements, then use cases) and a **ledger** of
 the decisions that bind it, both stored as Markdown files in the host's own repository. The package
-`agent_os.tree` defines the format, checks it, cuts the slice of it one agent needs and renders
+`agent_os.product.tree` defines the format, checks it, cuts the slice of it one agent needs and renders
 dispatch tickets from the nodes that are ready to be worked. It touches no network and no backend;
 creating the issues from what `compile` renders is Phase 2's wiring. The binding decisions on the
 format are in `docs/adr/2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`.
@@ -687,7 +687,7 @@ under it (see the slice and the tickets).
 
 **The doctor** (`agent-os-tree validate`, alias `doctor`) is a red check the way host literals are
 (`tests/test_no_host_literals.py`): one line per defect, `<file>: <code>: <what is wrong>`, exit 1
-if there is any. `check_tree` (`agent_os.tree.checks`) is the one implementation, and a host's own
+if there is any. `check_tree` (`agent_os.product.tree.checks`) is the one implementation, and a host's own
 test command or CI step runs it: add `agent-os-tree validate` to `project.test_command`'s script, or
 call `check_tree(load_tree(root))` from a test. It reads one snapshot of the tree, so it does not
 check that a state *transition* was legal, nor run a verification, nor resolve an implementation
@@ -763,7 +763,7 @@ carries the verification of every ancestor, judged criteria included, as accepta
 
 Agentos's own tree is `docs/tree/`: its goals and functional requirements (the what, with every
 `mechanism: pending` until the how is decided), the plan's founding decisions as the ledger's first
-entries, and the decisions taken since. `tests/test_tree_founding_decisions.py` runs the doctor and
+entries, and the decisions taken since. `tests/product/tree/test_tree_founding_decisions.py` runs the doctor and
 the slicing over it.
 
 ### 4.7 The puntal driver (Agentos v2, Phase 0 spike)
@@ -816,7 +816,7 @@ are start-up latency a person waiting on a click should not pay). The driver als
 telemetry record, the exact flag list the run was launched with (`launch.flags`).
 
 **How "the puntal never writes code" is enforced**, as far as the CLI allows, in layers
-(`agent_os/puntal.py` docstring):
+(`agent_os/product/puntal.py` docstring):
 
 1. *Availability*: `--tools=Bash`; no file-writing tool is in the model's context.
 2. *Permission*: `dontAsk` plus one allow rule. The shim `./state` -- written into the scratch
@@ -1101,7 +1101,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume --issue <M>` the slot that recorded issue M, `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot` |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
-| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
+| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.product.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]` | an app's UI, a bench | one `claude -p` answering one live UI action from its node slice, state only through the app's persistence API; response on stdout, one telemetry line per call (§4.7). Not a role the planner launches |

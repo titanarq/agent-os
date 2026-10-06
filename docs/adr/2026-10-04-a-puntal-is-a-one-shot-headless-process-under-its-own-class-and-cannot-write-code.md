@@ -5,6 +5,7 @@
 - Modules: puntal driver (`bin/puntal_task.sh`, `agent_os/puntal.py`), `agent_os/lib.py` (`TaskClass`,
   `PuntalConfig`), `prompts/puntal.md`, `bench/puntal/`
 - Plan: `docs/AGENTOS_V2_PLAN.md`, Phase 0; founding decisions 4 and 6
+- Note 2026-10-07 (#112): `agent_os/puntal.py` is now `agent_os/product/puntal.py`; the decision is unchanged.
 
 ## Context
 

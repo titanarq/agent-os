@@ -3,7 +3,7 @@
 # hand-written implementation yet. A person clicked; this runs one headless agent process that reads
 # the action's node slice, reads and writes state ONLY through the app's persistence API, and
 # answers. Never a worker: it holds no worktree, writes no code and cannot (the layers are in
-# agent_os/agent_os/puntal.py's docstring), and nothing it does reaches the tracker or the planner.
+# agent_os/agent_os/product/puntal.py's docstring), and nothing it does reaches the tracker or the planner.
 #
 #   agent_os/bin/puntal_task.sh --action ACTION --node-file NODE.md [--payload TEXT | --payload-file F]
 #       [--state-file F] [--node-id ID] [--session-id S] [--invocation-id ID] [--label KEY=VALUE ...]
@@ -43,4 +43,4 @@ cd "$agent_main" || exit 2
 agent_python=$(agent_os_python)
 export AGENT_OS_HOST_ROOT=$agent_main AGENT_OS_PYTHON=$agent_python AGENT_OS_DIR=$agent_os_dir
 
-exec "$agent_python" -m agent_os.puntal "$@"
+exec "$agent_python" -m agent_os.product.puntal "$@"

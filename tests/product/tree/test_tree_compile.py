@@ -1,4 +1,4 @@
-"""`agent_os.tree.compile`: dispatch tickets from dispatchable nodes, escalations from the rest.
+"""`agent_os.product.tree.compile`: dispatch tickets from dispatchable nodes, escalations from the rest.
 
 The shape of a ticket is judged by the repository's own `validate_issue_body` and `is_dispatchable`
 -- the single implementation of "a brief an agent could start from" -- not by a copy of its rules
@@ -19,7 +19,7 @@ from tree_helpers import write_decision, write_node, write_sound_tree
 
 from agent_os import issues
 from agent_os.lib import is_dispatchable, load_agents_config, validate_issue_body
-from agent_os.tree.compile import (
+from agent_os.product.tree.compile import (
     CompileError,
     compile_as_data,
     compile_tree,
@@ -28,7 +28,7 @@ from agent_os.tree.compile import (
     render_compile_text,
     write_compile_files,
 )
-from agent_os.tree.loader import load_tree
+from agent_os.product.tree.loader import load_tree
 
 CONFIG = load_agents_config(EXAMPLE_CONFIG)
 BUDGET_CLASS = "mechanical-qwen"

@@ -864,7 +864,7 @@ def stub_cli(tmp_path, *, listing, version_status=0, version_stderr=""):
 
 
 def driver_flags():
-    from agent_os import puntal
+    from agent_os.product import puntal
 
     return puntal.backend_flags(model="m", effort="low", max_cost_usd=0.25)
 
