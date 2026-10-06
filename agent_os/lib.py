@@ -143,6 +143,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
     QUOTA_DETECTOR_NONE,
@@ -1008,15 +1009,14 @@ class TreeConfig(Strict):
 
 class AgentsConfig(Strict):
     project: ProjectConfig
-    # The mechanism's own section, optional exactly as `planner:` is: a config that predates it
-    # still loads, and an absent mechanism list audits nothing rather than failing the dispatch.
+    # Every section after `project:` is optional, so a config that predates it still loads; an absent
+    # mechanism list audits nothing rather than failing the dispatch.
     mechanism: MechanismConfig = MechanismConfig()
     planner: PlannerConfig = PlannerConfig()
-    # Optional exactly as `planner:` is: a config that predates the puntal still loads.
     puntal: PuntalConfig = PuntalConfig()
     classes: dict[str, TaskClass]
-    # The product tree's own section, optional exactly as `planner:` is.
     tree: TreeConfig = TreeConfig()
+    quality: QualityConfig = QualityConfig()
 
     @model_validator(mode="after")
     def backends_are_configured_backends(self) -> AgentsConfig:
