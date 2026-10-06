@@ -12,7 +12,8 @@ that closed several small issues at once name them all. This file starts on 2026
   `feat/v2-global-goals`) -- Agentos's own tree moves from `docs/ledger/` to `docs/tree/` and gains
   its goals: four goals (a usable product early, grown by real use; faithful to its owner's goals
   over months; the owner decides what, Agentos decides how; Agentos improves with every product)
-  and seventeen functional requirements under them, all `mechanism: pending` -- the what is
+  seventeen functional requirements under them and six use cases (what the owner does with
+  Agentos), all `mechanism: pending` -- the what is
   written first and the how is decided later. New decision `dec-one-owner-for-now`. `AGENTS.md`
   and `docs/AGENT_OS.md` open with what Agentos is for instead of what the v1 substrate does.
   Each goal carries its evaluators, set by the owner as trends until the vector gives the first
