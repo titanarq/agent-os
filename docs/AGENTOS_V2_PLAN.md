@@ -1,8 +1,9 @@
 # Agentos v2 — construction plan
 
-**Status:** approved by the owner in the design discussion of 2026-10-04. This document is the
-specification for the first construction phases; it will be superseded by the product tree once
-the tree format proves itself (Phase 3).
+**Status:** approved by the owner in the design discussion of 2026-10-04; Phases 2-5 replaced by
+Stages 0-3 on 2026-10-06, after the owner's discussion of Agentos's global goals. This document is
+the specification for construction; what Agentos is for is the tree in `docs/tree/`, and this plan
+will be superseded by that tree's mechanisms as they are written (Stage 1 on).
 
 ## Philosophy shift
 
@@ -48,7 +49,7 @@ PR, never leaving it in a transcript; **difficulty is measured by timeboxed spik
 self-reported estimates**; **order is a red check, not an exhortation** — schema violations and
 orphan files fail the tree doctor the way host literals fail `test_no_host_literals.py`.
 
-## Phase 0 — puntal spike (starts now; needs no vector project)
+## Phase 0 — puntal spike (done: #103)
 
 The riskiest hypothesis goes first. Deliverables:
 
@@ -75,7 +76,7 @@ session per user-session instead of process-per-click, precomputation, batched p
 **Exit:** a PR with the bench plus `docs/spikes/2026-10-puntal-latency.md` reporting the numbers
 against the criteria and a recommendation.
 
-## Phase 1 — tree and ledger schemas, with their doctor (parallel with Phase 0)
+## Phase 1 — tree and ledger schemas, with their doctor (done: #102)
 
 A new module of the package, fully testable without network or real backend.
 
@@ -94,51 +95,154 @@ A new module of the package, fully testable without network or real backend.
 
 **Exit:** the schemas survive Phase 3's real content load without daily rework.
 
-## Phase 2 — wiring tree ↔ substrate
+## Status, 2026-10-06
 
-- `compile` creates dispatch issues carrying the node address; the worker's brief carries the
-  slice, never the tree.
-- Write-back discipline added to worker and refiner prompts.
-- The validator validates against the node's verification (today: the issue's acceptance
-  criteria; only the source changes).
-- Challenge channel: a new issue type plus the obey-while-challenging rule; the validator logs
-  friction against a decision's id when a constraint made the solution worse.
-- Substrate changes are config, not code: ceilings up, `max_parallel_issues` up, optionally a
-  worker class back on Claude.
+- **Phase 0 done** (#103): `bin/puntal_task.sh`, the bench and `docs/spikes/2026-10-puntal-latency.md`
+  -- no-go on time-to-first-signal (p95 8.6 s), go on full-response latency, cost and coherence.
+- **Phase 1 done** (#102), changed after review: goals carry verification (tests run top-down from
+  the goals), a node with children is a container, the slice shows the ancestors' verification.
+- **What Agentos is for** (#104): the mission and Agentos's own tree in `docs/tree/` -- four goals
+  with the owner's evaluators, seventeen functional requirements, six use cases, all
+  `mechanism: pending`.
+- The Phases 2-5 that followed here were written on 2026-10-04, before the owner's discussion of
+  Agentos's global goals (2026-10-05/06), which added most of the pieces below. They are **replaced
+  by Stages 0-3**. Everything they asked for is kept and placed in a stage (the challenge channel,
+  the minimal consolidator and the metrics included); the last open item checks that nothing from
+  either discussion was dropped.
 
-## Phase 3 — vector host bootstrap
+## Stages (replace Phases 2-5)
 
-A new, deliberately tiny host project (the *vector*) adopts v2 via `agent-os-install`. The owner
-writes its global goals (the lighthouse is theirs); a new **expert** role (prompt + class, in the
-validator/refiner pattern) populates requirements and use cases, launching spikes where
-feasibility is in doubt; `foundation` nodes (persistence, identity, UI skeleton) are built as
-normal issues through the substrate. The shell does not go live until foundations are hardened.
+A stage starts when the data it needs exists: building a computation before there is anything to
+compute it from is the over-specification goal `goal-product-early-grown-by-use` rejects. One
+exception, which is why Stage 1 records so much: **what must be recorded starts early even when
+what is computed from it comes late** -- history that was not recorded is lost.
 
-## Phase 4 — shell live, hardening driven by use
+### Stage 0 -- the map (no product chosen, no mechanism)
 
-Every action routes to real implementation or to a puntal; the owner uses the app; telemetry
-(frequency, suffered latency, gap notes, errors) feeds the refiner, which prioritizes hardening
-and compiles it to issues. The **consolidator** enters in its minimal version: it periodically
-checks in-force decisions' premises against reality and distills telemetry into nodes. Schema
-mining from improvised documents is its second iteration, not its first.
+Where every piece and every datum lives, in agent-os and in the vector: the map and the recording
+conventions below, and the vector's layout. Nothing in this stage decides how a requirement is met.
 
-## Phase 5 — level 0 and metrics
+### Stage 1 -- start the vector (no data yet)
 
-The goal custodian audits deviation against the vector's goal tree, consumes friction and
-challenges, and **recommends** (adjust a goal, abort a branch) with evidence attached — the human
-publishes, with the refiner's graduation path (reviewed dry runs before running unattended).
-Metrics fall out of the above: hardened/total per functional requirement, friction per decision,
-spend per node (the per-feature spend gap the current mechanism has).
+Exit: the owner uses the product.
+
+- The vector adopts v2 through `agent-os-install`: `agent_os/` as a subtree and `config/agents.yaml`;
+  the stack is the product's.
+- Substrate as config: Claude Code only (no Qwen class); Sonnet for every role except the custodian
+  and the consolidator (Opus, minimal use); ceilings and `max_parallel_issues` up; more than one
+  worker per backend through slots (#91).
+- The owner writes the product's goals and their evaluators; the goals' tests come first and
+  everything below is tested from them downwards.
+- The **expert** role (Sonnet, prompt and class in the validator/refiner pattern) populates
+  requirements and use cases as small nodes, launches spikes where feasibility is in doubt, writes
+  the verification of `foundation` nodes before a worker touches them, and records its questions;
+  a question goes to the expert before it goes to the owner.
+- Foundations (persistence, identity, UI skeleton) are built as normal issues; the shell does not go
+  live until they are hardened.
+- `compile` creates the dispatch issues, each carrying its node address; the worker's brief carries
+  the slice, never the tree; write-back discipline in the worker and refiner prompts; the validator
+  validates against the node's verification, in a context separate from the worker's.
+- The shell: every action routes to code or to a puntal; the owner's feedback on a puntal answer
+  (accept, reject, retry) is recorded; a minimal test-session mode inside the app.
+- Minimal question sessions (where they happen is an open item).
+- The tree format gains `experiments` (spike, demand probe, question with scope `what` or `how` and
+  a default answer, lookup; outcome `open` allowed); an open `what` question blocks the hardening of
+  its node, and its default stays schematic.
+- The progress board: progress per branch, and the owner's order of the backlog, which weighs over
+  the order use suggests.
+- Recording from day one, by the conventions below.
+
+### Stage 2 -- with use
+
+Exit: branches with telemetry and hardened nodes.
+
+- Hardening driven by use: `compile` emits hardening tickets for `improvised` nodes, in the order of
+  use (frequency x the puntal's cost, latency and errors); verification extracted from interactions
+  the owner accepted; `retired` for what nobody uses; `llm_by_design` for what must stay a model
+  call, verified by an evaluation.
+- Indicators: derived hardness (a soft product decision is revised by the refiner with a record, a
+  hard one by the owner); unverified exposure per branch and its two triggers; definition degree per
+  branch (the cap on demand probes); determinism ratio; iterations by cause; the slice size cap
+  (`tree.max_slice_tokens`, red, answered by dividing the node); an episodic digest in the slice.
+- Tests: selection per branch (integration tests on both sides); a coverage ratchet that never
+  blocks use; mutation score as an indicator; a nightly full run as the safety net; `component`
+  records with a core and `extends:`, nodes declaring `uses:`.
+- Memory: telemetry a node, a test or a decision cites is copied into `evidence/`; uncited raw
+  telemetry rotates after 90 days.
+- Custodian (Opus), minimal: drift and rollback -- it decides whether a rollback needs the owner, and
+  that discretion follows its record; a changed goal lists its descendants for the refiner; spend
+  against use per branch.
+- Consolidator (Opus), minimal: checks the premises of in-force decisions against reality and
+  distills telemetry into nodes.
+- Challenge channel: obey while challenging; friction is logged against a decision's id when a
+  constraint made a solution worse.
+
+### Stage 3 -- with history
+
+- Accuracy per role and kind of judgment; autonomy earned by measured accuracy (cold start:
+  reversible judgments autonomous from day one, irreversible ones to sessions until there is a
+  record).
+- Method learning: a method problem is one that recurs in two branches or more; a change of how is
+  adopted with evidence (replay battery before, telemetry by method version after, automatic
+  rollback on regression); a change that touches the what, or the evaluator, is the owner's;
+  proposals are reviewed in question sessions; a successor model runs the battery once.
+- Compression: named components, schemas mined from the documents puntales improvise, principles;
+  the techniques (wide and thin, copy by analogy) in the expert; components promoted to a shared
+  repository; mutation score as a hardening condition.
+- Metrics: hardened/total per functional requirement, friction per decision, spend per node.
+
+## The map
+
+Where each piece lives. "Host" is the product's repository (the vector first).
+
+| Piece | What it is for | Lives in | Stage |
+|---|---|---|---|
+| Product shell | Every action goes to code or to a puntal; test-session mode; records the owner's feedback | host, the app's own code (stack of the product) | 1 |
+| Progress board | Progress per branch; the owner's order of the backlog | the host repository's GitHub Project | 1 |
+| Test sessions | The owner tries a branch, accepts or rejects, answers the puntals' questions | inside the shell | 1 |
+| Question sessions | Batches of `what` questions; reviews of the tree and of method proposals | open item | 1 |
+| Product tree | Goals, requirements, use cases, decisions, experiments, components | host `product/` (`tree.root`) | 1 |
+| Agentos's own tree | Agentos's goals, requirements, use cases and decisions | agent-os `docs/tree/` | done |
+| Components | Reusable pieces with a core and extensions | host `components/`, a package of its own; a shared repository in Stage 3 | 2 |
+| Cited evidence | Telemetry records a node, a test or a decision cites | host `evidence/` | 2 |
+| Raw telemetry | Puntal invocations, owner feedback, judgments and their outcomes | host `.cache/` (never versioned) | 1 |
+| Tree CLI | Doctor, slice, compile; hardening tickets, slice cap, episodic digest | agent-os `agent_os/tree/` | 1-2 |
+| Indicators | Hardness, exposure, definition degree, priority, determinism ratio, iterations, accuracy, compression | agent-os, a module of its own | 2-3 |
+| Test selection and coverage | Per-branch selection, ratchet, mutation indicator, nightly run | agent-os (mechanism) and the host's CI | 2 |
+| Expert | Populates the tree; experiments; foundations' verification | agent-os `prompts/`, class in host `config/agents.yaml` | 1 |
+| Refiner | Grows and divides nodes; soft decisions; gap notes into experiments | same (exists) | 1-2 |
+| Planner, worker, validator | Dispatch, harden, validate | same (exist) | 1 |
+| Puntal | Serves what is improvised; gap notes | agent-os `bin/puntal_task.sh` (exists) | 1 |
+| Custodian | Drift, rollback, spend against use | agent-os `prompts/`, class in host config | 2-3 |
+| Consolidator | Premises, telemetry into nodes; later method proposals and compression | same | 2-3 |
+| Guard | Loops and ceilings | agent-os (exists) | -- |
+
+## Recording conventions (fixed in Stage 0, recorded from Stage 1)
+
+The names and places are fixed now so nothing recorded in Stage 1 has to move; the schemas are
+written in Stage 1.
+
+| What | Where | Key |
+|---|---|---|
+| Changes to a node | a `Node-Change: usage \| rework \| owner` trailer on every commit that changes a file under the host's `product/`; the nodes are the files the commit touches | host git history |
+| Puntal invocations | host `.cache/puntal/telemetry.jsonl` (exists, schema 1) | `invocation_id` |
+| Owner feedback on a puntal answer (accept, reject, retry) | host `.cache/puntal/feedback.jsonl` | `invocation_id` |
+| A judgment an agent took alone, and its later outcome | host `.cache/judgments/judgments.jsonl` and `.cache/judgments/outcomes.jsonl` | judgment id |
+| Versions | every record carries the model, the CLI version and the method version (the agent-os subtree commit and the digest of the prompt that ran) | -- |
+| Spend | `.cache/<role>/runs.tsv` and `.cache/spend/` (exist) | -- |
+| Cited evidence | host `evidence/<YYYY-MM>/<record-id>.json`, copied when something cites it | record id |
 
 ## Deliberately out, for now
 
 Semantic memory engine (the consolidator starts as premise-checker and telemetry distiller),
-schema mining, multi-user telemetry, autonomous abort by level 0, an MCP server for the tree
-(the CLI slices cheaper; MCP comes when something external needs to look in).
+multi-user telemetry (`docs/tree/dec-one-owner-for-now.md`), autonomous abort of a branch by the
+custodian (it recommends; the owner publishes), an MCP server for the tree (the CLI slices
+cheaper; MCP comes when something external needs to look in). Schema mining is no longer out: it
+is part of compression, in Stage 3.
 
 ## Dependencies and open items
 
-- The vector project: chosen and its global goals written by the owner (pending).
+- **The vector's product**: chosen and its goals written by the owner (pending).
   - **2026-10-06:** soundmax v2 was considered and set aside as too complex for a first vector (the
     owner's diagnosis of v1: its features needed an agentic engine that looks further ahead, and
     the agent building it lacked the tools to build software at the level of its requirements). A
@@ -149,5 +253,9 @@ schema mining, multi-user telemetry, autonomous abort by level 0, an MCP server 
     of latency where they start improvised.
   - Reusable components start inside the vector, as a package of its own, and move to a shared
     repository when they are reused across products.
-- Phases 0 and 1 are independent of each other and of the vector; they start immediately on
-  separate branches.
+- **Open doubts of the how pass**: what to do with the Phase 0 no-go (what to measure next, and what
+  "first signal" means in a real UI); where question sessions happen.
+- **At the end of the how pass**: cross-check that no point was dropped -- first against the
+  owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
+  then against this plan's own 2026-10-04 base, which that review extends (the owner's request,
+  2026-10-06).
