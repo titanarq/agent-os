@@ -25,8 +25,8 @@ from test_agent_task import (  # the launch fixtures are shared, not copied
 
 from agent_os import guard
 from agent_os.lib import (
-    PROMPT_ROLES,
     PLACEHOLDER_RE,
+    PROMPT_ROLES,
     PROMPTS_DIR,
     load_role_class,
     load_task_classes,

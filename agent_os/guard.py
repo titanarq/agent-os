@@ -170,11 +170,10 @@ def slot_worktree(backend: str, slot: int = 1) -> str | None:
     return EXTRA_SLOT_WORKTREES.get((backend, slot))
 
 
-# The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each and that announce their own
-# end as an event: their per-run logs and PID files live in `.cache/<role>/`, and the run removes
-# its PID file as its last step, which is what makes a PID file still on disk a run that never
-# reached its end (#400). The planner is not here: `agent_os/bin/planner_task.sh` launches it and writes
-# no PID file, and a worker's end is the exit hook's, not a scan of this kind.
+# The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each (validator, refiner, expert)
+# and that announce their own end as an event: their per-run logs and PID files live in `.cache/<role>/`,
+# and the run removes its PID file as its last step, so a PID file still on disk is a run that never
+# reached its end (#400). The planner (`planner_task.sh`, no PID file) and a worker (exit hook) are not here.
 ONE_SHOT_ROLES = ("validator", "refiner", "expert")
 
 CutReason = Literal["stall", "budget", "quota"]

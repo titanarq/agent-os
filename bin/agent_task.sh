@@ -4,8 +4,7 @@
 # criteria) and the REFINER (turns a raw issue into template-conformant sub-issues with a budget
 # class, or rewrites a small task/bug's body in place;
 # agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md)
-# and, for Agentos v2, the EXPERT (populates the host's product tree and opens one pull request on
-# it; agent_os/docs/adr/2026-10-07-the-expert-populates-the-tree-and-settles-a-how-before-the-owner-hears-it.md).
+# and the EXPERT, which populates the host's product tree and, alone, writes (a pull request on it).
 #
 #   agent_os/bin/agent_task.sh <role> <issue|pr> [context...] [--dry-run] [--no-wake]
 #
@@ -67,6 +66,9 @@ agent_python=$(agent_os_python)
 export AGENT_OS_HOST_ROOT=$agent_main
 export AGENT_OS_PYTHON=$agent_python
 export AGENT_OS_DIR=$agent_os_dir
+
+# shellcheck source=agent_os/bin/agent_role_instructions.sh
+source "$agent_os_dir/bin/agent_role_instructions.sh"
 
 agent_project_value() { "$agent_python" -m agent_os.lib project-value "$@"; }
 
@@ -305,22 +307,6 @@ agent_remove_worktree() {
   fi
 }
 
-# The default branch of origin, fetched, as a commit: `origin/HEAD` when the clone knows it, else
-# `main`. Prints the commit and RETURNS NON-ZERO, with the reason on stdout, when origin cannot be
-# reached or has no such branch -- a run that cannot base itself on it gets no worktree at all.
-agent_default_branch_ref() {
-  local branch commit
-  branch=$(git -C "$agent_main" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
-  branch=${branch#origin/}
-  branch=${branch:-main}
-  if ! git -C "$agent_main" fetch -q origin "$branch"; then
-    echo "WARNING: cannot fetch origin/$branch -- no worktree, so this run cannot write a branch" >&2
-    return 1
-  fi
-  commit=$(git -C "$agent_main" rev-parse --verify -q "refs/remotes/origin/$branch") || return 1
-  printf '%s\n' "$commit"
-}
-
 # Creates, populates and exports the worktree, or degrades to ONE warning and no worktree: a
 # validator that cannot run the tests still owes a review of the diff, and a criterion it could not
 # settle is not a pass -- the same way a missing GitHub identity degrades rather than fails.
@@ -332,9 +318,6 @@ agent_prepare_worktree() {
   if [ -n "${AGENT_WORKTREE_REF:-}" ]; then
     ref=$AGENT_WORKTREE_REF
   elif [ "$role" = expert ]; then
-    # The expert writes a branch of its own, so it starts from the host's default branch as origin
-    # has it NOW -- fetched by name and resolved before the worktree is made, like the pull
-    # request's head below -- and there is no pull request for it to name.
     ref=$(agent_default_branch_ref) || return 1
   else
     # The pull request's own head: the branch need not exist in this checkout, and a worktree at
@@ -444,16 +427,12 @@ agent_detached_run() {
   # Read again because this process inherits no array: the driver checked the same answer seconds
   # ago, so a failure here is a config broken mid-launch, and a run with no dialect is not run.
   agent_set_backend_flags "$AGENT_RUN_LAUNCH_BACKEND" 2>>"$AGENT_RUN_LOGFILE" || exit 1
-  # The expert is the exception: it writes a branch, so the backend starts in the worktree that
-  # branch lives in -- in a subshell, so this shell never stands in a directory it removes below.
-  backend_directory=$PWD
-  if [ "$AGENT_RUN_ROLE" = expert ] && [ -n "$agent_worktree" ]; then backend_directory=$agent_worktree; fi
-  (
-    cd "$backend_directory" || exit 1
+  # In a subshell, so this shell never stands in a directory it removes below.
+  (cd "$(agent_backend_directory "$AGENT_RUN_ROLE" "$agent_worktree")" &&
     "$AGENT_RUN_BACKEND" "${agent_backend_flags[@]}" --model "$AGENT_RUN_MODEL" \
       --append-system-prompt "$AGENT_RUN_RULES" \
-      "$AGENT_RUN_INSTRUCTION"
-  ) >>"$AGENT_RUN_LOGFILE" 2>&1
+      "$AGENT_RUN_INSTRUCTION") \
+    >>"$AGENT_RUN_LOGFILE" 2>&1
   agent_mark_backend_exited "$AGENT_RUN_LOGFILE" >>"$AGENT_RUN_LOGFILE" 2>&1
 
   agent_append_run_row "$AGENT_RUN_LOGFILE" "$AGENT_RUN_DIR/runs.tsv" \
@@ -560,41 +539,16 @@ agent_read_launch_gate "$role" || exit 1
 # issue, exactly as a worker's task is its issue -- is a template under `agent_os/prompts/`,
 # rendered below rather than spelled here (#509).
 case "$role" in
-validator)
-  # The one role that runs anything: the criteria of the issue it reviews are settled by tests, so
-  # it gets a throwaway worktree of the pull request's own head (#393).
-  runs_tests=yes
-  first_instruction="Validate pull request #$subject. Read AGENTS.md, then the issue it closes and
-its parent (the brief the worker was given), then the diff; check every acceptance criterion and
-every definition-of-done line; post exactly one review and then exit. Context from the planner: ${context:-(none)}"
-  ;;
-refiner)
-  # It writes issues and never runs code, so it is the one role launched with no worktree at all.
-  first_instruction="Refine issue #$subject. Read AGENTS.md, then \`issues.py brief $subject\` for
-the issue and its parent, then only the docs and paths they name. Decide whether it is one
-reviewable task/bug (rewrite its body in place, after preserving the original as a comment) or a
-feature/multi-piece issue (split into template-conformant sub-issues, each moved to status:refine,
-then remove the original's own refine label). Validate everything you write, then post exactly one
-summary comment starting with the marker <!-- refiner-summary -->. Context from the planner: ${context:-(none)}"
-  ;;
-expert)
-  # The one role that WRITES: files of the host's tree, on a branch of its own in the throwaway
-  # worktree the driver makes off the default branch, and one pull request. It never merges.
-  runs_tests=yes
-  first_instruction="Populate the product tree for issue #$subject. Read AGENTS.md, then \`issues.py brief
-$subject\` for the issue and its parent, then the goals, evaluators and decisions of the tree, then
-only what the request touches. Write small requirement and use-case nodes under the owner's goals
-(never touch a goal or its evaluators), record experiments and questions with their scope and
-default answer, settle every question of how yourself or by a spike, and flag challenges. Validate
-the tree, commit with a Node-Change trailer, open one pull request, then post exactly one summary
-comment starting with the marker <!-- expert-summary -->. Context from the planner: ${context:-(none)}"
-  ;;
+validator) runs_tests=yes ;; # its criteria are settled by tests: a throwaway worktree of the PR's head (#393)
+refiner) ;; # writes issues, never runs code: no worktree at all
+expert) runs_tests=yes ;; # writes the tree on a branch of its own, in a worktree cut from the default branch
 *)
   echo "no RULES block for role '$role'. A worker runs under agent_os/bin/worker_task.sh and the"
   echo "planner under agent_os/bin/planner_task.sh; this driver runs the one-shot roles only."
   exit 2
   ;;
 esac
+first_instruction=$(agent_role_instruction "$role" "$subject" "${context:-(none)}")
 
 # The line a validator's review body starts with, naming the backend that wrote it (#425). The
 # merge gate accepts a substituted review as the validator's approval -- the human's decision of

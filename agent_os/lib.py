@@ -1547,8 +1547,7 @@ def worker_environment_rules(project: ProjectConfig | None = None) -> str:
 
 # Where every role's prompt lives: one template per role, beside the package rather than inside a
 # driver's heredoc, so the text a host reads is a file it can diff and the drivers carry none of it
-# (#509). `agent_os/tests/golden/` holds what each one renders to for the host that owns this
-# checkout, which is what proves a move of the text changed nothing an agent reads.
+# (#509). `tests/golden/<role>.md` holds what each renders to, proving a move changed nothing read.
 PROMPTS_DIR = AGENT_OS_DIR / "prompts"
 PROMPT_ROLES = ("worker", "validator", "refiner", "expert", "planner")
 
@@ -1634,7 +1633,6 @@ def prompt_substitutions(
     project: ProjectConfig | None = None,
     mechanism: MechanismConfig | None = None,
     classes: dict[str, TaskClass] | None = None,
-    tree_root: str | None = None,
 ) -> dict[str, str]:
     """Every placeholder a role's prompt carries that config alone answers, keyed WITHOUT the
     surrounding underscores. What is missing here is what only the run knows -- the main checkout's
@@ -1648,7 +1646,6 @@ def prompt_substitutions(
     project = project or load_project()
     mechanism = mechanism or load_mechanism()
     classes = load_task_classes() if classes is None else classes
-    tree_root = load_agents_config().tree.root if tree_root is None else tree_root
     both_lists_configured = bool(forbidden_paths_regex(project)) and bool(
         mechanism_paths_regex(mechanism)
     )
@@ -1662,7 +1659,7 @@ def prompt_substitutions(
         "NEVER_RUN_RULES": never_run_rules(project),
         "WORKER_ENVIRONMENT_RULES": worker_environment_rules(project),
         "WORKER_CLASSES": render_worker_classes(classes),
-        "TREE_ROOT": tree_root,
+        "TREE_ROOT": load_agents_config().tree.root,
     }
 
 
