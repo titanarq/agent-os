@@ -107,9 +107,10 @@ A new module of the package, fully testable without network or real backend.
 - **Phase 1 done** (#102), changed after review: goals carry verification (tests run top-down from
   the goals), a node with children is a container, the slice shows the ancestors' verification.
 - **What Agentos is for** (#104): the mission and Agentos's own tree in `docs/tree/` -- four goals
-  with the owner's evaluators, sixteen functional requirements (seventeen until 2026-10-06, when
-  the owner removed the autonomy requirement of goal C), six use cases, all
-  `mechanism: pending`.
+  with the owner's evaluators, six use cases, and functional requirements that were seventeen at
+  first, sixteen once the owner removed the autonomy requirement of goal C, and nineteen after the
+  final cross-check added three (2026-10-06). Every requirement and use case now carries its
+  mechanism.
 - The Phases 2-5 that followed here were written on 2026-10-04, before the owner's discussion of
   Agentos's global goals (2026-10-05/06), which added most of the pieces below. They are **replaced
   by Stages 0-3**. Everything they asked for is kept and placed in a stage (the challenge channel,
@@ -326,8 +327,8 @@ purpose, not dropped:
 - **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
   (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
   happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Then the mechanism of each
-  requirement, goal by goal: goals A and B done on 2026-10-06 (`goal-product-early-grown-by-use`,
-  `goal-faithful-to-the-owners-goals`).
+  requirement, goal by goal: goals A, B, C and D done on 2026-10-06. The how pass is closed; next is
+  building Stage 1.
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,
