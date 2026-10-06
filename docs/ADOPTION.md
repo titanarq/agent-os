@@ -75,6 +75,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    structure and fill in each key against what step 1–6 just wrote (`project.modules` from item 2,
    `project.test_command` from item 4, `project.module_docs_dir` if item 2 used a different path);
    `classes:` can be copied as a starting point and tuned later (§3).
+   `quality:` is optional: its defaults are the limits of the code-quality ratchet and the paths
+   it does not look at (documents, golden fixtures, the tree root); list your own data paths there.
 9. **Set `project.forbidden_paths`, `project.merge_audit_exempt_paths` and
    `project.worker_environment`** — the host's own protected-path globs and the KEYS (never the
    values) of whatever a worker's backend process needs exported. Leaving either list empty
@@ -159,6 +161,12 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     SHA reports zero checks. For the same reason, never make `ci-agent-os.yml`'s job a required
     status check in branch protection: on a host-only PR it does not run, so it never reports. The
     rendered file is a starting point — add the setup your test command needs before its step.
+    It also carries the **code-quality ratchet** (§4.8 of `AGENT_OS.md`): a step that bootstraps the
+    mechanism's interpreter and runs `agent-os-quality --base origin/<base branch>`, failing a PR
+    whose new files or folders break the limits in `quality:` or whose touched ones got worse. A
+    host that sets `project.install_host_ci: false` copies those two steps into its own CI, with
+    `fetch-depth: 0` on its checkout so the merge-base exists. Tune `quality:` (step 8) before
+    the first PR if the defaults (12 entries per folder, 300 lines per file) do not fit.
     Never overwrites without `--force`, and never arms, restarts or reloads a unit — `--dry-run`
     first shows every path it would touch and its diff against what is there. The
     `.claude/agents/*.md` it renders are generated: `--force` rewrites them whole, so do not edit

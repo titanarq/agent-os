@@ -22,6 +22,9 @@ jobs:
       TERM: dumb
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The code-quality ratchet needs the merge-base with the pull request's base branch.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -32,6 +35,12 @@ jobs:
 
       - name: ruff
         run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
+
+      # New files and folders comply with the limits, touched ones never get worse than on the base
+      # branch (docs/AGENT_OS.md, "The code-quality ratchet"). A push to main has no base to compare.
+      - name: code-quality ratchet
+        if: github.event_name == 'pull_request'
+        run: .venv/bin/python -m agent_os.quality --base origin/${{ github.base_ref }}
 
       - name: the mechanism's suite
         run: .venv/bin/pytest tests -q
