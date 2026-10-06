@@ -277,6 +277,21 @@ tree:
   # state they start in is the wiring of Phase 2.
   ticket_labels: []
 
+# The code-quality ratchet (`agent-os-quality`, docs/AGENT_OS.md §4.8). Every key is optional; the
+# values below are the defaults. New files and folders must be within the limits and touched ones
+# may never get worse than on the pull request's base branch.
+quality:
+  max_entries_per_folder: 12
+  max_lines_per_file: 300
+  # Paths that are prose or recorded data, not code: not measured and not entered (a directory
+  # ends in `/`). Listing this key REPLACES the default list. Also never measured, whatever is
+  # listed: `tree.root`, and the mechanism's own directory when it is vendored under the host.
+  excluded_paths:
+    - docs/
+    - tests/golden/
+    - config.example.yaml
+    - uv.lock
+
 # The budget classes. `max_context` applies per stage process, fresh at every stage;
 # `max_cost_usd` and `max_total_tokens` apply to the whole issue. Every issue body names one in a
 # `<!-- budget: <class> -->` line; a class with a `role:` field belongs to that role instead.

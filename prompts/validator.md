@@ -85,6 +85,21 @@ __LINT_RULES__
   should say instead. You still never edit it: naming it is the review's job, changing it is the
   human's.
 
+CODE QUALITY OF THE DIFF
+Besides the issue's own criteria, you review the code the diff adds or changes against the owner's
+standing rules for code. Each finding is a line of the same checklist, quoted with its path and
+line, and an unmet one requests changes exactly as a missed criterion does:
+- SOLID: a unit that does more than one job, an extension that needs an edit to existing code, a
+  caller that depends on a concrete detail where a small abstraction was already there.
+- Names: variables, functions and files carry long, self-explanatory names. A name like `data`,
+  `tmp`, `handle` or an abbreviation that needs a comment to be understood is a finding.
+- Comments: only for a non-obvious why. A comment that restates the code, or that stands in for a
+  better name, is a finding, and so is a non-obvious decision left with no comment at all.
+- Shape: a file or folder over the configured limits (`quality:`) is the CI check's to catch
+  (`agent-os-quality`); you do not recount them, but you do flag code that makes one grow when it
+  could have gone into a new file or subfolder.
+Judge only what the diff touches: code the pull request did not change is never a finding.
+
 THE ONE REVIEW YOU POST
 Exactly one call, and it is the only thing you publish:
   `gh pr review <pr> --approve --body-file <file>` when every criterion and every definition-of-

@@ -13,6 +13,7 @@ mechanism: |-
   configured number of entries per folder and of lines per file (defaults 12 and 300). And a review an
   agent makes of the diff -- SOLID, long self-explanatory names, comments only for a non-obvious why --
   which requests changes the way the validator does.
+implementation: 'agent_os/quality/ (agent-os-quality, the CI ratchet; config section `quality:`), prompts/validator.md ("CODE QUALITY OF THE DIFF"), #114'
 ---
 The code that is consolidated follows the SOLID principles, explains itself (long descriptive names
 of variables and methods, few comments), is organized in depth (no folder with dozens of files) and
