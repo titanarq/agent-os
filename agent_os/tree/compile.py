@@ -20,9 +20,11 @@ Which nodes become tickets (the rule is one place, `_classify`):
   comment, whether or not it has a verification: tests run top-down from the goals, so a
   container's verification is the acceptance of its subtree (it reaches every descendant's ticket
   as context, see `agent_os.tree.slicing`) and never a ticket of its own;
-- every other pending node needs an executable verification, and a mechanism that can be resolved
-  (written, or `pending` with no spike having found it infeasible). One that lacks either is an
-  ESCALATION: reported, with its reason, and never turned into a ticket.
+- every other pending node needs an executable verification -- a `command`; a criterion an agent
+  judges is acceptance and not executable -- and a mechanism that can be resolved (written, or
+  `pending` with no spike having found it infeasible). One that lacks either is an ESCALATION:
+  reported, with its reason, and never turned into a ticket. A node's judged criteria are still
+  rendered in its ticket's acceptance criteria, labelled as judged by an agent.
 """
 
 from __future__ import annotations
@@ -39,8 +41,10 @@ from agent_os.tree.checks import check_tree
 from agent_os.tree.loader import Defect, Tree
 from agent_os.tree.models import MECHANISM_PENDING, Node
 from agent_os.tree.slicing import (
+    JUDGED_BY_AGENT_LABEL,
     Slice,
     assemble_slice,
+    judged_criterion_line,
     render_ancestors,
     render_decisions,
     render_node,
@@ -107,7 +111,7 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
     if has_children:
         return "container"
     reasons: list[tuple[str, str]] = []
-    if not node.verification:
+    if not node.has_executable_verification:
         reasons.append(
             (
                 MISSING_VERIFICATION,
@@ -135,7 +139,9 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
 
 def _acceptance_criteria(node: Node) -> list[str]:
     return [
-        f"- `{check.command}` exits 0" + (f": {check.expects}" if check.expects else "")
+        f"- {judged_criterion_line(check)}"
+        if check.is_judged
+        else f"- `{check.command}` exits 0" + (f": {check.expects}" if check.expects else "")
         for check in node.verification
     ]
 
@@ -148,9 +154,15 @@ def _stages(node: Node, node_file: str) -> list[str]:
             f"in doubt) and write it into `mechanism` of `{node_file}`; verified by the tree "
             "doctor passing"
         )
+    judged = any(check.is_judged for check in node.verification)
+    verified_by = (
+        f"those commands, the criteria {JUDGED_BY_AGENT_LABEL} and the project's tests"
+        if judged
+        else "those commands and the project's tests"
+    )
     stages.append(
-        f"- [ ] Implement `{node.id}` until every acceptance criterion passes; verified by those "
-        "commands and the project's tests"
+        f"- [ ] Implement `{node.id}` until every acceptance criterion passes; verified by "
+        f"{verified_by}"
     )
     return stages
 

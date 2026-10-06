@@ -70,6 +70,7 @@ def test_every_code_the_doctor_can_emit_is_listed_in_checks():
     # The loader's four codes and every code of `checks.py`: the list is what the docs table is
     # compared against, so a code missing here would be undocumented.
     assert {"orphan-file", "bad-frontmatter", "schema", "duplicate-id"} <= set(CHECKS)
+    assert "goal-without-evaluators" in CHECKS
     assert all(CHECKS[code].strip() for code in CHECKS)
 
 
@@ -246,6 +247,91 @@ def test_a_blank_verification_command_is_red(tmp_path):
     assert messages(tmp_path) == ["verification.0.command: must not be blank"]
 
 
+def test_a_verification_entry_with_both_a_command_and_a_judge_is_a_schema_error(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-both",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"command": "true", "judge": "It feels right."}],
+    )
+    assert found(tmp_path) == [("uc-both.md", "schema")]
+    assert messages(tmp_path) == ["verification.0: an entry is a `command` or a `judge`, not both"]
+
+
+def test_a_verification_entry_with_neither_a_command_nor_a_judge_is_a_schema_error(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "uc-neither", "use-case", parent="fr-offline", verification=[{}])
+    assert found(tmp_path) == [("uc-neither.md", "schema")]
+    assert messages(tmp_path) == ["verification.0: an entry needs a `command` or a `judge`"]
+
+
+def test_an_entry_that_only_says_what_a_pass_proves_has_neither(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-expects",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"expects": "it works"}],
+    )
+    assert messages(tmp_path) == ["verification.0: an entry needs a `command` or a `judge`"]
+
+
+def test_expects_goes_with_a_command_and_never_with_a_judge(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-judged",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"judge": "It feels right.", "expects": "it works"}],
+    )
+    assert found(tmp_path) == [("uc-judged.md", "schema")]
+    assert messages(tmp_path) == [
+        "verification.0: `expects` says what a `command` proves; a `judge` is a criterion by itself"
+    ]
+
+
+def test_a_blank_judge_is_red(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path, "uc-vague", "use-case", parent="fr-offline", verification=[{"judge": "  "}]
+    )
+    assert messages(tmp_path) == ["verification.0.judge: must not be blank"]
+
+
+def test_an_unknown_field_of_a_verification_entry_is_red(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-extra",
+        "use-case",
+        parent="fr-offline",
+        verification=[{"judge": "It feels right.", "threshold": 3}],
+    )
+    assert messages(tmp_path) == ["verification.0.threshold: unknown field"]
+
+
+def test_a_judged_entry_and_a_command_entry_may_sit_in_one_list(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-both-kinds",
+        "use-case",
+        parent="fr-offline",
+        verification=[
+            {"command": "pytest tests/test_edit.py -q", "expects": "it persists"},
+            {"judge": "Editing a note reads as one step to the person doing it."},
+        ],
+    )
+    assert found(tmp_path) == []
+    (entry_one, entry_two) = load_tree(tmp_path).nodes["uc-both-kinds"].verification
+    assert entry_one.command and not entry_one.is_judged
+    assert entry_two.judge and entry_two.is_judged
+
+
 def test_an_id_that_is_not_lowercase_words_is_red(tmp_path):
     write_sound_tree(tmp_path)
     write_record(
@@ -416,6 +502,50 @@ def test_a_goal_with_a_verification_and_a_work_field_is_red_for_the_work_field_o
     assert messages(tmp_path) == ["a goal carries mechanism"]
 
 
+def test_a_goal_without_evaluators_is_a_red_check(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-bare", "goal", verification=None)
+    assert found(tmp_path) == [("goal-bare.md", "goal-without-evaluators")]
+    assert "no evaluator in `verification`" in messages(tmp_path)[0]
+
+
+def test_a_goal_with_an_empty_verification_list_has_no_evaluators_either(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-bare", "goal", verification=[])
+    assert found(tmp_path) == [("goal-bare.md", "goal-without-evaluators")]
+
+
+@pytest.mark.parametrize(
+    "verification",
+    [
+        [{"judge": "The owner can say what the product is for in one sentence."}],
+        [{"command": "scripts/check_journey.sh", "expects": "the whole journey works"}],
+        [{"judge": "It is the product its owner asked for."}, {"command": "true"}],
+    ],
+    ids=["judged-only", "command-only", "both-kinds"],
+)
+def test_a_goal_with_an_evaluator_of_either_kind_is_green(tmp_path, verification):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-judged", "goal", verification=verification)
+    assert found(tmp_path) == []
+
+
+def test_only_a_goal_needs_evaluators_a_requirement_and_a_use_case_may_have_none(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "fr-bare", "functional-requirement", parent="goal-notes")
+    write_node(tmp_path, "uc-bare", "use-case", parent="fr-bare")
+    assert found(tmp_path) == []
+
+
+def test_a_goal_that_is_both_busy_and_unevaluated_is_red_for_each_reason(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(tmp_path, "goal-busy", "goal", mechanism="pending", verification=None)
+    assert sorted(found(tmp_path)) == [
+        ("goal-busy.md", "goal-carries-work-fields"),
+        ("goal-busy.md", "goal-without-evaluators"),
+    ]
+
+
 def test_a_work_node_without_a_mechanism_is_red(tmp_path):
     write_sound_tree(tmp_path)
     write_node(tmp_path, "uc-undecided", "use-case", parent="fr-offline", mechanism=None)
@@ -430,6 +560,40 @@ def test_a_hardened_node_needs_an_implementation_and_a_verification(tmp_path):
         ("uc-built.md", "hardened-needs-implementation"),
         ("uc-built.md", "hardened-needs-verification"),
     ]
+
+
+def test_a_hardened_node_with_only_a_judged_criterion_has_no_verification_that_hardens(tmp_path):
+    # Tests harden; a judged criterion alone is acceptance, not hardening.
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-built",
+        "use-case",
+        parent="fr-offline",
+        state="hardened",
+        implementation="app/notes.py::edit_note",
+        verification=[{"judge": "Editing a note reads as one step."}],
+    )
+    assert found(tmp_path) == [("uc-built.md", "hardened-needs-verification")]
+    assert "no `verification` with a `command`" in messages(tmp_path)[0]
+    assert "acceptance, not hardening" in messages(tmp_path)[0]
+
+
+def test_a_hardened_node_with_a_judged_criterion_and_a_command_is_green(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "uc-built",
+        "use-case",
+        parent="fr-offline",
+        state="hardened",
+        implementation="app/notes.py::edit_note",
+        verification=[
+            {"judge": "Editing a note reads as one step."},
+            {"command": "pytest tests/test_notes.py -q"},
+        ],
+    )
+    assert found(tmp_path) == []
 
 
 def test_a_hardened_node_with_both_is_green(tmp_path):

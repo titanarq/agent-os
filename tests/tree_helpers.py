@@ -41,7 +41,11 @@ def node_frontmatter(record_id: str, node_type: str, **fields) -> dict:
         "title": f"Title of {record_id}",
         "sources": ["owner brief"],
     }
-    if node_type != "goal":
+    if node_type == "goal":
+        # A goal without evaluators is a red check (`goal-without-evaluators`), so the smallest
+        # sound goal has one; a test that wants it missing passes `verification=None`.
+        frontmatter["verification"] = [{"judge": f"An agent finds that {record_id} holds."}]
+    else:
         frontmatter["mechanism"] = "pending"
     frontmatter.update(fields)
     return {key: value for key, value in frontmatter.items() if value is not None}

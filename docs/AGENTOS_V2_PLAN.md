@@ -107,7 +107,8 @@ A new module of the package, fully testable without network or real backend.
 - **Phase 1 done** (#102), changed after review: goals carry verification (tests run top-down from
   the goals), a node with children is a container, the slice shows the ancestors' verification.
 - **What Agentos is for** (#104): the mission and Agentos's own tree in `docs/tree/` -- four goals
-  with the owner's evaluators, seventeen functional requirements, six use cases, all
+  with the owner's evaluators, sixteen functional requirements (seventeen until 2026-10-06, when
+  the owner removed the autonomy requirement of goal C), six use cases, all
   `mechanism: pending`.
 - The Phases 2-5 that followed here were written on 2026-10-04, before the owner's discussion of
   Agentos's global goals (2026-10-05/06), which added most of the pieces below. They are **replaced
@@ -151,6 +152,11 @@ Exit: the owner uses the product.
   the branch's goals and use cases (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`):
   a node's verification is either a command or a criterion an agent judges; the validator judges every
   pull request of the branch.
+- The guard on the what (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`): a
+  pull request touching a goal or an evaluator is merged only on the owner's word -- the owner's
+  merge, or a question-session answer the validator checks it transcribes exactly. A goal without
+  evaluators is a red check (`docs/tree/dec-a-goal-without-evaluators-is-a-red-check.md`). In a v2
+  host the planner dispatches only tickets that carry a node address.
 - `compile` creates the dispatch issues, each carrying its node address; the worker's brief carries
   the slice, never the tree; write-back discipline in the worker and refiner prompts; the validator
   validates against the node's verification, in a context separate from the worker's.
@@ -164,7 +170,9 @@ Exit: the owner uses the product.
   and the slow path (a read the node did not declare) stays as the escape. `bin/puntal_task.sh` and
   `agent_os/puntal.py` change accordingly; the first real measurement is on the vector's actions.
 - Minimal question sessions: one GitHub issue per session, opened by the owner
-  (`docs/tree/dec-a-question-session-is-a-github-issue.md`).
+  (`docs/tree/dec-a-question-session-is-a-github-issue.md`), each with a digest of what was decided
+  without the owner so the owner can reclaim it (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`);
+  test sessions inside the app (`docs/tree/dec-a-test-session-happens-inside-the-app.md`).
 - The tree format gains `experiments` (spike, demand probe, question with scope `what` or `how` and
   a default answer, lookup; outcome `open` allowed); an open `what` question blocks the hardening of
   its node, and its default stays schematic.
@@ -215,9 +223,11 @@ Exit: branches with telemetry and hardened nodes.
 
 ### Stage 3 -- with history
 
-- Accuracy per role and kind of judgment; autonomy earned by measured accuracy (cold start:
-  reversible judgments autonomous from day one, irreversible ones to sessions until there is a
-  record).
+- Accuracy per role and kind of judgment, as the input of method learning (goal D): misses become
+  battery cases and the target of the next method change. Gating autonomy by accuracy is not a
+  requirement of its own (removed by the owner on 2026-10-06): the validator is calibrated against
+  the owner (goal A), the custodian's discretion follows its record (goal B), and the what/how
+  classification is checked by the owner's reclaims in question sessions (goal C).
 - Method learning: a method problem is one that recurs in two branches or more; a change of how is
   adopted with evidence (replay battery before, telemetry by method version after, automatic
   rollback on regression); a change that touches the what, or the evaluator, is the owner's;
@@ -316,7 +326,8 @@ purpose, not dropped:
 - **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
   (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
   happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Then the mechanism of each
-  requirement, goal by goal: goal A done on 2026-10-06 (`goal-product-early-grown-by-use`).
+  requirement, goal by goal: goals A and B done on 2026-10-06 (`goal-product-early-grown-by-use`,
+  `goal-faithful-to-the-owners-goals`).
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,

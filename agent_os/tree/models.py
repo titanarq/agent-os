@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, model_validator
 
 from agent_os.lib import Strict
 
@@ -48,7 +48,8 @@ MECHANISM_PENDING = "pending"
 # The fields that make a node a work item. A goal is a lighthouse, not something to build, and
 # carries none of them (`goal-carries-work-fields`). `verification` is deliberately not among them:
 # tests run top-down from the goals, so a goal's verification is the acceptance that keeps the work
-# under it from drifting, never work to dispatch.
+# under it from drifting, never work to dispatch -- and it is the one field a goal MUST carry
+# (`goal-without-evaluators`).
 WORK_FIELDS = ("mechanism", "implementation", "spikes", "foundation", "state")
 
 # The two fields that are the Markdown body rather than frontmatter, by record type.
@@ -63,14 +64,38 @@ OneLine = Annotated[
 
 
 class Verification(Strict):
-    """One executable check of a node: a command that exits 0 when the node holds. It is what the
-    dispatch ticket's acceptance criteria are made of, so the validator keeps judging against the
-    issue's criteria and only the source of them changes (Phase 2)."""
+    """One evaluator of a node, and exactly one of two kinds: a `command` that exits 0 when the node
+    holds, or a `judge` -- a criterion in plain language that an agent judges (pass or fail, with
+    reasons) against what was built. The top-down acceptance is essential from the first build and
+    cannot always be checked deterministically
+    (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`).
 
-    command: NonBlank
-    # What a pass proves, in one sentence. Optional: the command alone is a criterion, this makes
-    # it a readable one.
+    A command is what the dispatch ticket's acceptance criteria are made of and what hardens a node
+    (`hardened-needs-verification`); a judged criterion is acceptance, never hardening
+    (`docs/tree/dec-tests-harden-they-do-not-build.md`)."""
+
+    command: NonBlank | None = None
+    # What a pass of the command proves, in one sentence. Optional: the command alone is a
+    # criterion, this makes it a readable one. It belongs to a command and to nothing else.
     expects: NonBlank | None = None
+    # One paragraph that says what must be true of what was built for the node to be met.
+    judge: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def _is_a_command_or_a_judged_criterion(self) -> Verification:
+        if self.command is not None and self.judge is not None:
+            raise ValueError("an entry is a `command` or a `judge`, not both")
+        if self.command is None and self.judge is None:
+            raise ValueError("an entry needs a `command` or a `judge`")
+        if self.judge is not None and self.expects is not None:
+            raise ValueError(
+                "`expects` says what a `command` proves; a `judge` is a criterion by itself"
+            )
+        return self
+
+    @property
+    def is_judged(self) -> bool:
+        return self.judge is not None
 
 
 class SpikeResult(Strict):
@@ -106,15 +131,23 @@ class Node(Strict):
     # Where the built thing lives (a path, a symbol, a pull request). Free text; required once the
     # node is hardened (`hardened-needs-implementation`).
     implementation: NonBlank | None = None
-    # Executable verification: mandatory for dispatch. A leaf node without any escalates instead
-    # of becoming a ticket (`agent_os.tree.compile`). On a goal, or on any node with children, it is
-    # the acceptance of the subtree -- an evaluator the work below must not break, never work itself.
+    # Commands and criteria an agent judges. An executable one (a `command`) is mandatory for
+    # dispatch: a leaf node without any escalates instead of becoming a ticket
+    # (`agent_os.tree.compile`), and a hardened node needs one (`hardened-needs-verification`). On a
+    # goal, or on any node with children, it is the acceptance of the subtree -- an evaluator the
+    # work below must not break, never work itself -- and a goal must have at least one
+    # (`goal-without-evaluators`).
     verification: list[Verification] = Field(default_factory=list)
     state: Literal["pending", "improvised", "hardened"] = "pending"
     # A foundation node (persistence, identity, UI skeleton) must be hardened before the shell goes
     # live and is built as a normal issue, never improvised.
     foundation: bool = False
     spikes: list[SpikeResult] = Field(default_factory=list)
+
+    @property
+    def has_executable_verification(self) -> bool:
+        """A `command` among the verification entries: what a judged criterion alone is not."""
+        return any(check.command is not None for check in self.verification)
 
 
 class RejectedAlternative(Strict):

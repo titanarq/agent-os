@@ -58,6 +58,66 @@ def test_the_ledger_passes_the_tree_doctor():
     assert defects == [], "\n".join(format_defect(defect) for defect in defects)
 
 
+GOALS = (
+    "goal-product-early-grown-by-use",
+    "goal-faithful-to-the-owners-goals",
+    "goal-owner-decides-what-agentos-decides-how",
+    "goal-improves-with-every-product",
+)
+
+
+@pytest.mark.parametrize("goal_id", GOALS)
+def test_each_goal_carries_its_evaluators_in_the_verification_field_as_judged_criteria(goal_id):
+    goal = load_tree(LEDGER).nodes[goal_id]
+    assert goal.verification, goal_id
+    assert all(check.is_judged for check in goal.verification), goal_id
+    assert "Evaluators (set by the owner" not in goal.description
+    assert not [line for line in goal.description.splitlines() if line.startswith("- ")]
+    assert goal.description.splitlines()[-1] == (
+        "Evaluators: in `verification`, set by the owner on 2026-10-06 -- trends until the "
+        "vector gives the first measurements, numeric thresholds after."
+    )
+
+
+def test_the_evaluators_are_moved_verbatim_and_none_is_dropped():
+    expected = {
+        "goal-product-early-grown-by-use": [
+            "Time from the owner writing a product's goals to a first usable product: short.",
+            "Share of use served by consolidated parts: grows.",
+            "Defects found after a part is consolidated: few.",
+        ],
+        "goal-faithful-to-the-owners-goals": [
+            "The tests of the product's own goals pass.",
+            "Unverified exposure per branch: low.",
+            "Rework decays over time.",
+            "Work lost when a step is undone: at most one step.",
+        ],
+        "goal-owner-decides-what-agentos-decides-how": [
+            "Doubts about how that reach the owner: none.",
+            "Questions and owner time per session: do not grow.",
+            "Judgments Agentos takes alone with its accuracy held: grow.",
+            "Owner reversals: few.",
+        ],
+        "goal-improves-with-every-product": [
+            "Recurrence of failures already recorded: tends to zero.",
+            "Cost per verified checkpoint: falls from one method version to the next.",
+            "Share of new nodes that reuse existing components: grows.",
+            "Once a second product exists: it costs less than the first.",
+        ],
+    }
+    tree = load_tree(LEDGER)
+    assert set(expected) == set(GOALS)
+    for goal_id, criteria in expected.items():
+        assert [check.judge for check in tree.nodes[goal_id].verification] == criteria
+
+
+def test_the_slice_of_a_use_case_of_agentos_shows_its_goals_evaluators_as_judged():
+    cut = build_slice(load_tree(LEDGER), "uc-use-the-product-from-early-on")
+    assert cut.ancestors[-1].id == "goal-product-early-grown-by-use"
+    text = render_slice_markdown(cut)
+    assert "- judged by an agent: Share of use served by consolidated parts: grows." in text
+
+
 def test_the_decisions_from_the_plans_table_are_exactly_its_six_rows():
     # The tree also holds Agentos's own goals and later decisions; the seeds are the entries whose
     # source is the plan's table, and of those there are exactly six.

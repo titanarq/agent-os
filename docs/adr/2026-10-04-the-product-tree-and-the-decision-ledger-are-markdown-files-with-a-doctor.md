@@ -119,6 +119,27 @@ shows the verification of every ancestor, labelled as acceptance to serve and no
 agent working on a use case is told which evaluators stand above it (and so does a ticket, whose
 Context is the slice). Nothing else in the format moved.
 
+**Changed 2026-10-06: a verification is a command or a judged criterion; a goal without evaluators is a red check.**
+The owner decided three things that touch this format, each written as a decision under `docs/tree/`.
+(1) The top-down acceptance is essential and holds from the first build, even when an agent judges
+it (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`): a `verification` entry is
+now exactly one of a `command` (with its optional `expects`) or a `judge`, a one-paragraph criterion
+in plain language that an agent judges, pass or fail with reasons. Both in one entry, neither, or
+`expects` beside a `judge` is a `schema` error; an unknown field still is, as everywhere. (2) Tests
+harden and are not a requirement to build (`docs/tree/dec-tests-harden-they-do-not-build.md`), so
+`hardened-needs-verification` now asks for at least one `command`: a judged criterion alone is
+acceptance, not hardening. (3) A goal's evaluators cannot wait for data or code, since a criterion an
+agent judges is a sentence (`docs/tree/dec-a-goal-without-evaluators-is-a-red-check.md`): the new
+code `goal-without-evaluators` fails a goal whose `verification` is empty, and `goal-carries-work-fields`
+is unchanged -- `verification` is still not a work field. The slice, in Markdown and in `--json`, and
+a ticket's acceptance criteria render a judged criterion labelled "judged by an agent", for the node
+and for every ancestor; it is rendered on one line with its whitespace collapsed, so a paragraph in a
+criterion cannot open a section or a `Blocked by` line in a ticket body. `compile`'s dispatch rule
+did NOT change: a leaf is dispatched only with an executable verification, so a node whose criteria
+are all judged still escalates as `missing-verification`; dispatching without one is Stage 1 of the
+plan. Agentos's own four goals moved their evaluators out of their body and into `verification` as
+`judge` entries. Nothing else in the format moved.
+
 ## Consequences
 - A host gets a tree and a ledger it can diff, review and gate in CI, and every red line has a code.
   A host wires the gate itself: `agent-os-tree validate` in its test command, or `check_tree` from

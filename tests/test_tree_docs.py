@@ -19,7 +19,14 @@ from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import TreeConfig
 from agent_os.tree.checks import CHECKS
 from agent_os.tree.compile import MECHANISM_UNRESOLVABLE, MISSING_VERIFICATION
-from agent_os.tree.models import Decision, FrictionEntry, Node, RejectedAlternative, SpikeResult
+from agent_os.tree.models import (
+    Decision,
+    FrictionEntry,
+    Node,
+    RejectedAlternative,
+    SpikeResult,
+    Verification,
+)
 
 AGENT_OS_DOC = AGENT_OS_DIR / "docs" / "AGENT_OS.md"
 ADR = (
@@ -59,7 +66,9 @@ def test_the_docs_name_the_two_escalation_codes():
     assert f"`{MECHANISM_UNRESOLVABLE}`" in section
 
 
-@pytest.mark.parametrize("model", [Node, Decision, SpikeResult, RejectedAlternative, FrictionEntry])
+@pytest.mark.parametrize(
+    "model", [Node, Verification, Decision, SpikeResult, RejectedAlternative, FrictionEntry]
+)
 def test_the_docs_name_every_field_of_every_schema(model):
     section = section_of_the_tree_doc()
     # A node's description and a decision's statement are the Markdown body, documented as such.
@@ -87,6 +96,31 @@ def test_the_adr_exists_and_the_index_lists_it():
 def test_the_changelog_and_the_docs_point_at_the_adr_by_its_real_name():
     for path in (AGENT_OS_DIR / "docs" / "CHANGELOG.md", AGENT_OS_DOC):
         assert ADR.name in path.read_text(), path
+
+
+def test_the_adr_dates_the_change_to_a_judged_verification_and_the_changelog_names_it():
+    adr = ADR.read_text()
+    assert (
+        "Changed 2026-10-06: a verification is a command or a judged criterion; "
+        "a goal without evaluators is a red check" in adr
+    )
+    for decision in (
+        "dec-top-down-acceptance-is-essential-even-when-judged",
+        "dec-a-goal-without-evaluators-is-a-red-check",
+        "dec-tests-harden-they-do-not-build",
+    ):
+        assert f"docs/tree/{decision}.md" in adr
+    changelog = (AGENT_OS_DIR / "docs" / "CHANGELOG.md").read_text()
+    unreleased = changelog.split("## Unreleased")[1].split("\n- ", 2)[1]
+    assert "goal-without-evaluators" in unreleased and "`judge`" in unreleased
+
+
+def test_the_docs_say_what_a_hardened_node_needs_and_that_a_goal_needs_evaluators():
+    section = section_of_the_tree_doc()
+    hardened = re.search(r"^\| `hardened-needs-verification` \| (.+) \|$", section, re.MULTILINE)
+    assert hardened and "`command`" in hardened.group(1)
+    goal = re.search(r"^\| `goal-without-evaluators` \| (.+) \|$", section, re.MULTILINE)
+    assert goal and "`verification`" in goal.group(1)
 
 
 def test_the_console_script_resolves_to_a_callable():
