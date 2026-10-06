@@ -416,7 +416,7 @@ def test_goals_and_nodes_past_pending_are_not_dispatched_by_this_step(tmp_path):
     assert result.escalations == ()
 
 
-def test_a_pending_mechanism_that_a_spike_found_infeasible_escalates(tmp_path):
+def test_a_pending_mechanism_that_an_experiment_found_infeasible_escalates(tmp_path):
     write_sound_tree(tmp_path)
     write_node(
         tmp_path,
@@ -424,8 +424,9 @@ def test_a_pending_mechanism_that_a_spike_found_infeasible_escalates(tmp_path):
         "use-case",
         parent="fr-offline",
         verification=[{"command": "true"}],
-        spikes=[
+        experiments=[
             {
+                "kind": "spike",
                 "question": "can it run in the browser",
                 "outcome": "infeasible",
                 "finding": "no storage quota",
@@ -440,7 +441,7 @@ def test_a_pending_mechanism_that_a_spike_found_infeasible_escalates(tmp_path):
     assert "no storage quota" in escalation.message
 
 
-def test_an_infeasible_spike_does_not_stop_a_node_whose_mechanism_is_known(tmp_path):
+def test_an_infeasible_experiment_does_not_stop_a_node_whose_mechanism_is_known(tmp_path):
     write_sound_tree(tmp_path)
     write_node(
         tmp_path,
@@ -449,8 +450,9 @@ def test_an_infeasible_spike_does_not_stop_a_node_whose_mechanism_is_known(tmp_p
         parent="fr-offline",
         mechanism="Use the file system instead",
         verification=[{"command": "true"}],
-        spikes=[
+        experiments=[
             {
+                "kind": "spike",
                 "question": "can it run in the browser",
                 "outcome": "infeasible",
                 "finding": "no storage quota",
@@ -461,7 +463,7 @@ def test_an_infeasible_spike_does_not_stop_a_node_whose_mechanism_is_known(tmp_p
     assert [t.node_id for t in compiled(tmp_path).tickets] == ["uc-edit"]
 
 
-def test_a_feasible_or_inconclusive_spike_does_not_block_dispatch(tmp_path):
+def test_a_feasible_or_inconclusive_experiment_does_not_block_dispatch(tmp_path):
     write_sound_tree(tmp_path)
     write_node(
         tmp_path,
@@ -469,9 +471,21 @@ def test_a_feasible_or_inconclusive_spike_does_not_block_dispatch(tmp_path):
         "use-case",
         parent="fr-offline",
         verification=[{"command": "true"}],
-        spikes=[
-            {"question": "q1", "outcome": "feasible", "finding": "f", "date": "2026-10-04"},
-            {"question": "q2", "outcome": "inconclusive", "finding": "f", "date": "2026-10-04"},
+        experiments=[
+            {
+                "kind": "spike",
+                "question": "q1",
+                "outcome": "feasible",
+                "finding": "f",
+                "date": "2026-10-04",
+            },
+            {
+                "kind": "spike",
+                "question": "q2",
+                "outcome": "inconclusive",
+                "finding": "f",
+                "date": "2026-10-04",
+            },
         ],
     )
     assert [t.node_id for t in compiled(tmp_path).tickets] == ["uc-edit"]
@@ -484,7 +498,15 @@ def test_a_node_can_escalate_for_both_reasons(tmp_path):
         "uc-both",
         "use-case",
         parent="fr-offline",
-        spikes=[{"question": "q", "outcome": "infeasible", "finding": "f", "date": "2026-10-04"}],
+        experiments=[
+            {
+                "kind": "spike",
+                "question": "q",
+                "outcome": "infeasible",
+                "finding": "f",
+                "date": "2026-10-04",
+            }
+        ],
     )
     codes = sorted(e.code for e in compiled(tmp_path).escalations if e.node_id == "uc-both")
     assert codes == ["mechanism-unresolvable", "missing-verification"]

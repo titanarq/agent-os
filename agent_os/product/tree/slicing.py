@@ -24,19 +24,26 @@ written or listed in, so a brief built from a slice is diffable and cacheable.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.hardening import HardeningBlocker, hardening_blockers
 from agent_os.product.tree.loader import Defect, Tree
 from agent_os.product.tree.models import MECHANISM_PENDING, Decision, Node, Verification
+from agent_os.product.tree.slicing_fields import (
+    bullets,
+    render_decisions,
+    render_experiments_and_challenge,
+    render_planning_bullets,
+    section_heading,
+    yes_no,
+)
 
 MECHANISM_PENDING_NOTE = (
     f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "
-    "(spiking first if feasibility is in doubt) and writes it back into this node's file in the "
+    "(experimenting first if feasibility is in doubt) and writes it back into this node's file in the "
     "same pull request; it is never left in a transcript."
 )
-UNDER_REVIEW_NOTE = "UNDER REVIEW -- still obeyed while it is challenged"
-IN_FORCE_NOTE = "in force"
 ANCESTOR_ACCEPTANCE_NOTE = (
     "Acceptance of this ancestor -- what the work on this node serves and must not break:"
 )
@@ -70,6 +77,8 @@ class Slice:
     # Parent first, goal last.
     ancestors: tuple[Node, ...]
     decisions: tuple[SliceDecision, ...]
+    # What keeps the node from hardening (`agent_os.product.tree.hardening`), empty when nothing.
+    hardening_blockers: tuple[HardeningBlocker, ...] = ()
 
     @property
     def chain(self) -> tuple[Node, ...]:
@@ -124,6 +133,7 @@ def assemble_slice(tree: Tree, node_id: str) -> Slice:
         relative_path=tree.paths[node.id].relative_to(tree.root).as_posix(),
         ancestors=tuple(ancestors),
         decisions=tuple(decisions),
+        hardening_blockers=tuple(hardening_blockers(tree, node.id)),
     )
 
 
@@ -144,18 +154,6 @@ def build_slice(tree: Tree, node_id: str) -> Slice:
     return cut
 
 
-def _heading(level: int, text: str) -> str:
-    return f"{'#' * level} {text}"
-
-
-def _bullets(items: list[str]) -> list[str]:
-    return [f"- {item}" for item in items]
-
-
-def _yes_no(flag: bool) -> str:
-    return "yes" if flag else "no"
-
-
 def judged_criterion_line(check: Verification) -> str:
     """`judged by an agent: <criterion>`, on ONE line. The criterion is a paragraph, and every
     consumer of this line (a slice read by an agent, a ticket body `validate_issue_body` reads line
@@ -165,7 +163,7 @@ def judged_criterion_line(check: Verification) -> str:
 
 
 def _verification_bullets(node: Node) -> list[str]:
-    return _bullets(
+    return bullets(
         [
             judged_criterion_line(check)
             if check.is_judged
@@ -188,52 +186,46 @@ def render_node(
 ) -> str:
     node = cut.node
     lines = [
-        _heading(level, f"Node `{node.id}`"),
+        section_heading(level, f"Node `{node.id}`"),
         "",
         f"- type: {node.type}",
         f"- title: {node.title}",
         f"- state: {node.state}",
-        f"- foundation: {_yes_no(node.foundation)}",
+        *render_planning_bullets(node, cut.hardening_blockers),
+        f"- foundation: {yes_no(node.foundation)}",
         f"- parent: {f'`{node.parent}`' if node.parent else 'none (a goal is the root)'}",
         f"- file: `{cut.relative_path}` (relative to the tree root)",
     ]
     if with_description:
-        lines += ["", _heading(level + 1, "Description"), "", node.description]
+        lines += ["", section_heading(level + 1, "Description"), "", node.description]
     if node.mechanism is not None:
         text = MECHANISM_PENDING_NOTE if node.mechanism == MECHANISM_PENDING else node.mechanism
-        lines += ["", _heading(level + 1, "Mechanism"), "", text]
+        lines += ["", section_heading(level + 1, "Mechanism"), "", text]
     if node.implementation is not None:
-        lines += ["", _heading(level + 1, "Implementation"), "", node.implementation]
+        lines += ["", section_heading(level + 1, "Implementation"), "", node.implementation]
     # A goal's section is its evaluators, which the doctor requires; for any other node it may be
     # empty, and says so.
     if with_verification:
         shown = _verification_bullets(node)
-        lines += ["", _heading(level + 1, "Verification"), "", *(shown or ["none"])]
-    if node.spikes:
-        lines += ["", _heading(level + 1, "Spike results"), ""]
-        lines += _bullets(
-            [
-                f"{spike.date.isoformat()}, {spike.outcome}: {spike.question} -- {spike.finding}"
-                for spike in node.spikes
-            ]
-        )
-    lines += ["", _heading(level + 1, "Sources"), "", *_bullets(node.sources)]
+        lines += ["", section_heading(level + 1, "Verification"), "", *(shown or ["none"])]
+    lines += render_experiments_and_challenge(node, level=level + 1)
+    lines += ["", section_heading(level + 1, "Sources"), "", *bullets(node.sources)]
     return "\n".join(lines)
 
 
 def render_ancestors(cut: Slice, *, level: int) -> str:
-    heading = _heading(level, "Ancestors")
+    heading = section_heading(level, "Ancestors")
     if not cut.ancestors:
         return f"{heading}\n\nnone"
     blocks = []
     for ancestor in cut.ancestors:
         block = [
-            _heading(level + 1, f"`{ancestor.id}` ({ancestor.type}): {ancestor.title}"),
+            section_heading(level + 1, f"`{ancestor.id}` ({ancestor.type}): {ancestor.title}"),
             "",
             ancestor.description,
             "",
             "Sources:",
-            *_bullets(ancestor.sources),
+            *bullets(ancestor.sources),
         ]
         if ancestor.verification:
             block += ["", ANCESTOR_ACCEPTANCE_NOTE, *_verification_bullets(ancestor)]
@@ -241,48 +233,10 @@ def render_ancestors(cut: Slice, *, level: int) -> str:
     return "\n\n".join([heading, *blocks])
 
 
-def render_decisions(cut: Slice, *, level: int) -> str:
-    heading = _heading(level, "Decisions in force")
-    if not cut.decisions:
-        return f"{heading}\n\nnone"
-    blocks = []
-    for entry in cut.decisions:
-        decision = entry.decision
-        standing = UNDER_REVIEW_NOTE if decision.state == "under-review" else IN_FORCE_NOTE
-        block = [
-            _heading(level + 1, f"`{decision.id}`: {decision.title}"),
-            "",
-            f"- standing: {standing}",
-            f"- decided: {decision.decided.isoformat()}",
-            f"- binds this node through: `{entry.attached_to}`",
-            "",
-            decision.statement,
-            "",
-            "Premises:",
-            *_bullets(decision.premises),
-            "",
-            "Rejected alternatives:",
-            *_bullets(
-                [
-                    f"{alternative.option} -- {alternative.reason}"
-                    f"{' (implied, not argued at approval)' if alternative.basis == 'implied' else ''}"
-                    for alternative in decision.rejected_alternatives
-                ]
-            ),
-            "",
-            "Review triggers:",
-            *_bullets(decision.review_triggers),
-            "",
-            f"Friction entries logged against it: {len(decision.friction)}",
-        ]
-        blocks.append("\n".join(block))
-    return "\n\n".join([heading, *blocks])
-
-
 def render_slice_markdown(cut: Slice) -> str:
     """The slice as a Markdown brief: the node, its ancestors, the decisions in force."""
     parts = [
-        _heading(1, f"Slice of `{cut.node.id}`"),
+        section_heading(1, f"Slice of `{cut.node.id}`"),
         render_node(cut, level=2),
         render_ancestors(cut, level=2),
         render_decisions(cut, level=2),
@@ -298,6 +252,8 @@ def slice_as_data(cut: Slice) -> dict:
             **cut.node.model_dump(mode="json"),
             "verification": [verification_as_data(check) for check in cut.node.verification],
             "file": cut.relative_path,
+            "hardenable": not cut.hardening_blockers,
+            "hardening_blockers": [asdict(blocker) for blocker in cut.hardening_blockers],
         },
         "ancestors": [
             {

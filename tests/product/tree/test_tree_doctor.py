@@ -462,9 +462,17 @@ def test_a_node_that_is_its_own_parent_is_a_cycle(tmp_path):
         {"implementation": "somewhere"},
         {"foundation": True},
         {"state": "improvised"},
+        {"state": "implemented"},
+        {"depends_on": ["fr-offline"]},
         {
-            "spikes": [
-                {"question": "q", "outcome": "feasible", "finding": "f", "date": "2026-10-04"}
+            "experiments": [
+                {
+                    "kind": "spike",
+                    "question": "q",
+                    "outcome": "feasible",
+                    "finding": "f",
+                    "date": "2026-10-04",
+                }
             ]
         },
     ],

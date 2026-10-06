@@ -30,6 +30,18 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #113 -- Agentos v2, Stage 1: the tree format. New node state `implemented` (between `improvised` and
+  `hardened`). `experiments` replaces `spikes` (kind `spike | demand-probe | question | lookup`,
+  outcome may be `open`; a `question` carries its `scope` `what | how` and its `default_answer`);
+  a node still using `spikes` is now a `schema` error, so a host tree migrates the field name and
+  adds a `kind` to each entry after its next subtree pull. New `depends_on:` (a list of node ids)
+  with the doctor codes `dangling-dependency` and `dependency-cycle`, and `challenge:` (`reason`
+  `no-solution | no-verification | over-cost`). "Not hardenable" (an open `what` question, or a
+  challenge on the node or on what it depends on) is `agent_os.product.tree.hardening`; `compile` does
+  not use it yet. `context` shows state, dependencies, hardenability, experiments and the challenge,
+  and `--json` carries them. See the dated note of ADR
+  `2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md` and
+  `docs/AGENT_OS.md` §4.6 (26 codes now).
 - #112 -- the v2 subsystems move under `agent_os/product/` (`git mv`, no behaviour change):
   `agent_os.tree` is now `agent_os.product.tree` and `agent_os.puntal` is `agent_os.product.puntal`;
   their tests move to `tests/product/`. `agent-os-tree` and `bin/puntal_task.sh` keep their names.
