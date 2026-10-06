@@ -175,7 +175,7 @@ def slot_worktree(backend: str, slot: int = 1) -> str | None:
 # its PID file as its last step, which is what makes a PID file still on disk a run that never
 # reached its end (#400). The planner is not here: `agent_os/bin/planner_task.sh` launches it and writes
 # no PID file, and a worker's end is the exit hook's, not a scan of this kind.
-ONE_SHOT_ROLES = ("validator", "refiner")
+ONE_SHOT_ROLES = ("validator", "refiner", "expert")
 
 CutReason = Literal["stall", "budget", "quota"]
 StallTier = Literal["warn", "cut"]
@@ -224,6 +224,7 @@ EVENT_KINDS = (
     "orphan_doing",
     "validator_finished",
     "refiner_finished",
+    "expert_finished",
     "refine_pending",
     "role_died",
     "pr_merged",

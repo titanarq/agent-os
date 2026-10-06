@@ -409,6 +409,23 @@ classes:
       model: qwen3.8-max
       ceilings: [max_context, max_total_tokens]
 
+  # The expert's class (Agentos v2, Stage 1): populates the product tree -- requirements, use
+  # cases, experiments, questions with their scope and default answer, challenges -- and opens a
+  # pull request on the host's tree. Its ceilings bind one run on one issue. No `fallback:`: it
+  # runs on the one backend a v2 host has, and a run the quota refuses is relaunched, not
+  # substituted. `agent_os/bin/agent_task.sh expert <issue>` launches it; its logs and `runs.tsv`
+  # are `.cache/expert/`. Its App is `project.role_apps.expert`, else the planner's.
+  expert:
+    role: expert
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 200000
+    max_cost_usd: 5.0
+    max_total_tokens: 10000000
+    commit_warn_turns: 30
+    commit_cut_turns: 50
+    qwen_fallback_eligible: false
+
   # The puntal's class: small context and a low ceiling PER INVOCATION -- `max_context`,
   # `max_cost_usd` and `max_total_tokens` all bind one click, not an issue, and are checked on the
   # run's own stream: `max_cost_usd` is also handed to the CLI (`--max-budget-usd`), and the driver

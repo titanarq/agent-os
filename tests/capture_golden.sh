@@ -55,12 +55,12 @@ normalized() { sed "s|$main_checkout|<HOST-MAIN-CHECKOUT>|g"; }
 cd "$root"
 bash "$bin/worker_task.sh" claude rules | normalized >"$out/worker.md"
 bash "$bin/planner_task.sh" rules | normalized >"$out/planner.md"
-for role in validator refiner; do
+for role in validator refiner expert; do
   bash "$bin/agent_task.sh" "$role" 1 --dry-run |
     sed -n '/^--- rules ---$/,$p' | tail -n +2 | normalized >"$out/$role.md"
 done
 
-for role in worker validator refiner planner; do
+for role in worker validator refiner expert planner; do
   [ -s "$out/$role.md" ] || { echo "capture_golden: $out/$role.md came out empty"; exit 1; }
   printf '%s\t%s lines\n' "$out/$role.md" "$(wc -l <"$out/$role.md")"
 done
