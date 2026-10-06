@@ -40,3 +40,8 @@ every `agent-os-install --force`).
 - Rejected: a per-agent `model:` key next to each definition's own file (a host would edit the
   mechanism, against the 2026-09-21 ADR); keying the quota verdict by model (needs a detector that
   can attribute an exhaustion to a family, which the CLI does not report).
+
+## Amendment, 2026-10-06 (Agentos v2)
+Opus is kept only for the highest level and in minimal use: the custodian and the consolidator. The
+refiner moves to Sonnet, and task writing is mostly replaced by `agent-os-tree compile`
+(`docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`).

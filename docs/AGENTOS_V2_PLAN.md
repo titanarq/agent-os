@@ -107,9 +107,10 @@ A new module of the package, fully testable without network or real backend.
 - **Phase 1 done** (#102), changed after review: goals carry verification (tests run top-down from
   the goals), a node with children is a container, the slice shows the ancestors' verification.
 - **What Agentos is for** (#104): the mission and Agentos's own tree in `docs/tree/` -- four goals
-  with the owner's evaluators, sixteen functional requirements (seventeen until 2026-10-06, when
-  the owner removed the autonomy requirement of goal C), six use cases, all
-  `mechanism: pending`.
+  with the owner's evaluators, six use cases, and functional requirements that were seventeen at
+  first, sixteen once the owner removed the autonomy requirement of goal C, and nineteen after the
+  final cross-check added three (2026-10-06). Every requirement and use case now carries its
+  mechanism.
 - The Phases 2-5 that followed here were written on 2026-10-04, before the owner's discussion of
   Agentos's global goals (2026-10-05/06), which added most of the pieces below. They are **replaced
   by Stages 0-3**. Everything they asked for is kept and placed in a stage (the challenge channel,
@@ -179,6 +180,16 @@ Exit: the owner uses the product.
 - The progress board: progress per branch, and the owner's order of the backlog, which weighs over
   the order use suggests.
 - Recording from day one, by the conventions below.
+- Code quality in every pull request, in products and in agent-os
+  (`docs/tree/dec-every-pull-request-gets-a-code-quality-review.md`): blocking deterministic checks as a
+  ratchet (entries per folder, lines per file; defaults 12 and 300) and an agent's review of the diff
+  (SOLID, self-explanatory names, comments only for a non-obvious why).
+- Foundations include the means to deploy the app locally, run its tests and log from minute zero.
+- Dispatch never runs two tickets on the same code at once, and dependencies go first
+  (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`): the tree format gains
+  `depends_on:`.
+- Challenges are flagged early and reach the owner, who redefines the goals or stops
+  (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`).
 
 ### Stage 2 -- with use
 
@@ -197,7 +208,9 @@ Exit: branches with telemetry and hardened nodes.
   branch (the cap on demand probes); determinism ratio; iterations by cause; the slice size cap
   (`tree.max_slice_tokens`, red, answered by dividing the node); an episodic digest in the slice.
 - Tests: selection per branch (integration tests on both sides); a coverage ratchet that never
-  blocks use; mutation score as an indicator; a nightly full run as the safety net; `component`
+  blocks use; mutation score as an indicator; the whole suite every four hours of development, carried
+  by whichever pull request is due (`docs/tree/dec-a-full-run-every-four-hours-of-development.md`), in
+  products and in agent-os; `component`
   records with a core and `extends:`, nodes declaring `uses:`.
 - Memory: telemetry a node, a test or a decision cites is copied into `evidence/`; uncited raw
   telemetry rotates after 90 days.
@@ -242,7 +255,7 @@ Where each piece lives. "Host" is the product's repository (the vector first).
 | Raw telemetry | Puntal invocations, owner feedback, judgments and their outcomes | host `.cache/` (never versioned) | 1 |
 | Tree CLI | Doctor, slice, compile; hardening tickets, slice cap, episodic digest | agent-os `agent_os/product/tree/` | 1-2 |
 | Indicators | Hardness, exposure, definition degree, priority, determinism ratio, iterations, accuracy, compression | agent-os, a module of its own | 2-3 |
-| Test selection and coverage | Per-branch selection, ratchet, mutation indicator, nightly run | agent-os (mechanism) and the host's CI | 2 |
+| Test selection and coverage | Per-branch selection, ratchet, mutation indicator, a full run every four hours of development | agent-os (mechanism) and the host's CI | 2 |
 | Expert | Populates the tree; experiments; foundations' verification | agent-os `prompts/`, class in host `config/agents.yaml` | 1 |
 | Refiner | Grows and divides nodes; soft decisions; gap notes into experiments | same (exists) | 1-2 |
 | Planner, worker, validator | Dispatch, harden, validate | same (exist) | 1 |
@@ -250,6 +263,8 @@ Where each piece lives. "Host" is the product's repository (the vector first).
 | Custodian | Drift, rollback, spend against use | agent-os `prompts/`, class in host config | 2-3 |
 | Consolidator | Premises, telemetry into nodes; later method proposals and compression | same | 2-3 |
 | Guard | Loops and ceilings | agent-os (exists) | -- |
+| Code-quality checks | Ratchet on folder entries and file lines; an agent's review of each diff | agent-os (mechanism) and each repository's CI | 1 |
+| Product-specific agents, skills and MCP servers | What one product needs beyond the mechanism | that product's own repository | 1 |
 
 ## Recording conventions (fixed in Stage 0, recorded from Stage 1)
 
@@ -271,8 +286,30 @@ written in Stage 1.
 Semantic memory engine (the consolidator starts as premise-checker and telemetry distiller),
 multi-user telemetry (`docs/tree/dec-one-owner-for-now.md`), autonomous abort of a branch by the
 custodian (it recommends; the owner publishes), an MCP server for the tree (the CLI slices
-cheaper; MCP comes when something external needs to look in). Schema mining is no longer out: it
-is part of compression, in Stage 3.
+cheaper; MCP comes when something external needs to look in), proactive critique of what was built
+(`docs/tree/dec-proactive-critique-waits-for-a-second-phase.md`: use is the first engine of
+refinement until its trigger fires). Schema mining is no longer out: it is part of compression, in
+Stage 3. The ADRs of `docs/adr/` enter the ledger the first time each is challenged
+(`docs/tree/dec-a-v1-adr-enters-the-ledger-when-first-challenged.md`).
+
+## Cross-check, 2026-10-06
+
+Against the owner's review of the eight points and against the original proposal of 2026-10-04 (the
+design discussion's transcript). Gaps found and closed on 2026-10-06: risk reduction and challenges
+(`fr-challenges-are-found-early-and-reach-the-owner`), the time of each phase as part of the goals
+(`fr-a-goal-can-carry-the-time-it-may-take`), proactive critique deferred, ADRs into the ledger when
+challenged, one backend, dispatch without collisions, infrastructure first, product-specific agents
+in the product's repository; the owner added the code-quality review
+(`fr-consolidated-code-is-clear-and-organized-in-depth`) and the full run every four hours. Changed on
+purpose, not dropped:
+
+| The 2026-10-04 proposal or the eight points said | It became | Why |
+|---|---|---|
+| Simulated use of the app to prioritize | One real human's use | founding decision 3 |
+| Logs uploaded to the repository | Raw telemetry in `.cache/`, cited records copied into `evidence/` | point 2 |
+| Level 0 decides to abort | The custodian recommends, the owner publishes | the approved plan |
+| Experts estimate resolution time | Difficulty measured by timeboxed spikes | standing discipline |
+| Autonomy earned by measured accuracy, with a cold start | Removed; covered by goals A, B, C and D | the owner, 2026-10-06 |
 
 ## Dependencies and open items
 
@@ -290,8 +327,8 @@ is part of compression, in Stage 3.
 - **Doubts of the how pass**: all closed on 2026-10-06 -- the stages, the Phase 0 no-go
   (`docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`) and where question sessions
   happen (`docs/tree/dec-a-question-session-is-a-github-issue.md`). Then the mechanism of each
-  requirement, goal by goal: goals A and B done on 2026-10-06 (`goal-product-early-grown-by-use`,
-  `goal-faithful-to-the-owners-goals`).
+  requirement, goal by goal: goals A, B, C and D done on 2026-10-06. The how pass is closed; next is
+  building Stage 1.
 - **At the end of the how pass**: cross-check that no point was dropped -- first against the
   owner's review of the eight points of 2026-10-05/06 (which became the four goals of `docs/tree/`),
   then against this plan's own 2026-10-04 base, which that review extends (the owner's request,
