@@ -9,5 +9,7 @@ mechanism: |-
   Stage 1. The tree doctor requires every node to hang from a goal (it already does). compile gives
   each ticket its node address, and in a v2 host the planner dispatches only tickets that carry one,
   so no work exists outside the tree.
+implementation: 'agent_os/product/dispatch/ (the node address marker, rules.py, the start gate), agent_os/product/tree/compile.py, `tree.dispatch_by_node`, #117'
+state: implemented
 ---
 No work exists that cannot be traced up to one of the owner's goals.

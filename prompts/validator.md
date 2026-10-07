@@ -85,6 +85,28 @@ __LINT_RULES__
   should say instead. You still never edit it: naming it is the review's job, changing it is the
   human's.
 
+A PULL REQUEST FROM THE PRODUCT TREE IS JUDGED AGAINST ITS NODE AND ITS GOALS
+When the issue carries `<!-- node: <id> -->` it was compiled from a node of the product tree, and its
+acceptance criteria ARE that node's verification, each either a command or a criterion an agent
+judges. The brief ends with the node's slice (`agent-os-tree context <id>`): the ancestors up to the
+goal and the acceptance each one carries.
+- A criterion that is a command: run it in the worktree and quote its output. A criterion labelled
+  `judged by an agent`: YOU judge it, against the diff and what the diff builds, with a pass or a fail
+  and the reasons -- a judged criterion is never skipped for being judged, and never passed on the
+  worker's say-so. A node with no verification of its own is judged against its description.
+- Then judge the same pull request against the acceptance of every ancestor in the slice, goals and
+  use cases included: it must not break what the goal's evaluators say. This holds for EVERY pull
+  request of a branch, not only the last one -- a pull request whose own criteria pass and that
+  breaks an ancestor's is not approved. Each ancestor criterion is a line of your checklist, under
+  `## Definition of done`.
+- You judge from the issue, the slice, the diff and your own runs, in a context separate from the
+  worker's: never read the worker's transcript, its `scratchpad/progress.log`, its `.cache` files or
+  its report as evidence. The pull request body is a claim about the diff, as always.
+- The node's own file must be written back in the diff (`implementation` naming the code,
+  `state: implemented`, `mechanism` when it was `pending`), never `state: hardened` and never a
+  change to a goal, a `verification` or a `challenge`; any of those is a request for changes, and the
+  commit touching the tree must carry its `Node-Change` trailer.
+
 CODE QUALITY OF THE DIFF
 Besides the issue's own criteria, you review the code the diff adds or changes against the owner's
 standing rules for code. Each finding is a line of the same checklist, quoted with its path and

@@ -276,7 +276,7 @@ class TaskClass(Strict):
     # stand-in for one UI action: its three ceilings bind ONE invocation, not an issue
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
-    role: Literal["worker", "validator", "refiner", "planner", "puntal"] = "worker"
+    role: Literal["worker", "validator", "refiner", "expert", "planner", "puntal"] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
     backend: str
@@ -1531,10 +1531,9 @@ def worker_environment_rules(project: ProjectConfig | None = None) -> str:
 
 # Where every role's prompt lives: one template per role, beside the package rather than inside a
 # driver's heredoc, so the text a host reads is a file it can diff and the drivers carry none of it
-# (#509). `agent_os/tests/golden/` holds what each one renders to for the host that owns this
-# checkout, which is what proves a move of the text changed nothing an agent reads.
+# (#509). `tests/golden/<role>.md` holds what each renders to, proving a move changed nothing read.
 PROMPTS_DIR = AGENT_OS_DIR / "prompts"
-PROMPT_ROLES = ("worker", "validator", "refiner", "planner")
+PROMPT_ROLES = ("worker", "validator", "refiner", "expert", "planner")
 
 # The one marked extension point: where a host's own paragraphs are appended verbatim, from the
 # file `project.prompt_extras` names for that role. A host that names none renders nothing there,
@@ -1644,6 +1643,7 @@ def prompt_substitutions(
         "NEVER_RUN_RULES": never_run_rules(project),
         "WORKER_ENVIRONMENT_RULES": worker_environment_rules(project),
         "WORKER_CLASSES": render_worker_classes(classes),
+        "TREE_ROOT": load_agents_config().tree.root,
     }
 
 
@@ -2750,7 +2750,7 @@ def main() -> None:
     row.add_argument("--context", default="")
     row.add_argument("--model", default="")
     role = sub.add_parser("role-class")
-    role.add_argument("role", help="validator, refiner or planner")
+    role.add_argument("role", help="validator, refiner, expert or planner")
     role.add_argument(
         "--field", default="model", help="which field of the class to print (default: model)"
     )

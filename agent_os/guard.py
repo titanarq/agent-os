@@ -112,6 +112,7 @@ from agent_os.lib import (
     worker_slot_worktree_path,
     worker_slots,
 )
+from agent_os.product.dispatch.rules import rows_the_tree_rules_allow_here
 from agent_os.streams.interface import event_message
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
@@ -170,12 +171,11 @@ def slot_worktree(backend: str, slot: int = 1) -> str | None:
     return EXTRA_SLOT_WORKTREES.get((backend, slot))
 
 
-# The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each and that announce their own
-# end as an event: their per-run logs and PID files live in `.cache/<role>/`, and the run removes
-# its PID file as its last step, which is what makes a PID file still on disk a run that never
-# reached its end (#400). The planner is not here: `agent_os/bin/planner_task.sh` launches it and writes
-# no PID file, and a worker's end is the exit hook's, not a scan of this kind.
-ONE_SHOT_ROLES = ("validator", "refiner")
+# The roles `agent_os/bin/agent_task.sh` launches as ONE detached run each (validator, refiner, expert)
+# and that announce their own end as an event: their per-run logs and PID files live in `.cache/<role>/`,
+# and the run removes its PID file as its last step, so a PID file still on disk is a run that never
+# reached its end (#400). The planner (`planner_task.sh`, no PID file) and a worker (exit hook) are not here.
+ONE_SHOT_ROLES = ("validator", "refiner", "expert")
 
 CutReason = Literal["stall", "budget", "quota"]
 StallTier = Literal["warn", "cut"]
@@ -224,6 +224,7 @@ EVENT_KINDS = (
     "orphan_doing",
     "validator_finished",
     "refiner_finished",
+    "expert_finished",
     "refine_pending",
     "role_died",
     "pr_merged",
@@ -1680,21 +1681,20 @@ def dispatchable_scan(*, main: Path = HOST_ROOT) -> DispatchableScan:
     """Every open issue a worker could be started on right now, by the mechanical predicate in
     agent_lib (`is_dispatchable`): labeled status:ready, budget class resolving against
     config/agents.yaml, not blocked on a human, no open `Blocked by #N`. Two `gh` calls, whatever
-    the backlog's size -- the second one is the set of open issue numbers every `Blocked by` line
-    is resolved against, instead of one `gh issue view` per blocker.
+    the backlog's size: the second lists the open issues every `Blocked by` line is resolved against.
 
-    This replaces `_queue_not_empty`, which counted *any* open issue as queued and on 2026-09-14
-    woke the planner 51 times for a backlog where not one issue carried a budget marker (#345).
+    It replaces `_queue_not_empty`, which woke the planner 51 times for a backlog with no budget
+    marker (#345). In a v2 host (`tree.dispatch_by_node`) an issue with no node address, or with an
+    open dependency, is not dispatchable either.
 
-    An issue whose class names a backend with NO WORKTREE is not dispatchable either, however
-    valid its body is: the driver would refuse it with `no worktree at <path>` and the planner run
-    that discovered that is spent for nothing (#392 -- on 2026-09-16 exactly that cost 1.03 USD
-    and moved #389 to blocked-on-human for a cause unrelated to its brief). It is reported apart
-    from the dispatchable ones so the tick can name the condition and page for it."""
+    An issue whose class names a backend with NO WORKTREE is not dispatchable either: the driver
+    would refuse it (#392). It is reported apart so the tick can name the condition and page."""
     ready = _gh_issue_list("number,state,labels,body", main=main, extra=["--label", READY_LABEL])
     if not ready:
         return DispatchableScan([], {}, {})
-    open_numbers = {int(row["number"]) for row in _gh_issue_list("number", main=main)}
+    open_rows = _gh_issue_list("number,body", main=main)
+    open_numbers = {int(row["number"]) for row in open_rows}
+    ready = rows_the_tree_rules_allow_here(ready, open_rows)
     classes = load_task_classes()
     issues: list[int] = []
     without_worktree: dict[str, list[int]] = {}

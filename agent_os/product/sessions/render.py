@@ -22,6 +22,17 @@ REPLY_INSTRUCTIONS = (
 )
 
 
+# Said in the issue and not in `prompts/planner.md`: the planner prompt is at its size limit, and
+# the instruction only matters on this issue, which the planner reads when the owner's reply wakes it.
+PLANNER_INSTRUCTIONS = (
+    'For the planner, after the owner replies: run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions '
+    "answers <this issue>` and never reword an answer. Write one task issue asking a worker to run "
+    "`... sessions apply <this issue>` on a branch, commit exactly what it writes and open a pull "
+    "request whose body carries `Session-Answer: #<this issue>` on its own line. That pull request "
+    "touches the what: the validator checks the transcription and nothing merges it automatically."
+)
+
+
 def freeze(batch: SessionBatch) -> str:
     payload = {
         "questions": [
@@ -95,5 +106,5 @@ def render_session_body(batch: SessionBatch) -> str:
         lines.append("")
     if batch.is_empty:
         lines += ["Nothing is waiting for you.", ""]
-    lines.append(freeze(batch))
+    lines += [PLANNER_INSTRUCTIONS, "", freeze(batch)]
     return "\n".join(lines) + "\n"

@@ -30,6 +30,55 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #118 -- Agentos v2, Stage 1: the expert role. A one-shot role in the validator/refiner pattern:
+  class `expert` in `config.example.yaml` (`role: expert`, Sonnet, no fallback), prompt
+  `prompts/expert.md` (rendered with `__TREE_ROOT__`, the new placeholder for `tree.root`; `expert`
+  is in `PROMPT_ROLES`, golden `tests/golden/expert.md`), and `agent_task.sh expert <issue>`. Unlike
+  the refiner it writes: the driver makes a throwaway worktree off the default branch of origin,
+  starts the backend inside it, and the expert opens one pull request on the host's tree --
+  requirements and use cases as small nodes under the owner's goals (never a goal, an evaluator or a
+  decision), experiments, questions with `scope` and `default_answer`, challenges -- with a
+  `Node-Change` trailer (`usage` by default, `rework` for revising its own earlier node, never
+  `owner`). It receives every question before the owner: a `how` it settles itself or by an open
+  spike, a `what` goes to the owner with its default; one summary comment (`<!-- expert-summary -->`)
+  carries what is for the owner and a digest of what it decided without them. The guard accepts
+  `expert_finished` and watches expert runs for death (`ONE_SHOT_ROLES`); the planner's prompt says
+  it never launches the expert. Launched by command only; nothing runs it unattended (ADR
+  `2026-10-07-the-expert-populates-the-tree-and-settles-a-how-before-the-owner-hears-it.md`,
+  `docs/AGENT_OS.md` §4.9). Host follow-up after a `subtree pull`: add the `expert` class to
+  `config/agents.yaml` before launching it.
+- Agentos v2, Stage 1, compile and dispatch (#117, branch `fix/117-compile-and-dispatch`) -- a
+  ticket dispatches without a verification, carries its address and its place in the order, and a v2
+  host never runs two tickets on the same code
+  (`docs/tree/dec-tests-harden-they-do-not-build.md`,
+  `docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`,
+  `docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`; ADR
+  `2026-10-07-a-v2-host-dispatches-by-node-address-dependencies-first-and-never-on-the-same-code.md`).
+  `compile` no longer escalates `missing-verification` (the code is gone; `mechanism-unresolvable`
+  is the only escalation): a leaf with a command, with only a judged criterion or with nothing is a
+  ticket, and one with nothing is accepted by an agent's judgment against its description and its
+  ancestors' acceptance. A ticket's definition of done leaves the node `state: implemented` and never
+  asks for `hardened`; when `hardening_blockers` finds an open `what` question or a challenge on the
+  node or upstream, the ticket says why the node cannot be hardened yet. Every ticket ends with the
+  markers `<!-- node: <id> -->`, `<!-- depends-on: <ids> -->` and `<!-- touches: <paths> -->` (the last
+  two only when there is something to say; the touched code is the paths named in `implementation`
+  and a written `mechanism`), its `## Dependencies` names the nodes it waits for, and tickets come
+  ordered by dependencies in the text, the JSON (`depends_on`, `touched_paths`) and the files. New
+  config key `tree.dispatch_by_node` (default `false`) makes a host a v2 host: the guard's
+  `dispatchable_scan` then leaves out a ready issue with no node address or with an open
+  `depends-on` ticket, `worker_task.sh start` calls `python -m agent_os.product.dispatch start-gate`
+  and refuses one that has no address, an open dependency or `touches` paths overlapping a running
+  ticket's, and `agent_os.issues brief` appends the slice of the node (`agent-os-tree context`) to
+  a worker's brief. Nothing changes in a host that leaves the key off. The worker, refiner,
+  validator and planner prompts gain a block each (write-back discipline and the slice; keeping a
+  ticket's markers; validating against the node's verification in a separate context and judging
+  every pull request of the branch against its goals and use cases; the planner never works around
+  a refusal), and goldens `worker.md`, `refiner.md`, `validator.md` and `planner.md` changed by
+  those additions only (read diff by diff). Code: `agent_os/product/tree/compile.py` (376 lines) is
+  split into `compile.py` and the new `agent_os/product/dispatch/` (body, markers, touched code,
+  rules, start gate, output). Docs: `docs/AGENT_OS.md` §4.6, `docs/ADOPTION.md` step 24. Host
+  follow-up after a `subtree pull`: nothing, until the host sets `tree.dispatch_by_node: true`; a
+  caller that matched `missing-verification` finds none now.
 - #120 -- Agentos v2, Stage 1: the progress board generated from the tree. New `agent-os-tree board
   sync [--dry-run] [--json]` writes one draft item per functional requirement into a GitHub Project
   (v2) through `gh`: its parts (use cases) by state, the open `what` questions with their default
@@ -73,7 +122,7 @@ that closed several small issues at once name them all. This file starts on 2026
   `tree.owner_only_paths` file) is condition 6 of the control plane's merge gate, so the gate is now
   six conditions; `verify-answer PR --session N` is what the validator runs on a pull request that
   says `Session-Answer: #N`. New optional config key `tree.owner_only_paths` (default empty). ADR
-  `2026-10-07-the-reply-to-a-question-session-is-a-short-numbered-list.md`; `docs/AGENT_OS.md` §4.9.
+  `2026-10-07-the-reply-to-a-question-session-is-a-short-numbered-list.md`; `docs/AGENT_OS.md` §4.10.
   Host follow-up after a `subtree pull`: re-render the installed `.claude/agents/control-plane.md`
   (`agent-os-install --force`) to get condition 6, and set `project.human_login`.
 - #113 -- Agentos v2, Stage 1: the tree format. New node state `implemented` (between `improvised` and

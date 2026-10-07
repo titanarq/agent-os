@@ -15,7 +15,7 @@ import sys
 import pytest
 import yaml
 from conftest import EXAMPLE_CONFIG
-from tree_helpers import write_node, write_sound_tree
+from tree_helpers import write_node, write_sound_tree, write_unresolvable_node
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.product.tree.cli import main
@@ -167,7 +167,7 @@ def test_context_over_a_defective_slice_prints_the_doctors_lines_on_stderr(tmp_p
 
 def test_compile_prints_tickets_and_escalations_and_creates_nothing(tmp_path, capsys):
     write_sound_tree(tmp_path)
-    write_node(tmp_path, "uc-vague", "use-case", parent="fr-offline")
+    write_unresolvable_node(tmp_path, "uc-vague", parent="fr-offline")
     assert run(["compile", "--root", tmp_path]) == 0
     out = capsys.readouterr().out
     assert out.startswith("compiled 1 ticket(s), 1 escalation(s)")

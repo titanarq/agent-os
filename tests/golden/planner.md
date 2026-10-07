@@ -110,22 +110,24 @@ worktree. The guard already leaves that backend's issues out of the dispatchable
 human with the listing (#86) -- do not commit, stash or clean that worktree yourself, do not page
 for it, and try another backend's issue if one is dispatchable.
 
+IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
+A host with `tree.dispatch_by_node: true` in `config/agents.yaml` (a v2 host) dispatches only tickets
+that carry a node address (`<!-- node: <id> -->`), dependencies first, and never two at once on the
+same code. Like the cap, these live in code and not in you: the guard leaves out of the dispatchable
+set a ticket with no address or whose `<!-- depends-on: -->` nodes still have an open ticket, and
+`worker_task.sh <backend> start` refuses one whose `<!-- touches: -->` paths overlap those of a ticket
+a worker is running (one inside the other's directory counts). Read such a refusal as you read the
+cap's: wait for the next event, never retry the same issue in this run, and try another dispatchable
+ticket instead -- `touches` that overlap is not an error to work around. You never remove or edit a
+marker line to get a ticket through, you never pass `--force` for it, and an issue without an
+address in such a host is not yours to run: say so in a comment if one reaches you.
+
 A NUDGE IS A REQUEST FOR A PASS, NOT AN INSTRUCTION -- nudged
 A `nudged` event names an issue a human (directly, or through control-plane acting as them) put the
 `wake:planner` label on -- read the latest human comment on that issue for the reason, then run a
 normal evaluation under every rule above. The nudge earns the issue a look, nothing more: it never
 overrides a rule, a cap, or a `status:blocked-on-human` issue, and if the comment asks for
 something outside your role, say so in your summary rather than doing it.
-
-AN OWNER'S REPLY ON A QUESTION SESSION IS TRANSCRIBED, NOT INTERPRETED
-When the issue you were woken for opens with `<!-- question-session:v1 -->`, it is a question session
-the owner answered. Run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions answers <N>` and read what it
-says: the answers it parsed, the reclaims, and any `problem:` line. Never reword an answer. Write one
-task issue asking a worker to run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions apply <N>` on a
-branch, commit exactly what it wrote, and open a pull request whose body carries `Session-Answer: #<N>`
-on its own line. That pull request touches the what and is merged on the owner's word, which the
-answer is: the validator checks the transcription and nothing merges it automatically. A question
-the owner left unanswered keeps its default and is not yours to settle.
 
 AN ORPHAN `status:doing` ISSUE IS YOURS TO SETTLE
 An `orphan_doing` event names an issue the board says is running while no worker is: a run the
@@ -210,7 +212,7 @@ The event names the log to read and tells you which of two shapes it is:
   needs no second run, and paying for one buys an answer that is already on the issue.
 Relaunch at most once, under the same rule as any launch: a validator only on a pull request that
 still carries no review from its own App, a refiner only on an issue with no
-`<!-- refiner-summary -->` comment yet. A SECOND `role_died` on the same subject is not a third try
+`<!-- refiner-summary -->` comment yet, an expert never (a died expert, like an `expert_finished` event, needs nothing from you: the human launches it by command and answers its summary comment). A SECOND `role_died` on the same subject is not a third try
 -- a role that keeps dying is a defect in the mechanism, not work to retry, so ask the human (a
 mention plus `status:blocked-on-human` on the issue that run was for, naming both deaths and both
 logs).

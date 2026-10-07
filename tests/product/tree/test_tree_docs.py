@@ -18,7 +18,7 @@ import pytest
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import TreeConfig
 from agent_os.product.tree.checks import CHECKS
-from agent_os.product.tree.compile import MECHANISM_UNRESOLVABLE, MISSING_VERIFICATION
+from agent_os.product.tree.compile import MECHANISM_UNRESOLVABLE
 from agent_os.product.tree.models import (
     Challenge,
     Decision,
@@ -61,9 +61,8 @@ def test_the_docs_table_lists_no_check_the_doctor_lacks():
     assert documented == set(CHECKS)
 
 
-def test_the_docs_name_the_two_escalation_codes():
+def test_the_docs_name_the_escalation_code():
     section = section_of_the_tree_doc()
-    assert f"`{MISSING_VERIFICATION}`" in section
     assert f"`{MECHANISM_UNRESOLVABLE}`" in section
 
 
