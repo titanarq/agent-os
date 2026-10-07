@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agent_os.product.tree.hardening import HardeningBlocker
-from agent_os.product.tree.models import Experiment, Node
+from agent_os.product.tree.models import MECHANISM_PENDING, Experiment, Node
 
 if TYPE_CHECKING:
     from agent_os.product.tree.slicing import Slice
@@ -105,3 +105,40 @@ def render_decisions(cut: Slice, *, level: int) -> str:
         ]
         blocks.append("\n".join(block))
     return "\n\n".join([heading, *blocks])
+
+
+ANCESTOR_FINDINGS_NOTE = "Findings of this ancestor's experiments -- settled, so obey them:"
+
+
+def ancestor_findings(ancestor: Node) -> list[dict[str, str]]:
+    """What an ancestor's experiments found, as `kind`, `question` and `finding`, one entry each:
+    an owner's answer (a limit, the language) or a decided stack binds the work below, and an
+    experiment that found nothing yet (`open`) has nothing to hand down. Whitespace is collapsed so
+    an entry is one line wherever it is shown."""
+    return [
+        {
+            "kind": experiment.kind,
+            "question": " ".join(experiment.question.split()),
+            "finding": " ".join((experiment.finding or "").split()),
+        }
+        for experiment in ancestor.experiments
+        if experiment.finding is not None
+    ]
+
+
+def render_ancestor_findings(ancestor: Node) -> list[str]:
+    findings = ancestor_findings(ancestor)
+    if not findings:
+        return []
+    lines = [f"{entry['kind']}: {entry['question']} -- {entry['finding']}" for entry in findings]
+    return ["", ANCESTOR_FINDINGS_NOTE, *bullets(lines)]
+
+
+MECHANISM_PENDING_NOTE = (
+    f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "
+    "(experimenting first if feasibility is in doubt) and writes it back into this node's file in the "
+    "same pull request; it is never left in a transcript."
+)
+ANCESTOR_ACCEPTANCE_NOTE = (
+    "Acceptance of this ancestor -- what the work on this node serves and must not break:"
+)
