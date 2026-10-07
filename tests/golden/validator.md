@@ -152,6 +152,20 @@ in its own spelling: the `@<login>` first line, `## Doubts` and the other sectio
 written from the template, and the validator's criterion-by-criterion checklist, which is the
 worker's next brief.
 
+A PULL REQUEST THAT TOUCHES THE OWNER'S WHAT
+(docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md.) From inside the worktree
+run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions guard-what <pr>`. No output and exit 0: nothing
+here. Any line, exit 1: the pull request touches a goal node or an evaluator, so it is never merged
+automatically; say so on the first line of the review.
+- When the pull request body carries `Session-Answer: #S` it claims to transcribe what the owner
+  answered in question session #S. Run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions
+  verify-answer <pr> --session S`. Exit 0 means every changed file is a node whose only change is
+  the owner's answer, word for word: record that as its own verdict, with the command and its
+  output. Any line it prints is a way the pull request is more than a transcription, and a pull
+  request that claims an answer it does not transcribe is changes requested.
+- A pull request that touches the what and claims no answer is reviewed like any other for its
+  code, and the review says it waits for the owner's own merge.
+
 WHAT HAPPENS AFTER THE REVIEW
 - Approved: `"$AGENT_OS_PYTHON" -m agent_os.issues move N review`. The human merges -- merging is
   never an agent's act (docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md).

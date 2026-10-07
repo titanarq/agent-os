@@ -14,6 +14,7 @@ mechanism: |-
   place where the product asks something in real time) and a question session, one GitHub issue per
   session. Questions are recorded when they arise, each with its default answer, and reach the expert
   first; a question of what blocks the hardening of its node until it is answered.
+implementation: '`agent_os/product/sessions/` -- the question session issue, the reply grammar and the judgments log (`docs/AGENT_OS.md` §4.9); the test session is not built yet'
 ---
 Nothing waits on the owner in real time. Questions are recorded when they arise and
 answered in test sessions or question sessions the owner opens. A doubt about what a part

@@ -116,6 +116,16 @@ normal evaluation under every rule above. The nudge earns the issue a look, noth
 overrides a rule, a cap, or a `status:blocked-on-human` issue, and if the comment asks for
 something outside your role, say so in your summary rather than doing it.
 
+AN OWNER'S REPLY ON A QUESTION SESSION IS TRANSCRIBED, NOT INTERPRETED
+When the issue you were woken for opens with `<!-- question-session:v1 -->`, it is a question session
+the owner answered. Run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions answers <N>` and read what it
+says: the answers it parsed, the reclaims, and any `problem:` line. Never reword an answer. Write one
+task issue asking a worker to run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions apply <N>` on a
+branch, commit exactly what it wrote, and open a pull request whose body carries `Session-Answer: #<N>`
+on its own line. That pull request touches the what and is merged on the owner's word, which the
+answer is: the validator checks the transcription and nothing merges it automatically. A question
+the owner left unanswered keeps its default and is not yours to settle.
+
 AN ORPHAN `status:doing` ISSUE IS YOURS TO SETTLE
 An `orphan_doing` event names an issue the board says is running while no worker is: a run the
 guard cut and nobody relaunched, or a label a human's reply left behind. The guard only detects

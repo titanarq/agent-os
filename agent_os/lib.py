@@ -986,10 +986,10 @@ class TreeConfig(Strict):
     # default, like `project.guard_unit`: a mechanism that does not know a host's class names does
     # not invent one, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
     ticket_budget_class: str = ""
-    # Labels every compiled ticket carries besides its task type label -- a host marks the tickets
-    # that came from its tree, or names the module they belong to, here. The initial `status:*`
-    # label is deliberately not decided by `compile`: creating the issues is Phase 2's wiring.
+    # Labels every compiled ticket carries besides its task type label (a host marks tree tickets or
+    # names their module). The initial `status:*` label is not decided by `compile`: Phase 2's wiring.
     ticket_labels: list[str] = []
+    owner_only_paths: list[str] = []  # evaluators besides goals (fnmatch): never auto-merged
 
 
 class AgentsConfig(Strict):

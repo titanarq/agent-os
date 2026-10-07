@@ -11,6 +11,7 @@ mechanism: |-
   Stages 1-2. A pull request touching a goal or an evaluator is merged only on the owner's word: the
   owner's merge, or a question-session answer the validator checks it transcribes exactly. When a
   goal changes, agent-os-tree lists its descendants and the refiner reviews them.
+implementation: '`agent-os-sessions guard-what` and `verify-answer` (`agent_os/product/sessions/what_guard.py`, `transcription.py`), condition 6 of the control plane''s merge gate and the validator prompt; the descendants review on a changed goal is not built yet'
 ---
 Adding or changing a goal, or anything that decides whether a goal is met, is the owner's
 decision; the change then reaches everything that hangs from it.

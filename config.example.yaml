@@ -291,6 +291,11 @@ tree:
   # `status:*` label is not decided here -- `compile` only renders; creating the issues and the
   # state they start in is the wiring of Phase 2.
   ticket_labels: []
+  # Files besides goal nodes that are the owner's what -- the evaluators of the method (its battery,
+  # the thresholds of its indicators, the rule that tells what from how), as fnmatch globs on
+  # repository paths. A pull request touching one of them, or a goal node, is never merged
+  # automatically (`agent-os-sessions guard-what`, docs/AGENT_OS.md §4.9). Default: none.
+  owner_only_paths: []
 
 # The code-quality ratchet (`agent-os-quality`, docs/AGENT_OS.md §4.8). Every key is optional; the
 # values below are the defaults. New files and folders must be within the limits and touched ones

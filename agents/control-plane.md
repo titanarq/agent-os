@@ -84,8 +84,14 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
    compare content, not commits).
 5. The PR body closes exactly the issue it was dispatched for, and the module doc changed if
    behaviour or a contract changed.
+6. The PR does not touch the owner's what: `python -m agent_os.product.sessions guard-what N`
+   prints nothing and exits 0. Any line it prints means the PR changes a goal node or an evaluator,
+   and it is never merged automatically -- leave it for the human's own merge, with that line as
+   the reason. The one exception is a PR whose body carries `Session-Answer: #S` when the validator's
+   review records that `verify-answer N --session S` exited 0 (the PR is exactly the owner's answer);
+   run that command yourself too, and merge only if it exits 0.
 
-Then merge through REST, pinned to the head SHA you verified the five conditions on
+Then merge through REST, pinned to the head SHA you verified the six conditions on
 (`gh pr view N --json headRefOid,headRefName`, read before you started checking):
 
 ```bash
@@ -95,7 +101,7 @@ gh api -X DELETE repos/__REPO__/git/refs/heads/<head branch>
 
 The method is the host's `project.merge_method`; never pick another one by hand. REST, not the
 `gh pr` merge subcommand: that one goes through GraphQL and its secondary rate limit. A `409` means
-the head moved after you verified it: that is a new PR state, so verify all five conditions again
+the head moved after you verified it: that is a new PR state, so verify all six conditions again
 on the new head -- never retry the merge with the new SHA. A `405` means GitHub refuses the merge
 (method not allowed on the repository, branch protection, a conflict): report it, do not work
 around it. Delete the branch only after the merge answered `"merged": true`. Then
