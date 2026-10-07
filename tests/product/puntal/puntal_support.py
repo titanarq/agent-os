@@ -23,8 +23,10 @@ NODE_FILE = BENCH / "nodes" / "uc-1-file-a-ticket.md"
 BOARD_NODE_FILE = BENCH / "nodes" / "uc-3-see-the-board.md"
 
 
-def write_config(tmp_path, *, puntal_section=None, puntal_class=None, class_backend=None):
-    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+def write_config(
+    tmp_path, *, puntal_section=None, puntal_class=None, class_backend=None, base=EXAMPLE_CONFIG
+):
+    data = yaml.safe_load(base.read_text())
     data["puntal"].update(puntal_section or {})
     data["classes"]["puntal"].update(puntal_class or {})
     if class_backend:

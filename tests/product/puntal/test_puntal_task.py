@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 import pytest
-from conftest import EXAMPLE_CONFIG
+from conftest import EXAMPLE_CONFIG, MULTI_BACKEND_CONFIG
 
 from agent_os import guard as agent_guard
 from agent_os.lib import (
@@ -431,7 +431,9 @@ def test_it_refuses_an_unusable_request(environment, tmp_path, missing):
 def test_it_refuses_a_puntal_class_on_a_backend_whose_stream_it_cannot_confine(
     environment, tmp_path
 ):
-    environment["AGENTS_CONFIG_PATH"] = str(write_config(tmp_path, class_backend="qwen"))
+    environment["AGENTS_CONFIG_PATH"] = str(
+        write_config(tmp_path, class_backend="qwen", base=MULTI_BACKEND_CONFIG)
+    )
     result = drive(environment, payload={})
     assert result.returncode == puntal.EXIT_NOT_RUN
     assert "qwen_jsonl" in result.stderr and not (tmp_path / "argv.log").exists()

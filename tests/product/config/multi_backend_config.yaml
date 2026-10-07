@@ -160,6 +160,17 @@ classes:
       backend: qwen
       model: qwen3.8-max
       ceilings: [max_context, max_total_tokens]
+  expert:
+    role: expert
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 200000
+    max_cost_usd: 5.0
+    max_total_tokens: 10000000
+    commit_warn_turns: 30
+    commit_cut_turns: 50
+    qwen_fallback_eligible: false
+
   puntal:
     role: puntal
     backend: claude

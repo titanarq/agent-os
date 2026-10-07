@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 import yaml
-from conftest import EXAMPLE_CONFIG
+from conftest import SHIPPED_EXAMPLE_CONFIG
 from test_agent_task import (  # the launch fixtures are shared, not copied
     DRIVER,
     NO_VERDICT_CACHE_DIR,
@@ -96,7 +96,7 @@ def test_the_expert_is_a_one_shot_role_the_guard_watches_and_announces():
 
 
 def test_the_expert_has_its_own_class_name_in_the_example_config():
-    classes = yaml.safe_load(EXAMPLE_CONFIG.read_text())["classes"]
+    classes = yaml.safe_load(SHIPPED_EXAMPLE_CONFIG.read_text())["classes"]
     assert [name for name, body in classes.items() if body.get("role") == "expert"] == ["expert"]
 
 
