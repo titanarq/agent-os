@@ -52,8 +52,10 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import analysis
+import analysis_paths
 import domain
 import yaml
+from sessions import SESSION_NUMBERS, SESSIONS, Step
 from store import Store
 
 from agent_os.lib import load_agents_config
@@ -66,6 +68,7 @@ NODES_DIR = HERE / "nodes"
 FAKE_BACKEND = HERE / "fake_claude.py"
 PERSISTENCE_API = HERE / "persistence_api.txt"
 STORE_CLI = HERE / "store.py"
+EXECUTOR_CLI = HERE / "executor.py"
 
 # THE cap on real invocations, across every run of this script on this machine. Calibration (2) + the
 # main stage (3 sessions of 8) + the reserve (4). Changing it is a decision to spend more, and belongs
@@ -77,51 +80,6 @@ RESERVE_MAX_PER_RUN = 4
 # burn the cap on failures: two failed invocations in a row stop a stage, one stops the calibration.
 FAILURE_STREAK_LIMIT = 2
 
-Step = tuple[str, dict]
-
-# Three sessions over one store. Session 1 starts on an empty store and establishes facts; 2 and 3
-# must find them, extend them and report them correctly. Each session mixes every action, the gap one
-# (`export_csv`, whose node does not describe exporting) among them, and each carries requests the
-# rules must refuse.
-SESSIONS: dict[str, list[Step]] = {
-    "s1": [
-        (
-            "create_ticket",
-            {"title": "Printer on floor 2 jams on every duplex job", "priority": "high"},
-        ),
-        ("create_ticket", {"title": "Wifi drops in meeting room B", "priority": "normal"}),
-        ("create_ticket", {"title": "Add a dark theme to the dashboard", "priority": "low"}),
-        ("change_status", {"id": "T-1", "status": "in_progress"}),
-        ("change_status", {"id": "T-2", "status": "resolved", "note": "Rebooted the access point"}),
-        ("show_board", {}),
-        ("board_report", {}),
-        ("export_csv", {}),
-    ],
-    "s2": [
-        ("show_board", {}),
-        ("change_status", {"id": "T-1", "status": "resolved", "note": "Replaced the fuser unit"}),
-        ("create_ticket", {"title": "Rotate the shared mailbox password", "priority": "high"}),
-        ("change_status", {"id": "T-2", "status": "in_progress"}),
-        ("change_status", {"id": "T-3", "status": "in_progress"}),
-        ("change_status", {"id": "T-9", "status": "in_progress"}),
-        ("board_report", {}),
-        ("export_csv", {}),
-    ],
-    "s3": [
-        ("board_report", {}),
-        ("create_ticket", {"title": "Archive last year's invoices", "priority": "low"}),
-        ("change_status", {"id": "T-4", "status": "in_progress"}),
-        ("change_status", {"id": "T-1", "status": "in_progress"}),
-        (
-            "change_status",
-            {"id": "T-3", "status": "resolved", "note": "Dark theme shipped behind a flag"},
-        ),
-        ("show_board", {}),
-        ("export_csv", {}),
-        ("board_report", {}),
-    ],
-}
-SESSION_NUMBERS = {"1": "s1", "2": "s2", "3": "s3"}
 # The calibration's two calls. The first carries the smallest brief and no tool call: the context
 # floor, cold. The second, warm, makes ONE read through the persistence tool: it proves the tool is
 # reachable and permitted before a session is spent finding out, and costs one tool round trip.
@@ -203,6 +161,7 @@ class Context:
         self.config_file = self.workdir / "agents.yaml"
         self.cache_dir = self.workdir / "cache"
         self.model = args.model
+        self.path = args.puntal_path
         self.effort = args.effort
         self.timeout = args.timeout
         self.fault = getattr(args, "fake_fault", "") or ""
@@ -231,12 +190,16 @@ class Context:
     def persistence_command(self) -> str:
         return shlex.join([sys.executable, str(STORE_CLI), "--dir", str(self.store_dir)])
 
+    def executor_command(self) -> str:
+        return shlex.join([sys.executable, str(EXECUTOR_CLI), "--dir", str(self.store_dir)])
+
     def environment(self) -> dict[str, str]:
         environment = dict(os.environ)
         environment.update(
             AGENTS_CONFIG_PATH=str(self.config_file),
             AGENT_CACHE_DIR=str(self.cache_dir),
             PUNTAL_PERSISTENCE_COMMAND=self.persistence_command(),
+            PUNTAL_EXECUTOR_COMMAND=self.executor_command(),
         )
         if self.mode == "dry":
             environment.update(
@@ -360,6 +323,8 @@ def run_invocation(
         context.model,
         "--telemetry-file",
         str(context.telemetry_file),
+        "--path",
+        context.path,
     ]
     if context.effort:
         command += ["--effort", context.effort]
@@ -482,6 +447,7 @@ def require_budget(context: Context, calls: int) -> None:
         model=context.model,
         effort=context.effort,
         max_cost_usd=config.classes["puntal"].max_cost_usd,
+        with_state_tool=context.path == "slow",
     )
     print(f"preflight ({executable}): {preflight_backend(executable, flags)}", flush=True)
 
@@ -725,6 +691,11 @@ def summarize(
         )
     out("")
     out(f"MAIN STAGE (n={len(main)}; outcomes {analysis.outcomes(main)})")
+    split = analysis_paths.path_report(main)
+    out(
+        f"  paths {split['paths']}; {split['retried']} needed a retry turn, "
+        f"{split['executor_refusals']} were refused by the executor at least once"
+    )
     latency = analysis.latency_report(main)
     out(stats_line("full response (total)", latency["total"]))
     out(stats_line("first signal (first text delta)", latency["first_text_delta"]))
@@ -829,6 +800,7 @@ def summarize(
     machine = {
         "n": {"calibration": len(calibration), "main": len(main), "reserve": len(reserve)},
         "outcomes": analysis.outcomes(main),
+        "paths": analysis_paths.path_report(main),
         "latency": latency,
         "cost": cost,
         "cache": cache,
@@ -860,6 +832,13 @@ def build_parser() -> argparse.ArgumentParser:
             help="make REAL calls, counted against the cap",
         )
         sub.add_argument("--model", default=DEFAULT_MODEL)
+        sub.add_argument(
+            "--puntal-path",
+            choices=["slow", "fast"],
+            default="slow",
+            help="the driver's path: `slow` (default) is the Phase 0 tool loop this bench was "
+            "built to measure; `fast` plans in one turn and the bench's executor applies it",
+        )
         sub.add_argument("--effort", default="")
         sub.add_argument(
             "--timeout",

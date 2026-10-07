@@ -1,3 +1,7 @@
+---
+reads:
+  - get tickets {payload.id}
+---
 # Node UC-2: move a ticket along its life
 
 ## Ancestor goals

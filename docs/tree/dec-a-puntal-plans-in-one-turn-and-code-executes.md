@@ -49,3 +49,29 @@ This contract is a how (`dec-the-cycle-applies-at-every-scale`): it changes with
 mechanical steps a puntal keeps doing are, one by one, candidates to move into helpers.
 `dec-puntales-run-as-headless-processes` stays in force -- a puntal is still a headless Claude Code
 process; what changed is what it is asked to do in that process.
+
+**Implementation (#115, 2026-10-07).** `agent_os/product/puntal/` (a package; `fast/` holds the four
+parts' shared shapes, `docs/AGENT_OS.md` §4.7 describes them):
+
+1. *Pre-helper*: `fast/pre_helper.py`. The node declares what its action reads in its frontmatter,
+   `reads:`, a list of read commands of the app's persistence API (`list tickets`,
+   `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The tree
+   schema carries the field (`agent_os/product/tree/models.py`, `Node.reads`) and the driver reads it
+   tolerantly. A caller may add reads of its own (`--read`, or `reads` in the JSON request).
+2. *The puntal*: one `claude -p` with no tool (`--tools=`), contract `prompts/puntal.md`; its response
+   is the plan, `{"operations": [...], "answer": ...}`, with the shape and validation of
+   `fast/operations.py` (`put`, `update`, `delete`, `allocate` with `{{name}}` placeholders).
+3. *Executor*: the interface is `fast/executor.py` (the app's command reads the operations on stdin and
+   prints `{"ok": ..., "bindings": ...}` or `{"ok": false, "errors": [...]}`); a refusal goes back for
+   one retry turn. `fast/reference_executor.py` is a reference implementation and
+   `bench/puntal/executor.py` applies it to the bench's JSON store.
+4. *Post-helpers*: the response is released before the telemetry line (schema 2) and the `runs.tsv`
+   row are written.
+
+The slow path is the Phase 0 tool loop under `prompts/puntal_slow.md`, entered when the plan says
+`needs_state`; the telemetry carries `path` and `slow_path_reason`. The owner's accept, reject or
+retry is `puntal_task.sh feedback` (`.cache/puntal/feedback.jsonl`, keyed by `invocation_id`), and every
+record carries its `versions` (`agent_os/product/records/versions.py`). A host's shell calls the whole
+thing through one entry independent of its stack, `puntal_task.sh --json` (`json_api.py`).
+Not measured yet: the first measurement is on the vector's real actions.
+
