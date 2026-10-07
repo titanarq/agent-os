@@ -712,24 +712,20 @@ def test_a_dry_run_uses_the_fake_and_a_real_run_never_inherits_it(tmp_path, monk
     assert "PUNTAL_BENCH_COUNTER_FILE" not in measure.scrub_backend_overrides()
 
 
-def test_the_generated_config_loads_and_carries_the_overrides(tmp_path):
+@pytest.mark.parametrize(
+    "host", [AGENT_OS_DIR, AGENT_OS_DIR.parent], ids=["is-mechanism", "vendored"]
+)
+def test_the_generated_config_loads_and_carries_the_overrides(tmp_path, monkeypatch, host):
+    monkeypatch.setenv("AGENT_OS_HOST_ROOT", str(host))
+    overrides = ["--class-override", "max_context=64000", "--puntal-override", "timeout_seconds=45"]
     args = measure.build_parser().parse_args(
-        [
-            "--workdir",
-            str(tmp_path),
-            "calibrate",
-            "--dry-run",
-            "--class-override",
-            "max_context=64000",
-            "--puntal-override",
-            "timeout_seconds=45",
-        ]
+        ["--workdir", str(tmp_path), "calibrate", "--dry-run", *overrides]
     )
     context = measure.Context(args, mode="dry")
     context.prepare()
     config = load_agents_config(context.config_file)
     assert config.classes["puntal"].max_context == 64000 and config.puntal.timeout_seconds == 45
-    api = (AGENT_OS_DIR / config.puntal.persistence_api_file).resolve()
+    api = (host / config.puntal.persistence_api_file).resolve()
     assert api == (BENCH / "persistence_api.txt").resolve()
 
 

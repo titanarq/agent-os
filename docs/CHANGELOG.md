@@ -30,6 +30,15 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #133 -- the first v2 host's adoption PR was red in both workflows. `agent-os-quality` now always
+  skips the config file it loaded when that file is inside the repository (a host's
+  `config/agents.yaml`, generated from the 466-line example), next to `tree.root` and the vendored
+  mechanism directory, so a host replacing `quality.excluded_paths` cannot lose it. The puntal bench
+  test resolved the generated `persistence_api_file` against the mechanism's directory although the
+  config (and `options.py`) resolve it against the host root; under `agent_os/` in a host the two
+  differ, so the test now resolves against the host root and runs for both layouts (the code was
+  right, the test assumed the mechanism is the repository root).
+
 - Stage 1 loose ends (#130): agent-os's own CI now runs `agent-os-tree trailers --base
   origin/<base> --root docs/tree` on pull requests, so a commit touching `docs/tree/` without a
   `Node-Change` trailer fails there as it does in a host. The standing instruction for a reply to a
