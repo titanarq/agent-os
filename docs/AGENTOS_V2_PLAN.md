@@ -274,10 +274,10 @@ written in Stage 1.
 | What | Where | Key |
 |---|---|---|
 | Changes to a node | a `Node-Change: usage \| rework \| owner` trailer on every commit that changes a file under the host's `product/`; the nodes are the files the commit touches | host git history |
-| Puntal invocations | host `.cache/puntal/telemetry.jsonl` (exists, schema 1) | `invocation_id` |
-| Owner feedback on a puntal answer (accept, reject, retry) | host `.cache/puntal/feedback.jsonl` | `invocation_id` |
+| Puntal invocations | host `.cache/puntal/telemetry.jsonl` (exists, schema 2 since #115) | `invocation_id` |
+| Owner feedback on a puntal answer (accept, reject, retry) | host `.cache/puntal/feedback.jsonl` (exists since #115: `puntal_task.sh feedback`) | `invocation_id` |
 | A judgment an agent took alone, and its later outcome | host `.cache/judgments/judgments.jsonl` and `.cache/judgments/outcomes.jsonl` | judgment id |
-| Versions | every record carries the model, the CLI version and the method version (the agent-os subtree commit and the digest of the prompt that ran) | -- |
+| Versions | every record carries the model, the CLI version and the method version (the agent-os subtree commit and the digest of the prompt that ran); `agent_os/product/records/versions.py` (#115), reused by the judgments log | -- |
 | Spend | `.cache/<role>/runs.tsv` and `.cache/spend/` (exist) | -- |
 | Cited evidence | host `evidence/<YYYY-MM>/<record-id>.json`, copied when something cites it | record id |
 

@@ -231,12 +231,13 @@ planner:
   # refiner unattended. False until a human has reviewed one of its dry runs.
   refiner_unattended: false
 
-# The puntal (Agentos v2, Phase 0): the live stand-in for one UI action that has no hand-written
+# The puntal (Agentos v2): the live stand-in for one UI action that has no hand-written
 # implementation yet, a one-shot headless process per click (`bin/puntal_task.sh`, ADR
 # 2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code).
-# Every key is optional and these are the defaults, but the driver refuses to run a puntal that has
-# no `persistence_command` (state is real from day one: a puntal that cannot persist contradicts
-# itself between sessions).
+# It plans in one model turn with no tool and the app's code executes the plan (docs/AGENT_OS.md
+# §4.7). Every key is optional and these are the defaults, but the driver refuses to run a puntal
+# that has no `persistence_command` (state is real from day one: a puntal that cannot persist
+# contradicts itself between sessions) and, on its default path, one that has no `executor_command`.
 puntal:
   # The app's persistence API: the command (shell-split) the puntal's ONE tool runs, from the
   # host's root, with the arguments the puntal gives it -- `./state get tickets T-1` runs
@@ -248,11 +249,25 @@ puntal:
   # A text file (relative to the host's root) describing that command's subcommands, rendered into
   # the puntal's contract so it spends no turn asking `--help`. Empty renders nothing there.
   persistence_api_file: ""
+  # The app's EXECUTOR: the command (shell-split, run from the host's root) that applies a puntal's
+  # validated operations atomically through the app's own API. It reads `{"operations": [...]}` on
+  # stdin and prints `{"ok": true, "bindings": {...}}` or `{"ok": false, "errors": [...]}`, exit 0
+  # either way (`agent_os/product/puntal/fast/executor.py`). Empty: the driver refuses a click it
+  # could not finish, unless the caller asks for the plan alone (`--json --plan-only`).
+  # `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it. Example:
+  #   executor_command: .venv/bin/python scripts/app_executor.py
+  executor_command: ""
+  # The first words a node's declared read (`reads:` in its frontmatter) may start with: the
+  # persistence API's subcommands that change nothing. Any other is skipped, so a node file can
+  # never make the pre-helper write.
+  read_subcommands: [get, list]
+  # The executor is code on the click's critical path: cut after this many seconds.
+  executor_timeout_seconds: 30
   # Kills the run's process group after this many seconds. A hung-process SAFETY for a person
   # waiting on a click, never a budget: spend is bounded by `classes.puntal` below.
   timeout_seconds: 90
-  # The most tool calls one invocation may make before the driver cuts it (a loop guard; a run with
-  # no commits has no commit cadence to catch one).
+  # The most tool calls one invocation's SLOW path may make before the driver cuts it (a loop
+  # guard; a run with no commits has no commit cadence to catch one). The fast path has no tool.
   max_tool_calls: 12
   # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
   effort: ""

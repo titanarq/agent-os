@@ -2,10 +2,12 @@
 
 - Date: 2026-10-04
 - Status: accepted (a spike: the numbers decide whether it stays, `docs/spikes/2026-10-puntal-latency.md`)
-- Modules: puntal driver (`bin/puntal_task.sh`, `agent_os/puntal.py`), `agent_os/lib.py` (`TaskClass`,
+- Modules: puntal driver (`bin/puntal_task.sh`, `agent_os/product/puntal/`), `agent_os/lib.py` (`TaskClass`,
   `PuntalConfig`), `prompts/puntal.md`, `bench/puntal/`
 - Plan: `docs/AGENTOS_V2_PLAN.md`, Phase 0; founding decisions 4 and 6
 - Note 2026-10-07 (#112): `agent_os/puntal.py` is now `agent_os/product/puntal.py`; the decision is unchanged.
+- Note 2026-10-07 (#115): the contract of the process changed, the decision did not -- see the dated
+  paragraph at the end.
 
 ## Context
 
@@ -112,3 +114,29 @@ hooks, tens of thousands of tokens that have nothing to do with the click.
   decision is reviewed against those numbers.
 - Not decided here: how a node slice is produced (Phase 1), what the refiner does with the telemetry
   (Phase 4), and whether the ceilings and `timeout_seconds` stay at their placeholder values.
+
+## Update, 2026-10-07 (#115): the contract inside the process is v2
+
+The Phase 0 numbers made the tool loop a no-go, and `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`
+(2026-10-06) changed what a click asks of the process. This ADR's decisions -- one headless
+`claude -p` per click, its own class and `runs.tsv`, the confinement, the telemetry as a contract --
+stand, with these consequences:
+
+- **The default path has no tool.** The turn runs with `--tools=` and returns a plan (operations and
+  answer) as JSON; agent-os validates the shape and the app's executor applies it. "The puntal cannot
+  write code" is now stronger on that path -- there is nothing to audit but a tool call, which is a
+  contract violation -- and the layers of decision 3 apply to the **slow path**, the old tool loop
+  under `prompts/puntal_slow.md`, entered when the plan says it needs state its node did not declare
+  (or forced with `--path slow`).
+- **Up to three model turns per invocation**, never more: the plan, at most one retry (a rejected
+  plan, or an executor that refused it) and at most one slow turn. The class's ceilings bind the
+  invocation, so a later turn runs with what the earlier ones left; `timeout_seconds` is per turn.
+- **The telemetry schema is 2.** One record per invocation; it adds the path, the declared reads, the
+  plan, the executor, the turns and the `versions` object, and two outcomes (`invalid_plan`,
+  `executor_failed`) with their exit statuses `5` and `6`.
+- **New optional `puntal:` keys**: `executor_command`, `read_subcommands`, `executor_timeout_seconds`.
+  The fast path refuses (exit `2`) without an executor unless the caller asks for the plan alone
+  (`--json --plan-only`). A node declares the state it reads as `reads:` in its frontmatter.
+- **The Python half is a package**, `agent_os/product/puntal/`, split by responsibility, with the
+  recording helpers every v2 log shares in `agent_os/product/records/`.
+

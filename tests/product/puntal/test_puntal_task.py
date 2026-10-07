@@ -13,17 +13,14 @@ Pure filesystem and subprocess. This file must not request the `engine` or `db_s
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
 
 import pytest
-import yaml
 from conftest import EXAMPLE_CONFIG
 
 from agent_os import guard as agent_guard
-from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
     PROMPTS_DIR,
     PuntalConfig,
@@ -36,64 +33,16 @@ from agent_os.product import puntal
 
 pytestmark = pytest.mark.usefixtures("no_real_backend")
 
-DRIVER = AGENT_OS_DIR / "bin" / "puntal_task.sh"
-BENCH = AGENT_OS_DIR / "bench" / "puntal"
-FAKE = BENCH / "fake_claude.py"
-STORE_CLI = BENCH / "store.py"
-NODE_FILE = BENCH / "nodes" / "uc-1-file-a-ticket.md"
-BOARD_NODE_FILE = BENCH / "nodes" / "uc-3-see-the-board.md"
-
-
-def write_config(tmp_path, *, puntal_section=None, puntal_class=None, class_backend=None):
-    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
-    data["puntal"].update(puntal_section or {})
-    data["classes"]["puntal"].update(puntal_class or {})
-    if class_backend:
-        data["classes"]["puntal"]["backend"] = class_backend
-    path = tmp_path / "agents.yaml"
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
-    return path
-
-
-@pytest.fixture
-def environment(tmp_path):
-    """The driver's launch path with every write moved under tmp_path, the fake as its backend and no
-    latency: nothing real is reachable from a run in this fixture."""
-    env = dict(os.environ)
-    env.update(
-        AGENTS_CONFIG_PATH=str(write_config(tmp_path)),
-        AGENT_CACHE_DIR=str(tmp_path / "cache"),
-        PUNTAL_CLAUDE_BIN=str(FAKE),
-        PUNTAL_PERSISTENCE_COMMAND=f"{sys.executable} {STORE_CLI} --dir {tmp_path / 'store'}",
-        FAKE_PUNTAL_LATENCY="0",
-        FAKE_PUNTAL_STATE_DIR=str(tmp_path / "fake-state"),
-        FAKE_PUNTAL_ARGV_LOG=str(tmp_path / "argv.log"),
-        FAKE_PUNTAL_PID_FILE=str(tmp_path / "fake.pid"),
-    )
-    env.pop("FAKE_PUNTAL_FAULT", None)
-    env.pop("FAKE_PUNTAL_PLAYBOOK", None)
-    return env
-
-
-def drive(environment, *arguments, node=NODE_FILE, action="create_ticket", payload=None):
-    command = ["bash", str(DRIVER), "--action", action, "--node-file", str(node)]
-    if payload is not None:
-        command += ["--payload", json.dumps(payload)]
-    return subprocess.run(
-        [*command, *arguments], env=environment, capture_output=True, text=True, check=False
-    )
-
-
-def telemetry_of(tmp_path) -> list[dict]:
-    path = tmp_path / "cache" / "telemetry.jsonl"
-    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-
-
-def play(tmp_path, environment, steps):
-    playbook = tmp_path / "playbook.json"
-    playbook.write_text(json.dumps(steps))
-    environment["FAKE_PUNTAL_PLAYBOOK"] = str(playbook)
-
+from puntal_support import (
+    BOARD_NODE_FILE,
+    DRIVER,
+    STORE_CLI,
+    drive,
+    play,
+    puntal_environment,  # noqa: F401  (the `environment` fixture)
+    telemetry_of,
+    write_config,
+)
 
 # --- the launch -------------------------------------------------------------------------------
 
@@ -248,6 +197,8 @@ def test_concurrent_runs_never_interleave_their_telemetry(environment, tmp_path)
                 "show_board",
                 "--node-file",
                 str(BOARD_NODE_FILE),
+                "--path",
+                "slow",
                 "--invocation-id",
                 f"parallel-{index}",
             ],
@@ -696,7 +647,7 @@ def test_the_state_shim_runs_the_persistence_command_from_the_hosts_root(tmp_pat
 
 def test_the_contract_template_renders_with_its_placeholders_answered():
     text = render_prompt(
-        "puntal",
+        "puntal_slow",
         {"PERSISTENCE_API": "- `__STATE_COMMAND__ get <c> <id>`", "STATE_COMMAND": "./state"},
     )
     assert "`./state get <c> <id>`" in text and "__" not in text
@@ -705,9 +656,10 @@ def test_the_contract_template_renders_with_its_placeholders_answered():
 
 
 def test_the_contract_carries_the_hosts_extension_point_and_names_no_host_script():
-    template = (PROMPTS_DIR / "puntal.md").read_text()
-    assert "__PROJECT_EXTRAS__" in template
-    assert "scripts/" not in template
+    for name in ("puntal", "puntal_slow"):
+        template = (PROMPTS_DIR / f"{name}.md").read_text()
+        assert "__PROJECT_EXTRAS__" in template
+        assert "scripts/" not in template
 
 
 def test_the_example_config_has_exactly_one_puntal_class_with_per_invocation_ceilings():

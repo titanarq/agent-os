@@ -68,3 +68,35 @@ def test_the_decision_record_exists_and_is_indexed_and_named_by_the_code_that_de
 
 def test_the_schema_version_is_what_the_docs_say():
     assert f"`{puntal.TELEMETRY_SCHEMA}`" in section_4_6()
+
+
+def test_the_feedback_record_and_the_new_config_keys_are_documented():
+    from agent_os.lib import PuntalConfig
+    from agent_os.product.puntal.telemetry.feedback import FEEDBACK_FIELDS
+
+    section = section_4_6()
+    assert not [name for name in FEEDBACK_FIELDS if f"`{name}`" not in section]
+    assert not [key for key in PuntalConfig.model_fields if f"`{key}`" not in section_config()]
+
+
+def section_config() -> str:
+    return (DOCS / "AGENT_OS.md").read_text()
+
+
+def test_a_node_may_declare_what_its_action_reads_and_the_doc_names_the_field():
+    from agent_os.product.tree.models import Node
+
+    node = Node.model_validate(
+        {
+            "id": "uc-x",
+            "type": "use-case",
+            "title": "X",
+            "description": "d",
+            "parent": "fr-x",
+            "sources": ["s"],
+            "mechanism": "pending",
+            "reads": ["list tickets", "get tickets {payload.id}"],
+        }
+    )
+    assert node.reads == ["list tickets", "get tickets {payload.id}"]
+    assert "| `reads` |" in (DOCS / "AGENT_OS.md").read_text()

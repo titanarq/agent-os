@@ -57,6 +57,29 @@ that closed several small issues at once name them all. This file starts on 2026
   their tests move to `tests/product/`. `agent-os-tree` and `bin/puntal_task.sh` keep their names.
   A host that imported the old modules directly updates the import after its next subtree pull.
   See `docs/adr/2026-10-07-v2-subsystems-live-under-agent-os-product.md`.
+- #115 -- the puntal's contract v2 (Agentos v2, Stage 1; `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`).
+  `agent_os/product/puntal.py` becomes the package `agent_os/product/puntal/` (no file over 300
+  lines); `bin/puntal_task.sh` keeps its flags. A click is now a **pre-helper** (the state the node
+  declares in its frontmatter `reads:` is loaded by code), **one model turn with no tool** that returns
+  a plan -- `{"operations": [...], "answer": ...}`, four operations (`put`, `update`, `delete`,
+  `allocate`) with `{{name}}` placeholders for ids only the app can allocate -- an **executor** (the
+  app's command, `puntal.executor_command`, applies the operations atomically and reports bindings or
+  errors; one retry turn on a refusal) and **post-helpers** that run after the response is released.
+  A plan that says it needs undeclared state costs one **slow turn**, the old tool loop under
+  `prompts/puntal_slow.md`, marked in the telemetry; `--path slow` forces it. Telemetry schema **2**
+  (adds `path`, `slow_path_reason`, `versions`, `turns`, `declared_reads`, `plan`, `executor`; outcomes
+  `invalid_plan` and `executor_failed`, exit statuses `5` and `6`). New: `puntal_task.sh feedback`
+  (accept, reject, retry in `.cache/puntal/feedback.jsonl`, keyed by `invocation_id`), the versions on
+  every record (model, CLI version, agent-os commit and prompt digest; `agent_os/product/records/`,
+  reusable by the judgments log), and `puntal_task.sh --json [--plan-only]`, one JSON-in/JSON-out entry
+  independent of the app's stack. New optional config keys `puntal.executor_command`,
+  `puntal.read_subcommands`, `puntal.executor_timeout_seconds`; new tree node field `reads`
+  (`docs/AGENT_OS.md` §4.6, §4.7; ADR
+  `2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-cannot-write-code.md`,
+  dated paragraph). Host follow-up after a `subtree pull`: set `puntal.executor_command` (the fast
+  path refuses without one) or call with `--json --plan-only`; a caller that read the telemetry as
+  schema 1 reads `schema` first. The bench's `measure.py` takes `--puntal-path slow|fast` (default
+  `slow`, the Phase 0 baseline) and has an executor for its store.
 - agent-os#90 — a backend runs more than one worker at once: slots, separate from backends. The
   backend's name was the only key a run's state was kept under, so the real ceiling was one worker
   per `project.backends` entry whatever `planner.max_parallel_issues` said. New

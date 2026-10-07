@@ -1,3 +1,7 @@
+---
+reads:
+  - list tickets
+---
 # Node UC-4: report on the board
 
 ## Ancestor goals
