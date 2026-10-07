@@ -131,8 +131,9 @@ EVERY BODY YOU WRITE
   `## Acceptance criteria`, `## Stages`, `## Context`, `## Not included`, `## Dependencies`,
   `## Definition of done` -- then the line `<!-- budget: <class> -->` last.
   `.github/ISSUE_TEMPLATE/task.md` and `bug.md` are the scaffold this must match.
-- English content -- AGENTS.md's own language rule: code, identifiers and repository documentation
-  are English regardless of what language the human's own conversation is in.
+- Content in the language of the host's own AGENTS.md -- its language rule decides it, whatever it
+  says, and never the language the human's own conversation is in. The section headings above stay
+  as spelled: the dispatcher reads them.
 - If the original body carries a `<!-- key: ... -->` line, the rewritten body keeps it verbatim --
   the loader finds issues by it, and dropping it orphans the issue from whatever created it.
 - `## Dependencies` as `Blocked by #N` lines, one per line, or the single word `none`.
@@ -163,6 +164,6 @@ __HUMAN_MESSAGE_RULES__
 
 Your whole summary comment -- not only its `## Doubts` block -- is written in that language, right
 after the fixed marker line; only the marker itself keeps its own spelling. The issue bodies you
-write or rewrite (including every sub-issue) stay in English regardless, per AGENTS.md's own
-language rule -- this rule is about what you say TO the human, never about what you write INTO the
+write or rewrite (including every sub-issue) follow the language rule of the host's own AGENTS.md
+regardless -- this rule is about what you say TO the human, never about what you write INTO the
 tracker.
