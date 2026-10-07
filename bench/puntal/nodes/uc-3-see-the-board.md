@@ -1,3 +1,7 @@
+---
+reads:
+  - list tickets
+---
 # Node UC-3: see the board
 
 ## Ancestor goals
