@@ -112,7 +112,8 @@ def test_the_adr_dates_the_change_to_a_judged_verification_and_the_changelog_nam
     ):
         assert f"docs/tree/{decision}.md" in adr
     changelog = (AGENT_OS_DIR / "docs" / "CHANGELOG.md").read_text()
-    unreleased = changelog.split("## Unreleased")[1].split("\n- ", 2)[1]
+    entries = changelog.split("## Unreleased")[1].split("\n- ")
+    (unreleased,) = [entry for entry in entries if entry.startswith("Agentos v2, how pass, goal B")]
     assert "goal-without-evaluators" in unreleased and "`judge`" in unreleased
 
 
