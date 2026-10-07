@@ -792,7 +792,12 @@ The touched code is the paths named in the node's `implementation` and, once wri
 names no path touches nothing known, and a component's paths join once the tree has components
 (`docs/tree/dec-a-component-has-a-core-and-extensions.md`). Tickets come **ordered by their
 dependencies**, a dependency before whatever depends on it (foundations and then id among the
-free ones), in the text, the JSON and the files. The labels are the task type label,
+free ones). A ticket's dependencies are its node's `depends_on` **plus those of every ancestor**
+(a use case is part of its requirement, so it cannot start before the requirement can), and a
+dependency on a container stands for the work under it; a use case under a `foundation`
+requirement is ordered with the foundations. Those effective dependencies are what the ticket's
+`depends-on` marker and Dependencies section carry, and dependencies that only loop once inherited
+make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
 returned, and `compile` refuses a tree the doctor finds anything in. The code is
 `agent_os.product.tree.compile` (what is a ticket) over `agent_os.product.dispatch` (the body, the

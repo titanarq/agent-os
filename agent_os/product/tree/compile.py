@@ -53,7 +53,6 @@ from agent_os.product.tree.checks import check_tree
 from agent_os.product.tree.hardening import hardening_blockers
 from agent_os.product.tree.loader import Defect, Tree
 from agent_os.product.tree.models import MECHANISM_PENDING, Node
-from agent_os.product.tree.reference_checks import nodes_reachable_through_dependencies
 from agent_os.product.tree.slicing import assemble_slice
 
 __all__ = [
@@ -130,19 +129,72 @@ def _labels(config: AgentsConfig, extra_labels: Sequence[str]) -> tuple[str, ...
     return tuple(dict.fromkeys([available[TASK_TYPE], *config.tree.ticket_labels, *extra_labels]))
 
 
+def _ancestor_ids(tree: Tree, node_id: str) -> list[str]:
+    """The parent chain of a node, parent first. The doctor has refused a parent cycle by now."""
+    chain: list[str] = []
+    parent = tree.nodes[node_id].parent
+    while parent is not None and parent in tree.nodes and parent not in chain:
+        chain.append(parent)
+        parent = tree.nodes[parent].parent
+    return chain
+
+
+def _leaves_under(tree: Tree, node_id: str) -> list[str]:
+    """`node_id` itself when it has no children, else the childless nodes below it."""
+    children = [node.id for node in tree.nodes.values() if node.parent == node_id]
+    if not children:
+        return [node_id]
+    return [leaf for child in sorted(children) for leaf in _leaves_under(tree, child)]
+
+
+def _effective_dependencies(tree: Tree, node_id: str) -> tuple[str, ...]:
+    """What a node waits for: its own `depends_on` and those of every ancestor, because a use case
+    is part of its requirement and cannot start before the requirement can. A dependency on a
+    container is a dependency on the work under it, which is where the tickets are. Own
+    dependencies come first, then the ancestors' from the nearest, each once; the node itself and
+    its own ancestors are never among them."""
+    chain = _ancestor_ids(tree, node_id)
+    declared = [*tree.nodes[node_id].depends_on]
+    for ancestor_id in chain:
+        declared += tree.nodes[ancestor_id].depends_on
+    effective: list[str] = []
+    for target in declared:
+        for leaf in _leaves_under(tree, target):
+            if leaf != node_id and leaf not in chain and leaf not in effective:
+                effective.append(leaf)
+    return tuple(effective)
+
+
+def _is_foundation(tree: Tree, node_id: str) -> bool:
+    """A foundation, or work under a foundation requirement: it goes out with the foundations."""
+    return any(tree.nodes[member].foundation for member in (node_id, *_ancestor_ids(tree, node_id)))
+
+
 def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
-    """`node_ids` with every node after the nodes it depends on, directly or through others;
-    foundations first and then by id among the nodes that are free to go. The doctor has refused a
-    cycle by now, so this always finishes."""
+    """`node_ids` with every node after the nodes it depends on, directly, through others or
+    through its ancestors (`_effective_dependencies`); foundations first and then by id among the
+    nodes that are free to go. Dependencies that loop only once inherited are refused."""
     wanted = set(node_ids)
-    waiting_for = {
-        node_id: nodes_reachable_through_dependencies(tree, node_id) & wanted - {node_id}
-        for node_id in node_ids
-    }
+    waiting_for: dict[str, set[str]] = {}
+    for node_id in node_ids:
+        # Through a node that is no ticket (improvised, say) the order still holds, so the walk
+        # follows every edge and keeps only the tickets at the end.
+        reached: set[str] = set()
+        pending = [node_id]
+        while pending:
+            for dependency in _effective_dependencies(tree, pending.pop()):
+                if dependency not in reached:
+                    reached.add(dependency)
+                    pending.append(dependency)
+        if node_id in reached:
+            raise CompileError(
+                f"the dependencies of {node_id!r}, its requirements' included, loop back to it"
+            )
+        waiting_for[node_id] = reached & wanted
     ordered: list[str] = []
     while waiting_for:
         free = [node_id for node_id, blockers in waiting_for.items() if not blockers]
-        chosen = min(free, key=lambda node_id: (not tree.nodes[node_id].foundation, node_id))
+        chosen = min(free, key=lambda node_id: (not _is_foundation(tree, node_id), node_id))
         ordered.append(chosen)
         del waiting_for[chosen]
         for blockers in waiting_for.values():
@@ -151,13 +203,20 @@ def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
 
 
 def _render_ticket(
-    tree: Tree, node: Node, config: AgentsConfig, *, budget_class: str, tree_root: str
+    tree: Tree,
+    node: Node,
+    config: AgentsConfig,
+    *,
+    budget_class: str,
+    tree_root: str,
+    depends_on: Sequence[str],
 ) -> tuple[str, tuple[str, ...]]:
     body = render_ticket_body(
         assemble_slice(tree, node.id),
         budget_class=budget_class,
         tree_root=tree_root,
         blockers=hardening_blockers(tree, node.id),
+        depends_on=depends_on,
     )
     failures = validate_issue_body(body, task_classes=config.classes, open_issue_numbers=set())
     if failures:
@@ -201,8 +260,14 @@ def compile_tree(
     for node_id in _in_dependency_order(tree, dispatchable):
         node = tree.nodes[node_id]
         path = f"{tree_root}/{tree.paths[node_id].relative_to(tree.root).as_posix()}"
+        depends_on = _effective_dependencies(tree, node_id)
         body, touched_paths = _render_ticket(
-            tree, node, config, budget_class=budget_class, tree_root=tree_root
+            tree,
+            node,
+            config,
+            budget_class=budget_class,
+            tree_root=tree_root,
+            depends_on=depends_on,
         )
         tickets.append(
             Ticket(
@@ -212,7 +277,7 @@ def compile_tree(
                 body=body,
                 labels=labels,
                 budget_class=budget_class,
-                depends_on=tuple(node.depends_on),
+                depends_on=depends_on,
                 touched_paths=touched_paths,
             )
         )

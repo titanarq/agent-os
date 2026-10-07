@@ -8,6 +8,11 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1b (no issue; branch `fix/rollout-stage1b`) -- `compile`: a use case inherits the
+  `depends_on` of its requirements (and a dependency on a container waits for the work under it) and
+  is ordered as a foundation when a requirement above it is one; before, the use cases of a host tree
+  went out together with the foundations in id order. The ticket's `depends-on` marker carries the
+  effective dependencies. Dependencies that loop only once inherited are refused by `compile`.
 - Agentos v2, how pass, goal B (owner design discussion of 2026-10-06; no issue, branch
   `feat/v2-how-goal-b`) -- a verification is a command or a judged criterion, and a goal without
   evaluators is a red check. A `verification` entry of a node is now exactly one of `command` (with

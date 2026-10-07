@@ -94,8 +94,12 @@ def render_ticket_body(
     budget_class: str,
     tree_root: str,
     blockers: Sequence[HardeningBlocker] = (),
+    depends_on: Sequence[str] | None = None,
 ) -> str:
+    """`depends_on` is what the ticket waits for when that is more than the node declares (the
+    dependencies it inherits from its requirements); by default, the node's own."""
     node = cut.node
+    waits_for = node.depends_on if depends_on is None else depends_on
     node_file = f"{tree_root}/{cut.relative_path}"
     touched_paths = touched_paths_of(node)
     context = "\n\n".join(
@@ -124,12 +128,12 @@ def render_ticket_body(
                 "request where it made the solution worse."
             ),
         ),
-        ("## Dependencies", _dependencies_section(node.depends_on)),
+        ("## Dependencies", _dependencies_section(waits_for)),
         ("## Definition of done", _definition_of_done(node, node_file, blockers)),
     ]
     body = "\n\n".join(f"{heading}\n{text}" for heading, text in sections)
     markers = [
         f"<!-- budget: {budget_class} -->",
-        *render_marker_lines(node.id, node.depends_on, touched_paths),
+        *render_marker_lines(node.id, waits_for, touched_paths),
     ]
     return f"{body}\n\n" + "\n".join(markers) + "\n"

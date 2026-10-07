@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from compile_support import compiled, one_ticket
 from tree_helpers import experiment_entry, write_node, write_sound_tree
 
@@ -10,6 +11,7 @@ from agent_os.product.dispatch.markers import (
     parse_node_marker,
     parse_touched_paths,
 )
+from agent_os.product.tree.compile import CompileError
 
 
 def two_use_cases(root, **second_fields):
@@ -117,3 +119,67 @@ def test_a_node_whose_dependency_is_challenged_cannot_be_hardened_either(tmp_pat
     )
     done = one_ticket(tmp_path, "uc-sync").body.split("## Definition of done\n")[1]
     assert "`uc-edit`: challenge:over-cost" in done
+
+
+def write_requirement_with_use_case(root, requirement_id, use_case_id, **requirement_fields):
+    write_node(
+        root,
+        requirement_id,
+        "functional-requirement",
+        parent="goal-notes",
+        **requirement_fields,
+    )
+    write_node(
+        root,
+        use_case_id,
+        "use-case",
+        parent=requirement_id,
+        verification=[{"command": "true"}],
+    )
+
+
+def test_a_use_case_inherits_the_dependencies_of_its_requirement(tmp_path):
+    write_sound_tree(tmp_path)
+    # `fr-aaa-ui` sorts before `fr-zzz-base`, so only the inherited edge can put its use case last.
+    write_node(tmp_path, "fr-zzz-base", "functional-requirement", parent="goal-notes")
+    write_node(
+        tmp_path,
+        "uc-base-skeleton",
+        "use-case",
+        parent="fr-zzz-base",
+        verification=[{"command": "true"}],
+    )
+    write_requirement_with_use_case(
+        tmp_path, "fr-aaa-ui", "uc-aaa-screen", depends_on=["uc-base-skeleton"]
+    )
+    order = [t.node_id for t in compiled(tmp_path).tickets]
+    assert order.index("uc-base-skeleton") < order.index("uc-aaa-screen")
+    ticket = one_ticket(tmp_path, "uc-aaa-screen")
+    assert ticket.depends_on == ("uc-base-skeleton",)
+    assert parse_dependency_markers(ticket.body) == ("uc-base-skeleton",)
+
+
+def test_a_dependency_on_a_requirement_waits_for_the_use_cases_under_it(tmp_path):
+    write_sound_tree(tmp_path)
+    write_requirement_with_use_case(tmp_path, "fr-zzz-base", "uc-zzz-boot")
+    write_requirement_with_use_case(
+        tmp_path, "fr-aaa-ui", "uc-aaa-screen", depends_on=["fr-zzz-base"]
+    )
+    order = [t.node_id for t in compiled(tmp_path).tickets]
+    assert order.index("uc-zzz-boot") < order.index("uc-aaa-screen")
+    assert "uc-zzz-boot" in one_ticket(tmp_path, "uc-aaa-screen").depends_on
+
+
+def test_a_use_case_under_a_foundation_requirement_is_ordered_as_a_foundation(tmp_path):
+    write_sound_tree(tmp_path)
+    write_requirement_with_use_case(tmp_path, "fr-zzz-base", "uc-zzz-boot", foundation=True)
+    order = [t.node_id for t in compiled(tmp_path).tickets]
+    assert order.index("uc-zzz-boot") < order.index("uc-edit")
+
+
+def test_inherited_dependencies_that_loop_are_refused_instead_of_hanging(tmp_path):
+    write_sound_tree(tmp_path)
+    write_requirement_with_use_case(tmp_path, "fr-aaa", "uc-aaa", depends_on=["uc-zzz"])
+    write_requirement_with_use_case(tmp_path, "fr-zzz", "uc-zzz", depends_on=["uc-aaa"])
+    with pytest.raises(CompileError, match="uc-aaa"):
+        compiled(tmp_path)
