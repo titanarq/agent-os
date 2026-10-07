@@ -31,7 +31,11 @@ from agent_os.product.tree.hardening import HardeningBlocker, hardening_blockers
 from agent_os.product.tree.loader import Defect, Tree
 from agent_os.product.tree.models import MECHANISM_PENDING, Decision, Node, Verification
 from agent_os.product.tree.slicing_fields import (
+    ANCESTOR_ACCEPTANCE_NOTE,
+    MECHANISM_PENDING_NOTE,
+    ancestor_findings,
     bullets,
+    render_ancestor_findings,
     render_decisions,
     render_experiments_and_challenge,
     render_planning_bullets,
@@ -39,14 +43,6 @@ from agent_os.product.tree.slicing_fields import (
     yes_no,
 )
 
-MECHANISM_PENDING_NOTE = (
-    f"`{MECHANISM_PENDING}` -- not resolved yet. The first agent that needs it resolves it "
-    "(experimenting first if feasibility is in doubt) and writes it back into this node's file in the "
-    "same pull request; it is never left in a transcript."
-)
-ANCESTOR_ACCEPTANCE_NOTE = (
-    "Acceptance of this ancestor -- what the work on this node serves and must not break:"
-)
 # What marks a criterion as one an agent judges rather than a command that is run. One string for
 # the Markdown slice, the JSON slice and the ticket's acceptance criteria, so they cannot drift.
 JUDGED_BY_AGENT_LABEL = "judged by an agent"
@@ -229,6 +225,7 @@ def render_ancestors(cut: Slice, *, level: int) -> str:
         ]
         if ancestor.verification:
             block += ["", ANCESTOR_ACCEPTANCE_NOTE, *_verification_bullets(ancestor)]
+        block += render_ancestor_findings(ancestor)
         blocks.append("\n".join(block))
     return "\n\n".join([heading, *blocks])
 
@@ -263,6 +260,7 @@ def slice_as_data(cut: Slice) -> dict:
                 "description": ancestor.description,
                 "sources": ancestor.sources,
                 "verification": [verification_as_data(check) for check in ancestor.verification],
+                "experiments": ancestor_findings(ancestor),
             }
             for ancestor in cut.ancestors
         ],

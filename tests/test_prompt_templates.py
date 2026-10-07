@@ -271,3 +271,11 @@ def test_every_example_worker_class_has_a_description():
     for name, task_class in load_task_classes(SHIPPED_EXAMPLE_CONFIG).items():
         if task_class.role == "worker":
             assert task_class.description, name
+
+
+def test_the_refiner_prompt_defers_the_language_of_issues_to_the_hosts_agents_md():
+    """A host's issues may not be English: the prompt names no language for what goes into them."""
+    rules = " ".join((AGENT_OS_DIR / "prompts" / "refiner.md").read_text().split())
+    assert "stay in English" not in rules
+    assert "English content" not in rules
+    assert "the language rule of the host's own AGENTS.md" in rules

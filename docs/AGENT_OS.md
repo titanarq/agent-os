@@ -744,7 +744,9 @@ has its own defect, and one fault is one line.
 **The slice** (`agent-os-tree context NODE [--json]`) is the unit of context an agent is handed,
 never the tree: the node in full, its ancestors up to the goal (description, sources and the
 verification each one carries, labelled as the acceptance the node's work serves and must not
-break, in `--json` as each ancestor's `verification` list), and the
+break, in `--json` as each ancestor's `verification` list, and the findings of its
+experiments -- `kind`, `question`, `finding`, one line each, those with a `finding` only -- so an
+owner's answer or a decided stack reaches every ticket below it, in `--json` as `experiments`), and the
 decisions in force on that chain -- the node's own and its ancestors' -- each with its statement,
 premises, rejected alternatives, review triggers and the *count* of its friction entries. A
 criterion an agent judges is rendered for the node and for every ancestor as a line
@@ -792,7 +794,12 @@ The touched code is the paths named in the node's `implementation` and, once wri
 names no path touches nothing known, and a component's paths join once the tree has components
 (`docs/tree/dec-a-component-has-a-core-and-extensions.md`). Tickets come **ordered by their
 dependencies**, a dependency before whatever depends on it (foundations and then id among the
-free ones), in the text, the JSON and the files. The labels are the task type label,
+free ones). A ticket's dependencies are its node's `depends_on` **plus those of every ancestor**
+(a use case is part of its requirement, so it cannot start before the requirement can), and a
+dependency on a container stands for the work under it; a use case under a `foundation`
+requirement is ordered with the foundations. Those effective dependencies are what the ticket's
+`depends-on` marker and Dependencies section carry, and dependencies that only loop once inherited
+make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
 returned, and `compile` refuses a tree the doctor finds anything in. The code is
 `agent_os.product.tree.compile` (what is a ticket) over `agent_os.product.dispatch` (the body, the
