@@ -13,6 +13,7 @@ mechanism: |-
   reviews (goals, spend against value), method proposals that touch the what, rollbacks the custodian
   escalated, retirement candidates. The reply wakes the planner; the pull request that writes it back
   is merged on the owner's word, which the answer is.
+implementation: '`agent_os/product/sessions/` -- `agent-os-sessions open` (the batch and the issue body), `answers`, `apply`; `docs/AGENT_OS.md` §4.10'
 ---
 The owner opens a question session: answers the doubts about what that have been recorded,
 reviews the tree (its goals, and spend against value per branch), the proposals to change

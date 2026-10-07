@@ -83,6 +83,11 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    renders no such paragraph and no such audit rule. A fourth, optional key here:
    `project.prompt_extras`, one host-owned file per role appended at that role's
    `__PROJECT_EXTRAS__` point — a host that names none renders nothing there.
+   Also `tree.owner_only_paths` (§4.10): the globs of the files, besides goal nodes, that are the
+   owner's what -- the method's evaluators. A pull request touching one is never merged
+   automatically (the control plane's condition 6); empty means goal nodes only. Question
+   sessions open as issues labelled `project.labels.blocked_on_human` and read only the comments
+   of `project.human_login`, so set that key too.
 10. **Set `project.never_run`** — commands no role may run, each with the one-line reason its
     prohibition rests on; renders into the worker's, the validator's and the refiner's RULES.
 11. **Set `mechanism.own_paths`** — copy the example's `agent_os/*` entry unchanged and add any

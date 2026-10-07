@@ -301,6 +301,11 @@ tree:
   # node. False (the default) leaves dispatch as it was; a hand-written issue is not dispatchable
   # in a v2 host, so turn it on once the backlog is compiled tickets.
   dispatch_by_node: false
+  # Files besides goal nodes that are the owner's what -- the evaluators of the method (its battery,
+  # the thresholds of its indicators, the rule that tells what from how), as fnmatch globs on
+  # repository paths. A pull request touching one of them, or a goal node, is never merged
+  # automatically (`agent-os-sessions guard-what`, docs/AGENT_OS.md §4.10). Default: none.
+  owner_only_paths: []
 
 # The progress board (`agent-os-tree board sync|order`, docs/AGENT_OS.md §4.6): a GitHub Project
 # generated from the tree, one item per functional requirement, as a view -- the files stay the

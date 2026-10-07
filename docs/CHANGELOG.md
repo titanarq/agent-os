@@ -111,6 +111,20 @@ that closed several small issues at once name them all. This file starts on 2026
   models and backends it names; re-run `agent-os-install --force` to take the new CI step, and give
   commits that touch the tree their trailer from then on (`docs/AGENT_OS.md` §4.6,
   `docs/ADOPTION.md` step 20).
+- #119 -- Agentos v2, Stage 1: question sessions and the guard on the what (`agent-os-sessions`,
+  `agent_os/product/sessions/`). A judgments log (`.cache/judgments/judgments.jsonl` and
+  `outcomes.jsonl`, stamped with the versions helper); `open` creates ONE `status:blocked-on-human`
+  issue freezing the open `what` questions (numbered, grouped by branch, ordered by what they block,
+  each with its default), the challenges and a digest of judgments since the last session; the
+  owner's reply (`1: yes; 3: no, rather X`, `reclaim N`) is parsed against the frozen batch and
+  `apply` writes each answer into its node and each reclaim into a new question, recording a
+  `reclaimed` outcome. New `guard-what PR` (exit 1 when a pull request touches a goal node or a
+  `tree.owner_only_paths` file) is condition 6 of the control plane's merge gate, so the gate is now
+  six conditions; `verify-answer PR --session N` is what the validator runs on a pull request that
+  says `Session-Answer: #N`. New optional config key `tree.owner_only_paths` (default empty). ADR
+  `2026-10-07-the-reply-to-a-question-session-is-a-short-numbered-list.md`; `docs/AGENT_OS.md` §4.10.
+  Host follow-up after a `subtree pull`: re-render the installed `.claude/agents/control-plane.md`
+  (`agent-os-install --force`) to get condition 6, and set `project.human_login`.
 - #113 -- Agentos v2, Stage 1: the tree format. New node state `implemented` (between `improvised` and
   `hardened`). `experiments` replaces `spikes` (kind `spike | demand-probe | question | lookup`,
   outcome may be `open`; a `question` carries its `scope` `what | how` and its `default_answer`);

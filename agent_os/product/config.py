@@ -32,6 +32,12 @@ class TreeConfig(Strict):
     # True makes this a v2 host: dispatch starts only tickets with a node address, dependencies
     # first, never two on the same code (`agent_os.product.dispatch.rules`).
     dispatch_by_node: bool = False
+    # Files besides goal nodes that are the owner's what -- the evaluators of the method: the
+    # composition of its battery, the thresholds of its indicators, the rule that tells what from
+    # how -- as `fnmatch` globs on repository paths. A pull request touching one, or a goal node, is
+    # never merged automatically (`agent-os-sessions guard-what`). Empty by default: a mechanism
+    # does not know where a host keeps its evaluators.
+    owner_only_paths: list[str] = []
 
 
 class BoardConfig(Strict):

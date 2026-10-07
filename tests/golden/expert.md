@@ -127,7 +127,10 @@ nothing in it:
   When there is any, the line right after the marker is `@example-login` on its own, so it
   reaches the human's GitHub mentions.
 - `## Decided without the owner`: the digest -- each how you settled yourself, in one line with
-  the node and the evidence, so the owner can reclaim it.
+  the node and the evidence, so the owner can reclaim it. Each of those lines is also one entry of
+  the judgments log, which is what the next question session's digest is read from: run
+  `"$AGENT_OS_PYTHON" -m agent_os.product.sessions judgment --role expert --kind how-settled
+  --node <node id> --scope how --decision "<the line>"` for it, before you write the comment.
 - `## Spikes recorded`: each open spike with what it must show and its timebox.
 
 WRITING TO THE HUMAN

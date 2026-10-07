@@ -85,7 +85,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | `status:blocked-on-human` → label removed + `human_replied` event | Guard (`tick`) | a comment **by the human** (`project.human_login`) newer than the one that set the label — an agent's own comment on the issue it is blocked on never counts, whatever its timestamp: the mechanism's identities are `project.planner_app`, `backends.*.app` and `role_apps.*`, each commenting as `<slug>[bot]`. Until #397 any newer comment counted, and the planner's own "I am waiting for you" on #387 unblocked a question nobody had answered (2026-09-16) | removes the label; sets no other one | `agent_os.guard` `_check_human_replies`/`_latest_human_comment_at`; `agent_os.lib` `is_human_comment`/`mechanism_logins` |
 | **gap**: `human_replied` → what the planner does | Planner (LLM) | — | — | the planner's rules have no paragraph dedicated to this event outside the validator-doubt case (`agent_os/bin/planner_task.sh:138-139`); between label removal and the planner's next run the issue carries no `status:*` at all — unless a worker is still ALIVE on it, in which case the same tick puts `status:doing` back (#385 tick side, `agent_guard.restore_doing_label_on_live_runs`) |
 | Open issue carries `project.labels.wake_planner` → label removed + `nudged` event | Guard (`tick`) | the label found on an OPEN issue — the tick removes it every time it sees it, whoever set it (a timeline it cannot read leaves it for the next tick). A `nudged` event is written only when the timeline says the human login (`project.human_login`, via `agent_lib.is_human_comment`) set it; a mechanism identity setting it is removed and ignored, so the planner cannot wake itself in a loop. While the tracking epic carries `status:agents-paused` the tick returns before ever reaching this check, so the label stays put until unpaused. **Not** rate-limited: an edge happens once (`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`, #413) | removes `project.labels.wake_planner`; one event file, subject = issue number, detail names who set it and when, and points the planner at the latest human comment on that issue for the reason | `agent_os.guard` `_write_nudged_events`; `project.labels.wake_planner` in `config/agents.yaml`; the label is also the sanctioned lever `.claude/agents/control-plane.md` uses to wake the planner early |
-| `status:review` → `done` (close) | Human, or the control plane acting in the human's name under its five merge conditions (§2.4, "Duty 4") | human decision, or the control plane verifying all five conditions itself against GitHub and the diff | the human's own merge, or the control plane's REST merge pinned to the verified head with `project.merge_method` (§2.4; no script does this) + `issues.py move N done` closes the issue | confirmed by grep: no script contains `pr merge`; `docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md`; `agent_os/docs/adr/2026-09-17-the-control-plane-merges-a-pr-in-the-humans-name-under-five-conditions.md`; `agent_os.issues:1102-1122` |
+| `status:review` → `done` (close) | Human, or the control plane acting in the human's name under its six merge conditions (§2.4, "Duty 4") | human decision, or the control plane verifying all six conditions itself against GitHub and the diff | the human's own merge, or the control plane's REST merge pinned to the verified head with `project.merge_method` (§2.4; no script does this) + `issues.py move N done` closes the issue | confirmed by grep: no script contains `pr merge`; `docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md`; `agent_os/docs/adr/2026-09-17-the-control-plane-merges-a-pr-in-the-humans-name-under-five-conditions.md`; `agent_os.issues:1102-1122` |
 | closed by GitHub's own `Closes #N`, still carrying `status:*` → `done` | Guard (`tick`) | every tick, for every closed issue that still holds a state label (#365) | `issues.py move N done` — strips the label, leaves the closed issue closed, mirrors the board column | `agent_os.guard` `closed_issues_with_status_label`/`reconcile_closed_issues`, through `_move_issue` |
 | Claude quota exhausted → fallback to Qwen | Planner | `CUT_BY_GUARD reason=quota` or `quota_changed`; class allows `qwen_fallback_eligible: true`, or a worker launch was refused because the class declares `fallback:` (§3, #95) | redispatch on Qwen (prompt instruction) | `agent_os/bin/planner_task.sh:181-187`; mechanical detection `agent_os.lib:518-533`. **Inert since 2026-09-16**: no worker class runs on Claude, so no worker run can hit a Claude quota wall |
 | Quota exhausted, no eligible fallback | Guard, mechanically | `_tick_backend` sees `quota` and the class disallows Qwen | `notify.sh` (ntfy) | `agent_os.guard:724-728` |
@@ -182,13 +182,13 @@ Its five duties, in the order the definition gives them:
    back.
 3. **Review and manage the backlog** — classify the untagged issues and *propose* which enter the
    funnel, which need the refiner, which are superseded and which are duplicates; sweep nothing.
-4. **Approve and merge PRs** — under the five conditions below.
+4. **Approve and merge PRs** — under the six conditions below.
 5. **Monitor progress and deviation** — cheap reads only: the guard timer and its journal, the
    `status:*` labels, the open PRs, `.cache/worker_*.state` and the per-role run/cost files, plus
    each backend's last hour of worker activity; then flag the spend and stall deviations the
    definition lists.
 
-A PR merges only when **all five** of these hold, each one verified by the control plane against
+A PR merges only when **all six** of these hold, each one verified by the control plane against
 GitHub and the diff rather than trusted from the PR text. `.claude/agents/control-plane.md`'s
 "Duty 4" is the binding source for them; what follows restates it:
 
@@ -217,8 +217,14 @@ GitHub and the diff rather than trusted from the PR text. `.claude/agents/contro
    squash merge is not an ancestor).
 5. The PR body closes exactly the issue it was dispatched for, and the module doc changed if
    behaviour or a contract changed.
+6. The PR does not touch the owner's what: `agent-os-sessions guard-what N` prints nothing and
+   exits 0 (§4.10). A PR that changes a goal node or an evaluator is never merged automatically --
+   it waits for the human's own merge. The one exception is a PR whose body says
+   `Session-Answer: #S` and for which `agent-os-sessions verify-answer N --session S` exits 0: it is
+   exactly the owner's answer, which already is their word
+   (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`).
 
-When all five hold it merges through GitHub's REST endpoint
+When all six hold it merges through GitHub's REST endpoint
 (`PUT repos/<project.repo>/pulls/N/merge`) with `merge_method` set to `project.merge_method`
 (`merge`, `squash` or `rebase`, default `merge`) and `sha` set to the head it verified, then
 deletes the remote branch (`DELETE .../git/refs/heads/<branch>`) only once the merge answered
@@ -1204,9 +1210,70 @@ reclaim from), Spikes recorded.
 finished spike or use), `rework` for a revision of a node an earlier expert pass wrote wrongly,
 never `owner`.
 
-**Not built yet.** Launching the expert from a label or from the planner; the question session that
-carries "For the owner" to the owner; running the spikes it records; the mechanical hold of a pull
-request that touches a goal or an evaluator (the expert's own constraint is its prompt).
+**Not built yet.** Launching the expert from a label or from the planner; running the spikes it
+records. The question session (§4.10) and the mechanical hold of a pull request that touches a goal
+or an evaluator now exist; the expert's own constraint is still its prompt.
+
+### 4.10 Question sessions and the guard on the what (`agent-os-sessions`)
+
+Stage 1 of `docs/AGENTOS_V2_PLAN.md`; code in `agent_os/product/sessions/`
+(`docs/tree/dec-a-question-session-is-a-github-issue.md`,
+`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`).
+
+**The expert's summary is not parsed.** The expert's "For the owner" section (§4.9) is a view of
+what is already in the tree: every open `what` question is an `experiments` entry of its node, and
+that is what `open` reads, so the session issue is built from the tree and never from a comment. Its
+"Decided without the owner" section is different: the digest of a session comes from the judgments
+log, so the expert records each such line as a judgment (`prompts/expert.md`) and it reaches the
+owner through the next session issue.
+
+**The judgments log.** What an agent decided alone is recorded so that a question session can show
+the owner what was decided without them, and so that how often such decisions are undone can be
+measured per role and kind. Two append-only files under `.cache/judgments/`, joined by
+`judgment_id` and written with `agent_os.product.records` (so each record is stamped with the model,
+the CLI version and the method version):
+
+- `judgments.jsonl`: `schema`, `judgment_id`, `recorded_at`, `role`, `kind` (free: the sort of
+  decision), `node` (a node id or null), `decision` (one line), `scope` (`what`: it was the owner's
+  and they were not asked; `how`: the agents' own call), `versions`.
+- `outcomes.jsonl`: `schema`, `judgment_id`, `recorded_at`, `outcome` (`confirmed`, `reversed` or
+  `reclaimed`), `source`, `detail`. An outcome for a judgment nobody recorded is refused.
+
+Written with `agent-os-sessions judgment ...` and `agent-os-sessions outcome ...`.
+
+**A question session.** The owner asks (`agent-os-sessions open`; `--dry-run` prints the body):
+ONE issue is created, labelled `status:blocked-on-human`, so the owner's reply wakes the planner
+through the mechanism v1 already has (§2.1, the guard's reply check). It freezes the batch: every
+open question of `what` of the tree numbered, grouped by branch (the goal at the root of its
+chain), ordered by what each blocks (nodes below it and nodes depending on it), each with the
+default that stands meanwhile; every challenge; and a digest of the judgments recorded since the
+previous session (the latest 20; `.cache/sessions/sessions.jsonl` remembers when that was). A hidden
+JSON block carries the frozen numbers, so the reply is parsed against the batch as it was shown.
+With nothing waiting no issue is opened.
+
+**The reply.** `1: yes; 3: no, rather <answer>` -- `yes` accepts the default, `no, rather X` (or
+`no: X`) answers X, any other text after the number is the answer, a bare `no` declines the default
+without an answer and the question stays open, and `reclaim M` takes digest entry M back
+(`docs/adr/2026-10-07-the-reply-to-a-question-session-is-a-short-numbered-list.md`). Only comments
+of `project.human_login` count; a later answer to a number replaces an earlier one. A question left
+unanswered keeps its default, stays `open` and is in the next session's batch.
+`agent-os-sessions answers N` shows what was parsed.
+
+**Write-back.** `agent-os-sessions apply N` writes each answer into its node (the question becomes
+`answered`, the owner's words exactly its `finding`) and each reclaim as a new open question of
+`what` on the judgment's node, whose default is the reclaimed decision, and records a `reclaimed`
+outcome against the judgment. It edits the working tree only: the planner has a worker commit it
+on a branch and open a pull request whose body carries `Session-Answer: #N`. The frontmatter is
+re-dumped, so comments inside it are not kept.
+
+**The guard.** `agent-os-sessions guard-what PR` exits 1 and prints one line per file when the pull
+request changes (either side of the diff, renames included) a goal node or a path of
+`tree.owner_only_paths` -- the other evaluators: the method battery, the thresholds of its
+indicators, the rule that tells what from how -- or a file under the tree root it cannot read. Such
+a pull request is never merged automatically: it is condition 6 of the control plane's merge gate
+(§2.4). `agent-os-sessions verify-answer PR --session N` is what the validator runs on a pull
+request claiming `Session-Answer: #N`: exit 0 only when every changed file is a node whose sole
+difference is an answer (or reclaimed question) the owner gave, word for word.
 
 ## 5. Export recipe
 
@@ -1369,6 +1436,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
 | `agent-os-tree validate\|doctor\|context\|compile\|board` (`agent_os.product.tree`, `agent_os.product.board`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh expert N [--dry-run]` | human (manual run; never unattended) | one-shot population of the product tree for issue N and one pull request on it (§4.9); detaches like the other one-shot roles |
+| `agent-os-sessions judgment\|outcome\|open\|answers\|apply\|guard-what\|verify-answer` (`agent_os.product.sessions`) | planner, validator, control plane, human | the judgments log, the question session issue and its write-back, and the guard on the what of §4.10: `guard-what PR` exits 1 for a pull request that touches a goal node or an evaluator (merge condition 6), `verify-answer` exits 0 for one that is exactly a session answer. Needs `gh`; never a backend |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |
