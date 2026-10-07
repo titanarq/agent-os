@@ -72,11 +72,16 @@ project:
   # (`task-writer`) and not a duty of the control plane. A value is whatever `claude --model`
   # accepts -- an alias or a full id -- and is opaque to the mechanism. The one-shot roles
   # (planner, validator, refiner) are not here: their model is `classes.<name>.model` below.
-  # Every key is optional; these are the defaults.
+  # Every key is optional; these are the defaults: ONE backend (Claude Code), Sonnet for every role
+  # (docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md). `custodian` and `consolidator`
+  # are the two roles that run on Opus, rarely, and only the key and its default exist so far: the
+  # roles themselves arrive in Stage 2 of docs/AGENTOS_V2_PLAN.md and nothing reads these yet.
   agent_models:
     control_plane: sonnet
     worker_runner: sonnet
-    task_writer: opus
+    task_writer: sonnet
+    custodian: opus
+    consolidator: opus
   # How a fresh worktree -- a worker's on `init`, a validator's throwaway one -- is made runnable,
   # since it carries tracked files only. Each `worktree_links` path (relative to the repository
   # root) is symlinked from this checkout when it exists here; then `worktree_setup_command`, when
@@ -126,7 +131,7 @@ project:
     - command: drop-database
       reason: destroys the shared database with no dry-run flag and no way back
   # The absolute path of every external executable the mechanism's units call by bare name, by
-  # command name: the backend CLIs (`qwen`, `claude`) and the tracker CLI (`gh`) alike, for when
+  # command name: the backend CLIs (`claude`, or another a host adds) and the tracker CLI (`gh`) alike, for when
   # the launcher's PATH is not the shell's (a systemd user unit does not carry nvm). A name with no
   # entry resolves to itself, which is the bare-name PATH lookup the drivers did before.
   # `agent-os-install` turns every value into a directory on the generated unit's
@@ -135,7 +140,10 @@ project:
   executables: {}
   # Every backend a worker or a role can run on, by name. Nothing in the mechanism compares a
   # backend's name against a literal: what it can do is read off its entry, so a third CLI is one
-  # entry here (plus one parser under agent_os/streams/ only if its events are a new shape).
+  # entry here (plus one parser under agent_os/streams/ only if its events are a new shape). The
+  # defaults describe ONE backend, Claude Code; a host that wants a second one (Qwen Code, with
+  # `stream: qwen_jsonl` and `quota: none`) adds its entry, its worker classes and its fallbacks
+  # itself -- the machinery below (`fallback:`, `escalate:`, `slots:`) is unchanged by that choice.
   #   command:  what the drivers run -- an absolute path or a bare name. Omitted, the
   #             `executables` entry of the same name, else the backend's own name. An absolute
   #             command is added to `executables`, the PATH set the generated units carry.
@@ -156,11 +164,6 @@ project:
   # DEPRECATED, for one release: `worktrees:` + `worker_apps:` (+ `executables:` for the command)
   # in place of this section still load, with one warning, and are ignored when this is present.
   backends:
-    qwen:
-      worktree: ../example-qwen
-      app: example-qwen
-      stream: qwen_jsonl
-      quota: none
     claude:
       worktree: ../example-claude
       app: example-claude
@@ -285,7 +288,7 @@ tree:
   # worker class below -- the config fails to load otherwise. Empty (the default) makes
   # `agent-os-tree compile` refuse until `--budget-class` says which: the mechanism does not know
   # a host's class names and does not guess one.
-  ticket_budget_class: mechanical-qwen
+  ticket_budget_class: mechanical-sonnet
   # Labels every compiled ticket carries besides its task type label (`project.labels.types`): a
   # marker for the tickets that came from the tree, the module they belong to. The initial
   # `status:*` label is not decided here -- `compile` only renders; creating the issues and the
@@ -331,71 +334,51 @@ quality:
 # These numbers are a starting point, not a calibration: measure real runs and tune them.
 #
 # Two worker classes (a mechanical one and a less specified, more expensive one) and one class per
-# review role, each of the latter declaring a `fallback:` -- the backend its role runs on when the
-# guard's own persisted quota verdict on its own backend reads exhausted (`RoleFallback`,
-# `agent_lib.role_launch_plan`). A worker class may declare two optional things, none of them here
-# by default:
+# one-shot role, all on Claude Code with Sonnet (docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md).
+# A worker class may declare two optional things, none of them here by default:
 #
 #   fallback: {backend, model, ceilings}   -- like a role's: when the class's own backend reads
 #       exhausted (the guard's fresh persisted verdict) the worker driver REFUSES to launch it and
 #       names the fallback, and the planner redispatches on that backend's own worktree. A worker
 #       cannot change backend in place (worktree, branch, state and event stream are per backend).
-#       Declaring it silences the guard's `quota_exhausted_no_fallback` page for the class.
+#       Declaring it silences the guard's `quota_exhausted_no_fallback` page for the class. It
+#       needs a second backend in `project.backends`.
 #   escalate: {model, after: [commit_cut, stage_failed]}   -- the stronger model, on the SAME
 #       backend, for the process `resume` launches after a stage that was cut (`commit_cut`) or
 #       ended without its commit (`stage_failed`); logged in the launch's `model:` line. A fresh
 #       `start` and the stages a run chains after a green one run `model` again.
 #
-# Both are worker-class fields; the planner's own redispatch of a worker onto Qwen
-# (`qwen_fallback_eligible`) stays the route for a class that declares no `fallback:`.
-#
 # A class's `model` is an opaque string the mechanism hands to the backend's CLI: it keeps no
 # allowlist and no price table, and the cost of a run is whatever the CLI reports in its result
 # event (`total_cost_usd`). Moving a class to another model is editing this one line.
 #
-# A worker on Claude Sonnet is one more class, and nothing else (no worker class runs on Claude by
-# default -- agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md), here one
-# that escalates to Opus after a cut or failed stage and can fall back to Qwen:
+# A worker class that retries a cut stage on Opus is the same class with one more key:
 #
 #   complex-sonnet:
-#     description: work that needs Claude-level judgement across modules
-#     backend: claude
-#     model: claude-sonnet-5-5
-#     max_context: 400000
-#     max_cost_usd: 10.0
-#     max_total_tokens: 40000000
-#     commit_warn_turns: 25
-#     commit_cut_turns: 90
-#     qwen_fallback_eligible: false
+#     ...
 #     escalate:
 #       model: claude-opus-5-5
 #       after: [commit_cut, stage_failed]
-#     fallback:
-#       backend: qwen
-#       model: qwen3.8-max
-#       ceilings: [max_context, max_total_tokens]
 classes:
-  mechanical-qwen:
+  mechanical-sonnet:
     description: small, fully specified change in one module with no design decision left to make
-    backend: qwen
-    model: qwen3.8-max
+    backend: claude
+    model: claude-sonnet-5-5
     max_context: 400000
     max_cost_usd: 5.0
     max_total_tokens: 80000000
     commit_warn_turns: 25
     commit_cut_turns: 90
-    qwen_fallback_eligible: false
 
-  complex-qwen:
+  complex-sonnet:
     description: any other task or bug -- cross-module work, or one that needs judgement
-    backend: qwen
-    model: qwen3.8-max
+    backend: claude
+    model: claude-sonnet-5-5
     max_context: 800000
     max_cost_usd: 20.0
     max_total_tokens: 150000000
     commit_warn_turns: 25
     commit_cut_turns: 90
-    qwen_fallback_eligible: false
 
   planner:
     role: planner
@@ -406,11 +389,6 @@ classes:
     max_total_tokens: 2000000
     commit_warn_turns: 30
     commit_cut_turns: 50
-    qwen_fallback_eligible: false
-    fallback:
-      backend: qwen
-      model: qwen3.8-max
-      ceilings: [max_context, max_total_tokens]
 
   validator:
     role: validator
@@ -421,26 +399,16 @@ classes:
     max_total_tokens: 10000000
     commit_warn_turns: 30
     commit_cut_turns: 50
-    qwen_fallback_eligible: false
-    fallback:
-      backend: qwen
-      model: qwen3.8-max
-      ceilings: [max_context, max_total_tokens]
 
   refiner:
     role: refiner
     backend: claude
-    model: claude-opus-5
+    model: claude-sonnet-5-5
     max_context: 200000
     max_cost_usd: 5.0
     max_total_tokens: 10000000
     commit_warn_turns: 30
     commit_cut_turns: 50
-    qwen_fallback_eligible: false
-    fallback:
-      backend: qwen
-      model: qwen3.8-max
-      ceilings: [max_context, max_total_tokens]
 
   # The puntal's class: small context and a low ceiling PER INVOCATION -- `max_context`,
   # `max_cost_usd` and `max_total_tokens` all bind one click, not an issue, and are checked on the
@@ -458,4 +426,3 @@ classes:
     max_total_tokens: 300000
     commit_warn_turns: 6
     commit_cut_turns: 12
-    qwen_fallback_eligible: false

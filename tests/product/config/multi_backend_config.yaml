@@ -1,0 +1,172 @@
+# The multi-backend shape config.example.yaml had before agent-os#116 (comments stripped), for the machinery tests.
+project:
+  repo: example-org/example-project
+  tracking_epic: 1
+  board_number: 1
+  secrets_dir: .secrets/gh_apps
+  planner_app: example-planner
+  guard_unit: example-guard
+  module_docs_dir: docs/modules
+  human_login: example-login
+  human_language: English
+  notify_topic_file: .secrets/ntfy_topic
+  messages:
+    review_ready: "Review pending: issue #{issue} «{title}» is approved and only needs merging - {url}"
+    quota_exhausted_no_fallback: "No quota left and issue #{issue} declares no fallback (class «{task_class}», backend {backend}): it cannot move without you"
+    planner_run_cap_reached: "The planner has spent its daily run cap ({runs}/{cap}) and will dispatch nothing more today; {pending} event(s) wait for tomorrow: {context}"
+    backend_worktree_missing: "Backend with no worktree: {backend} has no worktree at {worktree} and {issue_count} ready issue(s) cannot move until you create it"
+    unreviewed_pull_request: "Lost review: PR #{pr} for issue #{issue} has no review and no {role} running - it may have died leaving no trace"
+    backend_worktree_dirty: "Blocked backend: {backend}'s worktree {worktree} has uncommitted work no run will clear ({paths}); {issue_count} ready issue(s) wait, and no run on it can start or resume until you commit or clean it"
+  test_command: scripts/test.sh
+  install_host_ci: true
+  merge_method: merge
+  agent_models:
+    control_plane: sonnet
+    worker_runner: sonnet
+    task_writer: opus
+  worktree_links: [.venv, .env]
+  worktree_setup_command: ""
+  lint_commands:
+    - .venv/bin/ruff check
+    - .venv/bin/ruff format --check
+  prompt_extras: {}
+  worker_environment:
+    DATABASE_URL: postgresql://app_ro:app_ro@localhost:5432/app
+  forbidden_paths:
+    - docs/adr/*
+    - docker-compose.yml
+  merge_audit_exempt_paths:
+    - docs/adr/*
+  never_run:
+    - command: "--force-push"
+      reason: rewrites shared history other clones have already built work on top of
+    - command: drop-database
+      reason: destroys the shared database with no dry-run flag and no way back
+  executables: {}
+  backends:
+    qwen:
+      worktree: ../example-qwen
+      app: example-qwen
+      stream: qwen_jsonl
+      quota: none
+    claude:
+      worktree: ../example-claude
+      app: example-claude
+      stream: claude_jsonl
+      quota: claude_rate_limit
+  role_apps: {}
+  modules:
+    - core
+  labels:
+    refine: status:refine
+    ready: status:ready
+    doing: status:doing
+    blocked_on_human: status:blocked-on-human
+    ai_completed: status:ai-completed
+    review: status:review
+    agents_paused: status:agents-paused
+    auto_ready: auto-ready
+    wake_planner: wake:planner
+  board_columns:
+    refine: Backlog
+    ready: Ready for AI
+    doing: In progress
+    blocked-on-human: null
+    ai-completed: AI completed
+    review: Review
+    done: Done
+mechanism:
+  own_paths:
+    - agent_os/*
+    - .claude/*
+  quota_verdict_ttl_minutes: 60
+planner:
+  idle_wake_minutes: 120
+  max_runs_per_day: 12
+  relaunch_cap: 3
+  max_parallel_issues: 1
+  reconcile_closed_lookback_days: 30
+  refiner_unattended: false
+puntal:
+  persistence_command: ""
+  persistence_api_file: ""
+  timeout_seconds: 90
+  max_tool_calls: 12
+  effort: ""
+tree:
+  root: product
+  ticket_budget_class: mechanical-qwen
+  ticket_labels: []
+classes:
+  mechanical-qwen:
+    description: small, fully specified change in one module with no design decision left to make
+    backend: qwen
+    model: qwen3.8-max
+    max_context: 400000
+    max_cost_usd: 5.0
+    max_total_tokens: 80000000
+    commit_warn_turns: 25
+    commit_cut_turns: 90
+    qwen_fallback_eligible: false
+  complex-qwen:
+    description: any other task or bug -- cross-module work, or one that needs judgement
+    backend: qwen
+    model: qwen3.8-max
+    max_context: 800000
+    max_cost_usd: 20.0
+    max_total_tokens: 150000000
+    commit_warn_turns: 25
+    commit_cut_turns: 90
+    qwen_fallback_eligible: false
+  planner:
+    role: planner
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 40000
+    max_cost_usd: 2.0
+    max_total_tokens: 2000000
+    commit_warn_turns: 30
+    commit_cut_turns: 50
+    qwen_fallback_eligible: false
+    fallback:
+      backend: qwen
+      model: qwen3.8-max
+      ceilings: [max_context, max_total_tokens]
+  validator:
+    role: validator
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 200000
+    max_cost_usd: 5.0
+    max_total_tokens: 10000000
+    commit_warn_turns: 30
+    commit_cut_turns: 50
+    qwen_fallback_eligible: false
+    fallback:
+      backend: qwen
+      model: qwen3.8-max
+      ceilings: [max_context, max_total_tokens]
+  refiner:
+    role: refiner
+    backend: claude
+    model: claude-opus-5
+    max_context: 200000
+    max_cost_usd: 5.0
+    max_total_tokens: 10000000
+    commit_warn_turns: 30
+    commit_cut_turns: 50
+    qwen_fallback_eligible: false
+    fallback:
+      backend: qwen
+      model: qwen3.8-max
+      ceilings: [max_context, max_total_tokens]
+  puntal:
+    role: puntal
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 30000
+    max_cost_usd: 0.25
+    max_total_tokens: 300000
+    commit_warn_turns: 6
+    commit_cut_turns: 12
+    qwen_fallback_eligible: false

@@ -36,11 +36,10 @@ stay in the repository's language (English).
   scratchpad, never into the repo.
 - Acceptance criteria are checkable statements a validator can tick; Context names only the docs,
   ADRs and paths actually needed; Not included names the sibling issue that owns each exclusion.
-- Budget class: every worker task goes to a Qwen class — `mechanical-qwen` for a small, fully
-  specified change (a handful of files, a known test shape), `complex-qwen` in every other case.
-  Never assign a worker task to a Claude backend
-  (`agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md`). One `module:` label per
-  issue.
+- Budget class: name one of the worker classes in `config/agents.yaml` `classes:` (the ones with no
+  `role:`) -- the cheaper one for a small, fully specified change (a handful of files, a known test
+  shape), the other in every other case. Never invent a class name, and never name a role's class.
+  One `module:` label per issue.
 - Run `issues.py validate N` and fix until `ok`. Do not add any `status:*` label unless the human
   asked for the issue to enter the funnel; then `move N refine` (or `ready` only if it validates
   and the human said so). Issues that will run in the same round must touch disjoint files.

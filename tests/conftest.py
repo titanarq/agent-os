@@ -38,14 +38,20 @@ import pytest
 import yaml
 
 _THIS_PACKAGE = pathlib.Path(__file__).resolve().parents[1]
-os.environ.setdefault("AGENTS_CONFIG_PATH", str(_THIS_PACKAGE / "config.example.yaml"))
+# The machinery tests (fallback, escalation, slots, the quota verdict) need a SECOND backend, which
+# the shipped example no longer describes (one backend, Claude Code -- agent-os#116). They run
+# against this fixture, the multi-backend shape the example had before; the shipped example has its
+# own tests (`tests/product/config/test_example_config_defaults.py`).
+MULTI_BACKEND_CONFIG = _THIS_PACKAGE / "tests" / "product" / "config" / "multi_backend_config.yaml"
+os.environ.setdefault("AGENTS_CONFIG_PATH", str(MULTI_BACKEND_CONFIG))
 
 from agent_os.cli import AGENT_OS_DIR, host_root
 
 # The HOST project this helper used to patch a copy of: since #512 the source is the mechanism's
 # own shipped example, not a host's real file, so this fixture behaves identically whichever
 # project's `agent_os/` it runs inside.
-EXAMPLE_CONFIG = AGENT_OS_DIR / "config.example.yaml"
+SHIPPED_EXAMPLE_CONFIG = AGENT_OS_DIR / "config.example.yaml"
+EXAMPLE_CONFIG = MULTI_BACKEND_CONFIG
 
 
 def config_with_never_run(tmp_path, items):
