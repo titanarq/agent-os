@@ -97,6 +97,7 @@ tree:
   root: product
   ticket_budget_class: mechanical-qwen
   ticket_labels: []
+  dispatch_by_node: false
 classes:
   mechanical-qwen:
     description: small, fully specified change in one module with no design decision left to make
