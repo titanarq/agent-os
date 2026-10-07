@@ -29,6 +29,7 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Worker (claude) | Writes code for one issue, in its own worktree. The example config describes ONE backend, Claude Code (agent-os#116, `docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`); a second one (Qwen Code) stays possible and is the host's own addition | its own App (`project.backends.claude.app`) | classes `mechanical-sonnet` (400k ctx / $5) and `complex-sonnet` (800k ctx / $20), both `claude-sonnet-5-5` in the example |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
+| Expert | Populates the host's product tree under the owner's goals (small requirement and use-case nodes, experiments, questions with scope and default answer, challenges), settles every question of how itself or by a spike, receives every question before the owner, and opens one pull request on the tree (§4.9) | `project.role_apps.expert`, falls back to `planner_app` | class `expert`, model per `classes.expert.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, §4.7); plans in one model turn with no tool, and the app's code applies what it planned (the slow path's one tool is the app's persistence API) | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
@@ -537,7 +538,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-sonnet` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
-| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
+| `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `expert`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
 | `board.*` | the progress board's GitHub Project (§4.6), all optional: `owner` (`@me`), `number` (0: found by `title`, created on a real sync), `title`, `progress_field`, `order_field` |
 | `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the slow path's contract), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
@@ -1166,6 +1167,47 @@ list: `tree.root`, and the mechanism's own directory when it is vendored under a
 validator's: `prompts/validator.md` makes it review the diff for SOLID, long self-explanatory names
 and comments only for a non-obvious why, requesting changes like any other finding.
 
+### 4.9 The expert (`agent_os/bin/agent_task.sh expert N`, Agentos v2 Stage 1)
+
+The expert turns the owner's goals into the rest of the tree
+(`docs/adr/2026-10-07-the-expert-populates-the-tree-and-settles-a-how-before-the-owner-hears-it.md`).
+It is a one-shot role like the validator and the refiner -- class `expert` (`role: expert`, Sonnet,
+no `fallback:`), prompt `prompts/expert.md`, App `project.role_apps.expert` else `planner_app`, logs
+and `runs.tsv` in `.cache/expert/`, a detached run that ends with an `expert_finished` event -- with
+one difference: it writes.
+
+**Launch.** By command only: `agent_os/bin/agent_task.sh expert <issue> [context...] [--dry-run]
+[--no-wake]`. The issue is the request (a new product, a question that reached the expert, a part of
+the tree to populate); its first run on a new product follows `uc-start-a-new-product`. Nothing
+launches it unattended -- no label, no `refine_pending`-style event -- and the planner's prompt says
+it never does; a run that died (`role_died`) is the human's to relaunch. The driver fetches the
+host's default branch, makes a throwaway worktree off it under `.cache/expert/`, exports
+`PYTHONPATH` at it and starts the backend inside it (the one role not started in the main checkout);
+the worktree is removed when the run ends. `__TREE_ROOT__` in the prompt is `tree.root`.
+
+**What it writes.** Only files under the tree root, on a branch `expert/<N>-<slug>`, in one pull
+request that it opens and never merges: functional requirements and use cases as small nodes under
+the goals (`mechanism: pending`, a `verification` whenever one can be written, `depends_on` to order
+the foundations first), `experiments` (`spike` recorded `open` with its timebox, `demand-probe`,
+`lookup` answered, `question`), and `challenge` where a node may not be finishable. It never touches
+a goal, an evaluator or a decision.
+
+**Questions.** It reads every question before the owner. A `how` it settles itself (`answered`, with
+the finding) or by an open `spike`; the owner never receives it. A `what` carries a `default_answer`
+and goes to the owner. In doubt it is a `what`. Its one summary comment on the issue starts with
+`<!-- expert-summary -->` and has up to four sections: Populated, For the owner (open `what`
+questions with their defaults, and challenges), Decided without the owner (the digest the owner can
+reclaim from), Spikes recorded.
+
+**Recording.** Every commit that changes a file under the tree root carries exactly one
+`Node-Change` trailer: `usage` by default (new nodes, and revisions driven by an owner's answer, a
+finished spike or use), `rework` for a revision of a node an earlier expert pass wrote wrongly,
+never `owner`.
+
+**Not built yet.** Launching the expert from a label or from the planner; the question session that
+carries "For the owner" to the owner; running the spikes it records; the mechanical hold of a pull
+request that touches a goal or an evaluator (the expert's own constraint is its prompt).
+
 ## 5. Export recipe
 
 1. **Copy `agent_os/` as a unit** — `git subtree add --prefix=agent_os <the split repo> main`,
@@ -1326,6 +1368,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
 | `agent-os-tree validate\|doctor\|context\|compile\|board` (`agent_os.product.tree`, `agent_os.product.board`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
+| `agent_os/bin/agent_task.sh expert N [--dry-run]` | human (manual run; never unattended) | one-shot population of the product tree for issue N and one pull request on it (§4.9); detaches like the other one-shot roles |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |

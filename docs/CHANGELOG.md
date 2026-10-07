@@ -30,6 +30,23 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #118 -- Agentos v2, Stage 1: the expert role. A one-shot role in the validator/refiner pattern:
+  class `expert` in `config.example.yaml` (`role: expert`, Sonnet, no fallback), prompt
+  `prompts/expert.md` (rendered with `__TREE_ROOT__`, the new placeholder for `tree.root`; `expert`
+  is in `PROMPT_ROLES`, golden `tests/golden/expert.md`), and `agent_task.sh expert <issue>`. Unlike
+  the refiner it writes: the driver makes a throwaway worktree off the default branch of origin,
+  starts the backend inside it, and the expert opens one pull request on the host's tree --
+  requirements and use cases as small nodes under the owner's goals (never a goal, an evaluator or a
+  decision), experiments, questions with `scope` and `default_answer`, challenges -- with a
+  `Node-Change` trailer (`usage` by default, `rework` for revising its own earlier node, never
+  `owner`). It receives every question before the owner: a `how` it settles itself or by an open
+  spike, a `what` goes to the owner with its default; one summary comment (`<!-- expert-summary -->`)
+  carries what is for the owner and a digest of what it decided without them. The guard accepts
+  `expert_finished` and watches expert runs for death (`ONE_SHOT_ROLES`); the planner's prompt says
+  it never launches the expert. Launched by command only; nothing runs it unattended (ADR
+  `2026-10-07-the-expert-populates-the-tree-and-settles-a-how-before-the-owner-hears-it.md`,
+  `docs/AGENT_OS.md` §4.9). Host follow-up after a `subtree pull`: add the `expert` class to
+  `config/agents.yaml` before launching it.
 - Agentos v2, Stage 1, compile and dispatch (#117, branch `fix/117-compile-and-dispatch`) -- a
   ticket dispatches without a verification, carries its address and its place in the order, and a v2
   host never runs two tickets on the same code

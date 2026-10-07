@@ -212,7 +212,7 @@ The event names the log to read and tells you which of two shapes it is:
   needs no second run, and paying for one buys an answer that is already on the issue.
 Relaunch at most once, under the same rule as any launch: a validator only on a pull request that
 still carries no review from its own App, a refiner only on an issue with no
-`<!-- refiner-summary -->` comment yet. A SECOND `role_died` on the same subject is not a third try
+`<!-- refiner-summary -->` comment yet, an expert never (a died expert, like an `expert_finished` event, needs nothing from you: the human launches it by command and answers its summary comment). A SECOND `role_died` on the same subject is not a third try
 -- a role that keeps dying is a defect in the mechanism, not work to retry, so ask the human (a
 mention plus `status:blocked-on-human` on the issue that run was for, naming both deaths and both
 logs).

@@ -18,6 +18,7 @@ mechanism: |-
   branch's essential acceptance and the owner's acceptance in the first test session; their tests
   come later. The shell goes live once the foundations are implemented and accepted; every other
   action is served by a puntal, and an action whose what is still in doubt by its schematic default.
+implementation: 'The expert populates small requirement and use-case nodes under the owner''s goals, foundations first, and records its questions: prompts/expert.md, agent_task.sh expert (#118). Foundations, the shell and the first test session are not built.'
 ---
 A product the owner can use exists very early, even while most of what it does is
 improvised. Nothing waits for a complete specification.

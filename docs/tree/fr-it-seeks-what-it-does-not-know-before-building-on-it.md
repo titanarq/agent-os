@@ -14,7 +14,7 @@ mechanism: |-
   its definition degree; foundations first.
 implementation: 'The experiment record on a node (kind, scope, default answer, open outcome) and the not-hardenable property
   of an open `what` question: agent_os/product/tree/models.py, agent_os/product/tree/hardening.py (#113).
-  Triggering experiments is not built.'
+  Triggering experiments is not built. The expert records spikes, demand probes, lookups and questions on the nodes it populates (prompts/expert.md, #118).'
 ---
 An assumption is tested before work is built on top of it, with the cheapest experiment
 that can settle it.
