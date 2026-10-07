@@ -30,6 +30,16 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #120 -- Agentos v2, Stage 1: the progress board generated from the tree. New `agent-os-tree board
+  sync [--dry-run] [--json]` writes one draft item per functional requirement into a GitHub Project
+  (v2) through `gh`: its parts (use cases) by state, the open `what` questions with their default
+  answer, the challenges and `depends_on`, plus a `Progress` text field; idempotent (an unchanged
+  tree makes no write), an item whose requirement left the tree is reported as an orphan and kept.
+  `board order [--out FILE]` reads back the owner's order of the backlog from the Project's `Order`
+  number field, for the planner (#117 consumes it). New `board:` config section (`owner`, `number`,
+  `title`, `progress_field`, `order_field`, all with defaults). The finishing reliability per branch
+  is left to Stage 2. A host that wants it needs `gh auth refresh -s project` and nothing else
+  (`docs/AGENT_OS.md` §4.6, `docs/ADOPTION.md` step 24; `uc-watch-progress-and-order-the-backlog`).
 - Agentos v2, Stage 1, config and recording (#116, branch `fix/116-config-and-trailer`) -- one
   backend, Sonnet defaults, and the `Node-Change` trailer
   (`docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`,

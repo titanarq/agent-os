@@ -28,6 +28,15 @@ def write_config(tmp_path, *, puntal_section=None, puntal_class=None, class_back
     data["puntal"].update(puntal_section or {})
     data["classes"]["puntal"].update(puntal_class or {})
     if class_backend:
+        # The example declares one backend; a test that names another registers it first.
+        data["project"]["backends"].setdefault(
+            class_backend,
+            {
+                "worktree": f"../example-{class_backend}",
+                "app": f"example-{class_backend}",
+                "stream": f"{class_backend}_jsonl",
+            },
+        )
         data["classes"]["puntal"]["backend"] = class_backend
     path = tmp_path / "agents.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False))

@@ -10,6 +10,9 @@
     agent-os-tree compile [--root DIR] [--json] [--out-dir DIR] [--budget-class C] [--label L ...]
         # the dispatch tickets of every dispatchable node, and an escalation for each node that
         # lacks a verification. Renders only: no issue is created and no network is touched.
+    agent-os-tree board sync [--dry-run] | order [--out FILE]
+        # the progress board (`agent_os.product.board`): the tree into a GitHub Project through `gh`,
+        # and the owner's order of the backlog read back. The one subcommand that uses the network.
     agent-os-tree trailers --base REF [--head REF] [--root DIR] [--json]
         # every commit of REF..HEAD that touches the tree must carry one `Node-Change: usage|rework|owner`
         # trailer; one line per commit that does not, exit 1. Reads git only.
@@ -29,6 +32,7 @@ from collections.abc import Sequence
 
 from agent_os import lib
 from agent_os.cli import host_root
+from agent_os.product.board.cli import add_board_parser, run_board
 from agent_os.product.tree.checks import check_tree
 from agent_os.product.tree.compile import (
     CompileError,
@@ -169,6 +173,11 @@ def _compile(args: argparse.Namespace, config_path) -> int:
     return 0
 
 
+def _board(args: argparse.Namespace, config_path) -> int:
+    root = _resolve_root(args.root, config_path)
+    return run_board(args, load_tree(root), _load_config(config_path).board, PROGRAM)
+
+
 def _trailers(args: argparse.Namespace, config_path) -> int:
     root = _resolve_root(args.root, config_path)
     try:
@@ -215,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--label", action="append", help="one more label on every ticket (repeatable)")
     p.set_defaults(handler=_compile)
 
+    add_board_parser(sub, common, _board)
     p = sub.add_parser(
         "trailers", parents=[common], help="every commit touching the tree carries Node-Change"
     )
