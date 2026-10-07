@@ -8,7 +8,9 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
-- Rollout stage 1b (no issue; branch `fix/rollout-stage1b`) -- `compile`: a use case inherits the
+- Rollout stage 1b (no issue; branch `fix/rollout-stage1b`) -- `context` and the ticket's Context now
+  carry the findings of each ancestor's experiments (`kind: question -- finding`; `experiments` in
+  `--json`), so the owner's answers and the decided stack reach the tickets. Also `compile`: a use case inherits the
   `depends_on` of its requirements (and a dependency on a container waits for the work under it) and
   is ordered as a foundation when a requirement above it is one; before, the use cases of a host tree
   went out together with the foundations in id order. The ticket's `depends-on` marker carries the

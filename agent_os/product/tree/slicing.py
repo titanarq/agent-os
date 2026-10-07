@@ -47,6 +47,7 @@ MECHANISM_PENDING_NOTE = (
 ANCESTOR_ACCEPTANCE_NOTE = (
     "Acceptance of this ancestor -- what the work on this node serves and must not break:"
 )
+ANCESTOR_FINDINGS_NOTE = "Findings of this ancestor's experiments -- settled, so obey them:"
 # What marks a criterion as one an agent judges rather than a command that is run. One string for
 # the Markdown slice, the JSON slice and the ticket's acceptance criteria, so they cannot drift.
 JUDGED_BY_AGENT_LABEL = "judged by an agent"
@@ -181,6 +182,22 @@ def verification_as_data(check: Verification) -> dict:
     return {"kind": "command", "command": check.command, "expects": check.expects}
 
 
+def ancestor_findings(ancestor: Node) -> list[dict[str, str]]:
+    """What an ancestor's experiments found, as `kind`, `question` and `finding`, one entry each:
+    an owner's answer (a limit, the language) or a decided stack binds the work below, and an
+    experiment that found nothing yet (`open`) has nothing to hand down. Whitespace is collapsed so
+    an entry is one line wherever it is shown."""
+    return [
+        {
+            "kind": experiment.kind,
+            "question": " ".join(experiment.question.split()),
+            "finding": " ".join((experiment.finding or "").split()),
+        }
+        for experiment in ancestor.experiments
+        if experiment.finding is not None
+    ]
+
+
 def render_node(
     cut: Slice, *, level: int, with_description: bool = True, with_verification: bool = True
 ) -> str:
@@ -229,6 +246,18 @@ def render_ancestors(cut: Slice, *, level: int) -> str:
         ]
         if ancestor.verification:
             block += ["", ANCESTOR_ACCEPTANCE_NOTE, *_verification_bullets(ancestor)]
+        findings = ancestor_findings(ancestor)
+        if findings:
+            block += [
+                "",
+                ANCESTOR_FINDINGS_NOTE,
+                *bullets(
+                    [
+                        f"{entry['kind']}: {entry['question']} -- {entry['finding']}"
+                        for entry in findings
+                    ]
+                ),
+            ]
         blocks.append("\n".join(block))
     return "\n\n".join([heading, *blocks])
 
@@ -263,6 +292,7 @@ def slice_as_data(cut: Slice) -> dict:
                 "description": ancestor.description,
                 "sources": ancestor.sources,
                 "verification": [verification_as_data(check) for check in ancestor.verification],
+                "experiments": ancestor_findings(ancestor),
             }
             for ancestor in cut.ancestors
         ],

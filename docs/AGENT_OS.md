@@ -744,7 +744,9 @@ has its own defect, and one fault is one line.
 **The slice** (`agent-os-tree context NODE [--json]`) is the unit of context an agent is handed,
 never the tree: the node in full, its ancestors up to the goal (description, sources and the
 verification each one carries, labelled as the acceptance the node's work serves and must not
-break, in `--json` as each ancestor's `verification` list), and the
+break, in `--json` as each ancestor's `verification` list, and the findings of its
+experiments -- `kind`, `question`, `finding`, one line each, those with a `finding` only -- so an
+owner's answer or a decided stack reaches every ticket below it, in `--json` as `experiments`), and the
 decisions in force on that chain -- the node's own and its ancestors' -- each with its statement,
 premises, rejected alternatives, review triggers and the *count* of its friction entries. A
 criterion an agent judges is rendered for the node and for every ancestor as a line

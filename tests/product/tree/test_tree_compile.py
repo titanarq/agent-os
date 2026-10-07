@@ -524,3 +524,15 @@ def test_files_hold_exactly_the_body_per_ticket_and_an_index(tmp_path):
     assert sorted(path.name for path in written) == ["compile.json", "uc-edit.md"]
     assert (out_dir / "uc-edit.md").read_text() == result.tickets[0].body
     assert json.loads((out_dir / "compile.json").read_text()) == compile_as_data(result)
+
+
+def test_a_ticket_carries_the_findings_of_its_requirements_experiments(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "fr-offline",
+        "functional-requirement",
+        parent="goal-notes",
+        experiments=[experiment_entry("feasible", kind="lookup", question="Which stack?")],
+    )
+    assert "Which stack? -- f" in one_ticket(tmp_path, "uc-edit").body
