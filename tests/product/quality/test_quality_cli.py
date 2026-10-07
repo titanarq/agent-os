@@ -115,6 +115,22 @@ def test_the_tree_root_from_the_config_is_excluded(repository, tmp_path):
     assert run(repository, "--config", str(config)) == 1
 
 
+def test_the_hosts_own_config_file_is_not_measured_even_when_it_replaces_the_default_exclusions(
+    repository,
+):
+    (repository / "config").mkdir()
+    config = write_config(
+        repository / "config" / "agents.yaml",
+        quality={"max_lines_per_file": 100, "excluded_paths": ["somewhere/else"]},
+    )
+    assert count_lines(config.read_bytes()) > 100
+    commit_all(repository, "adopt: the generated host config")
+    assert run(repository, "--config", str(config)) == 0
+    write(repository, "elsewhere.py", 101)
+    commit_all(repository, "a long file that is code")
+    assert run(repository, "--config", str(config)) == 1
+
+
 def test_a_missing_explicit_config_is_an_exit_two(repository, tmp_path):
     assert run(repository, "--config", str(tmp_path / "absent.yaml")) == 2
 

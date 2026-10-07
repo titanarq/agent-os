@@ -1167,8 +1167,9 @@ The `quality:` section of `config/agents.yaml` (`config.example.yaml` documents 
 `max_entries_per_folder`, `max_lines_per_file` and `excluded_paths`: data and prose are not code, so
 by default `docs/`, `tests/golden/`, `config.example.yaml` and `uv.lock` are not measured and not
 entered (an excluded path still occupies one entry of its parent). Always excluded besides the
-list: `tree.root`, and the mechanism's own directory when it is vendored under a host
-(`agent_os/`, which only changes through `git subtree pull`). The mechanism's own CI calls it from
+list: `tree.root`, the host's own `config/agents.yaml` (the config file that was loaded, when it is
+inside the repository: configuration is not code), and the mechanism's own directory when it is
+vendored under a host (`agent_os/`, which only changes through `git subtree pull`). The mechanism's own CI calls it from
 `.github/workflows/ci.yml` and a host's from `templates/ci-host.yml`. The second check is the
 validator's: `prompts/validator.md` makes it review the diff for SOLID, long self-explanatory names
 and comments only for a non-obvious why, requesting changes like any other finding.

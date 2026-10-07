@@ -38,14 +38,26 @@ def mechanism_directory_inside(repository: pathlib.Path) -> str | None:
     return None if relative == "." else relative
 
 
-def _load_quality_and_tree_root(config_path: pathlib.Path | None) -> tuple[QualityConfig, str]:
+def config_file_inside(repository: pathlib.Path, config_path: pathlib.Path) -> str | None:
+    """The config file's path relative to the repository when it is tracked there (a host's
+    `config/agents.yaml`), which is configuration and not code; `None` when it lives elsewhere."""
+    try:
+        return config_path.resolve().relative_to(repository.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def _load_quality_and_tree_root(
+    config_path: pathlib.Path | None,
+) -> tuple[QualityConfig, str, pathlib.Path | None]:
     """An explicit `--config` must load; the default one may simply not exist, as in the
-    mechanism's own repository, which has no `config/agents.yaml`."""
+    mechanism's own repository, which has no `config/agents.yaml`. The third value is the file
+    that was read, `None` when there was none."""
     path = config_path or lib.DEFAULT_AGENTS_CONFIG
     if config_path is None and not path.exists():
-        return QualityConfig(), ""
+        return QualityConfig(), "", None
     agents_config = lib.load_agents_config(path)
-    return agents_config.quality, agents_config.tree.root
+    return agents_config.quality, agents_config.tree.root, path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,10 +74,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     repository = (arguments.root or host_root()).resolve()
     try:
-        quality, tree_root = _load_quality_and_tree_root(arguments.config)
+        quality, tree_root, loaded_config = _load_quality_and_tree_root(arguments.config)
         merge_base = merge_base_with_head(repository, arguments.base)
         excluded_paths = [*quality.excluded_paths, tree_root]
         excluded_paths.append(mechanism_directory_inside(repository) or "")
+        if loaded_config is not None:
+            excluded_paths.append(config_file_inside(repository, loaded_config) or "")
         violations = find_violations(
             snapshot_of_revision(repository, merge_base),
             snapshot_of_checkout(repository),
