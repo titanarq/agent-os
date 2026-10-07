@@ -645,6 +645,13 @@ if [ "$runs_tests" = yes ]; then
       | tee -a "$logfile"
     exit 1
   fi
+  # The expert WRITES a branch: with no worktree it would start in the main checkout, so it refuses
+  # where the validator degrades (#135).
+  if [ "$role" = expert ] && [ "$prepare_status" -ne 0 ]; then
+    echo "ERROR: no worktree for the $role run on #$subject -- it writes a branch and never starts in the main checkout; no $role run launched" \
+      | tee -a "$logfile"
+    exit 1
+  fi
   [ -n "$agent_worktree" ] && echo "worktree:  $agent_worktree" >>"$logfile"
   # The RULES name that worktree by its own path instead of leaving the agent to derive it: on the
   # run that prepared none, an inherited `$PYTHONPATH` still points at whatever tree launched this

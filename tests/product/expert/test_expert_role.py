@@ -127,3 +127,21 @@ def test_an_expert_launch_gets_a_worktree_of_its_own_and_runs_inside_it(
     assert seen["WORKTREE_GIT"] == "yes"
     assert str(worktree) in _prompt(launch_environment)
     assert _host(launch_environment) != worktree
+
+
+def test_an_expert_launch_with_no_worktree_refuses_and_launches_nothing(
+    launch_environment,  # noqa: F811
+):
+    """The validator degrades to reading the diff; the expert WRITES, so it never starts in the main
+    checkout (#135)."""
+    del launch_environment["AGENT_WORKTREE_REF"]
+    host = _host(launch_environment)
+    subprocess.run(["git", "-C", str(host), "remote", "remove", "origin"], check=False)
+    subprocess.run(
+        ["git", "-C", str(host), "remote", "add", "origin", str(host / "no-such-origin")],
+        check=True,
+    )
+    result = _launch(launch_environment, "expert", "7")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "ERROR" in result.stdout, result.stdout
+    assert not pathlib.Path(launch_environment["STUB_RECORD"]).exists(), "the backend ran"
