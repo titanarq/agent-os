@@ -30,6 +30,28 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- Agentos v2, Stage 1, config and recording (#116, branch `fix/116-config-and-trailer`) -- one
+  backend, Sonnet defaults, and the `Node-Change` trailer
+  (`docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`,
+  `docs/tree/dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check.md`). `config.example.yaml`
+  and the install templates describe ONE backend, Claude Code: the worker classes are now
+  `mechanical-sonnet` and `complex-sonnet`, the refiner class is on Sonnet like every other role,
+  `project.agent_models.task_writer` defaults to `sonnet`, and `project.agent_models` gains
+  `custodian` and `consolidator`, default `opus` -- the keys and their defaults only; the two roles
+  arrive in Stage 2 and nothing reads them yet. The multi-backend machinery (`fallback:`,
+  `escalate:`, `slots:`, the Qwen stream parser) is untouched, and its tests run against
+  `tests/fixtures/multi_backend_config.yaml`, the shape the example had before. New command
+  `agent-os-tree trailers --base REF [--head REF] [--root DIR] [--json]`
+  (`agent_os/product/tree/trailers.py`): every non-merge commit of the range that touches the tree
+  root must carry exactly one `Node-Change: usage | rework | owner` trailer, one line per offender
+  (`missing-node-change`, `multiple-node-change`, `unknown-node-change`), exit 1; an unresolvable
+  range is an error, never a pass. `templates/ci-host.yml` runs it on every pull request, and the
+  worker and refiner prompts say when each value applies (goldens `worker.md`, `refiner.md` and
+  `planner.md` changed: the trailer paragraph and the class names, read diff by diff). Host
+  follow-up after a `subtree pull`: nothing is forced -- an existing `config/agents.yaml` keeps the
+  models and backends it names; re-run `agent-os-install --force` to take the new CI step, and give
+  commits that touch the tree their trailer from then on (`docs/AGENT_OS.md` §4.6,
+  `docs/ADOPTION.md` step 20).
 - #113 -- Agentos v2, Stage 1: the tree format. New node state `implemented` (between `improvised` and
   `hardened`). `experiments` replaces `spikes` (kind `spike | demand-probe | question | lookup`,
   outcome may be `open`; a `question` carries its `scope` `what | how` and its `default_answer`);

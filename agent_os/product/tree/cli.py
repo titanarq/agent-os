@@ -10,6 +10,9 @@
     agent-os-tree compile [--root DIR] [--json] [--out-dir DIR] [--budget-class C] [--label L ...]
         # the dispatch tickets of every dispatchable node, and an escalation for each node that
         # lacks a verification. Renders only: no issue is created and no network is touched.
+    agent-os-tree trailers --base REF [--head REF] [--root DIR] [--json]
+        # every commit of REF..HEAD that touches the tree must carry one `Node-Change: usage|rework|owner`
+        # trailer; one line per commit that does not, exit 1. Reads git only.
 
 Exit status: 0 on success, 1 on a red tree or a refusal (one line on stderr saying why), 2 on a
 usage error. The root is `--root`, else `tree.root` of `config/agents.yaml` under the host's root;
@@ -41,6 +44,7 @@ from agent_os.product.tree.slicing import (
     render_slice_json,
     render_slice_markdown,
 )
+from agent_os.product.tree.trailers import TrailerError, check_node_change_trailers
 
 PROGRAM = "agent-os-tree"
 
@@ -165,6 +169,22 @@ def _compile(args: argparse.Namespace, config_path) -> int:
     return 0
 
 
+def _trailers(args: argparse.Namespace, config_path) -> int:
+    root = _resolve_root(args.root, config_path)
+    try:
+        defects = check_node_change_trailers(root, args.base, args.head)
+    except TrailerError as error:
+        print(f"{PROGRAM}: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        listed = [vars(defect) for defect in defects]
+        print(json.dumps({"ok": not defects, "defects": listed}, indent=2, ensure_ascii=False))
+        return 1 if defects else 0
+    for defect in defects:
+        print(f"{defect.commit[:10]} {defect.subject}: {defect.code}: {defect.message}")
+    return 1 if defects else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROGRAM, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -194,6 +214,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--label", action="append", help="one more label on every ticket (repeatable)")
     p.set_defaults(handler=_compile)
+
+    p = sub.add_parser(
+        "trailers", parents=[common], help="every commit touching the tree carries Node-Change"
+    )
+    p.add_argument("--base", required=True, help="the range starts after this ref")
+    p.add_argument("--head", default="HEAD", help="the range ends at this ref (default: HEAD)")
+    p.set_defaults(handler=_trailers)
     return parser
 
 

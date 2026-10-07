@@ -24,7 +24,7 @@ import re
 import subprocess
 
 import pytest
-from conftest import EXAMPLE_CONFIG
+from conftest import SHIPPED_EXAMPLE_CONFIG
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import (
@@ -53,10 +53,8 @@ ROEDOR_WORKER_EXTRAS = """RUNNING PYTHON AND TESTS
   shared and db_sandbox writes to it for real.
 """
 
-ROEDOR_REFINER_EXTRAS = """   EVERY worker task goes to a Qwen class: `mechanical-qwen` when the change is
-   small and fully specified, `complex-qwen` in every other case. Never give a worker task a class
-   whose `backend:` is `claude`
-   (agent_os/docs/adr/2026-09-16-workers-run-on-qwen-and-claude-only-reviews.md).
+ROEDOR_REFINER_EXTRAS = """   EVERY worker task goes to a Sonnet class: `mechanical-sonnet` when the change is
+   small and fully specified, `complex-sonnet` in every other case.
 """
 
 
@@ -79,7 +77,7 @@ def captured(tmp_path_factory) -> pathlib.Path:
     (extras_dir / "refiner.md").write_text(ROEDOR_REFINER_EXTRAS)
     config = host / "config" / "agents.yaml"
     config.write_text(
-        EXAMPLE_CONFIG.read_text().replace(
+        SHIPPED_EXAMPLE_CONFIG.read_text().replace(
             "  prompt_extras: {}\n",
             "  prompt_extras:\n"
             "    worker: config/agent_prompts/worker.md\n"
@@ -270,6 +268,6 @@ def test_the_template_carries_the_worker_classes_placeholder(role):
 def test_every_example_worker_class_has_a_description():
     from agent_os.lib import load_task_classes
 
-    for name, task_class in load_task_classes(EXAMPLE_CONFIG).items():
+    for name, task_class in load_task_classes(SHIPPED_EXAMPLE_CONFIG).items():
         if task_class.role == "worker":
             assert task_class.description, name

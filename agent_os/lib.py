@@ -637,15 +637,15 @@ def _backends_from_deprecated_maps(data: dict) -> dict:
 
 
 class AgentModels(Strict):
-    """The `model:` of each installed `.claude/agents/*.md` definition, rendered as
-    `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`. A definition
-    has exactly one model, so a duty that needs a different one is its own definition
-    (`task-writer`, split out of the control plane). The value is opaque to the tool: whatever
-    `claude --model` accepts, an alias (`sonnet`, `opus`) or a full id (agent-os#96)."""
+    """The `model:` of each installed `.claude/agents/*.md` definition (`__CONTROL_PLANE_MODEL__`...),
+    opaque to the tool: whatever `claude --model` accepts (agent-os#96). Sonnet everywhere but the
+    Stage 2 `custodian` and `consolidator` (Opus; keys only, nothing reads them yet, #116)."""
 
     control_plane: str = "sonnet"
     worker_runner: str = "sonnet"
-    task_writer: str = "opus"
+    task_writer: str = "sonnet"
+    custodian: str = "opus"
+    consolidator: str = "opus"
 
 
 class ProjectConfig(Strict):
