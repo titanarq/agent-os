@@ -978,18 +978,18 @@ class TreeConfig(Strict):
     """Where a host's product tree lives and how the tickets compiled from it are named
     (`agent_os.product.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
 
-    # The directory holding the product tree AND the decision ledger -- one directory of Markdown
-    # files, nodes and decisions together, in any subdirectories the host likes -- relative to the
-    # host's root. `agent-os-tree --root` overrides it for one run.
+    # The directory holding the product tree AND the decision ledger (Markdown files, nodes and
+    # decisions together), relative to the host's root. `agent-os-tree --root` overrides it.
     root: str = "product"
     # The worker class a compiled ticket names in its `<!-- budget: <class> -->` line. Empty by
-    # default, like `project.guard_unit`: a mechanism that does not know a host's class names does
-    # not invent one, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
+    # default, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
     ticket_budget_class: str = ""
-    # Labels every compiled ticket carries besides its task type label -- a host marks the tickets
-    # that came from its tree, or names the module they belong to, here. The initial `status:*`
-    # label is deliberately not decided by `compile`: creating the issues is Phase 2's wiring.
+    # Labels every compiled ticket carries besides its task type label, e.g. a marker for the
+    # tickets that came from the tree. The initial `status:*` label is not decided by `compile`.
     ticket_labels: list[str] = []
+    # True makes this a v2 host: dispatch starts only tickets with a node address, dependencies
+    # first, never two on the same code (`agent_os.product.dispatch.rules`).
+    dispatch_by_node: bool = False
 
 
 class AgentsConfig(Strict):

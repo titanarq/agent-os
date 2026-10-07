@@ -536,6 +536,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `tree.root` | the directory of the product tree and the decision ledger (§4.6), relative to the host's root; `agent-os-tree --root` overrides it for one run | `product` (the default) |
 | `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-sonnet` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
+| `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
 | `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the slow path's contract), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
@@ -648,11 +649,11 @@ body; every other field is frontmatter. An unknown field is an error.
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
-| `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a `command` is **mandatory for dispatch** of a leaf and for a `hardened` node | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
+| `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a leaf is dispatched with a command, a judged criterion or none (the ticket's acceptance is then judged by an agent); a `command` is **mandatory for a `hardened` node** | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |
 | `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
 | `experiments` | optional | what was tried or is still to be found out about the node (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`); replaces `spikes`. Each entry: `kind` (`spike`, `demand-probe`, `question`, `lookup`), `question`, `outcome` (`open`, `feasible`, `infeasible`, `inconclusive`, and `answered` for a question only), `finding` (required unless `open`), `date`, and for a `question` only its `scope` (`what` or `how`, required) and its `default_answer` (required for `what`: it stands until the owner answers). An open `what` question marks the node **not hardenable** |
-| `depends_on` | optional | ids of the nodes that must be done first, each once (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`); the doctor checks that each exists and that the edges do not loop. What dispatch does with it is the compile step's |
+| `depends_on` | optional | ids of the nodes that must be done first, each once (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`); the doctor checks that each exists and that the edges do not loop. `compile` writes it into the ticket and orders the tickets by it, and a v2 host's dispatch starts a ticket only once the tickets of those nodes are closed (see Dispatch in a v2 host) |
 | `challenge` | optional | the node is flagged as possibly not finishable (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`): `reason` (`no-solution`, `no-verification`, `over-cost`) and an optional `explanation`. It marks the node, and every node that depends on it, **not hardenable**; the owner decides whether to go on. Any node may carry it, a goal included |
 
 A goal carries none of `mechanism`, `implementation`, `experiments`, `depends_on`, `foundation` or a
@@ -727,7 +728,7 @@ pointer.
 | `dangling-dependency` | a node's `depends_on` names an id that is not a node |
 | `dependency-cycle` | the `depends_on` edges loop; every node on the cycle is named, a node that only depends on one is not |
 
-**Not hardenable** is a property of the model, not a check: `agent_os.product.tree.hardening` (`hardening_blockers(tree, node_id)`, `is_hardenable`) says which doubts keep a node from hardening -- an open `what` question, or a `challenge`, on the node or on anything it depends on, directly or not -- and why. A node's own `has_open_what_question` is the first half. `compile` does not use it yet.
+**Not hardenable** is a property of the model, not a check: `agent_os.product.tree.hardening` (`hardening_blockers(tree, node_id)`, `is_hardenable`) says which doubts keep a node from hardening -- an open `what` question, or a `challenge`, on the node or on anything it depends on, directly or not -- and why. A node's own `has_open_what_question` is the first half. `compile` uses it to say, in a ticket's definition of done, why the node cannot be hardened yet; no ticket ever asks for `state: hardened`.
 
 A reference to a file that exists but failed to load is not also reported as dangling: the target
 has its own defect, and one fault is one line.
@@ -751,24 +752,68 @@ made of fails the doctor (the doctor's lines are printed); a defect elsewhere do
 
 **Tickets** (`agent-os-tree compile [--json] [--out-dir DIR] [--budget-class C] [--label L]`)
 renders; it creates no issue. A node becomes a ticket when it is a functional requirement or use
-case with no children, `pending`, has an executable `verification` (a `command`; a judged criterion
-is acceptance and does not make a node dispatchable -- the rule itself is Stage 1's to change,
-`docs/tree/dec-tests-harden-they-do-not-build.md`), and its mechanism can be resolved (written, or
-`pending` with no experiment having found it `infeasible`). A node that is pending but has no executable
-verification (a leaf), or whose pending mechanism an experiment found infeasible, is reported as an
-**escalation** -- `missing-verification` or `mechanism-unresolvable` -- and never as a ticket. A goal,
-a node past `pending`, and a container (any node with children, whether or not it has a
-verification: its use cases are the work, and its own verification is the acceptance of its
-subtree) are skipped. A ticket has the shape of the repository's dispatchable issues:
+case with no children, `pending`, and its mechanism can be resolved (written, or `pending` with no
+experiment having found it `infeasible`). **No verification is needed to dispatch**: tests harden,
+they do not build (`docs/tree/dec-tests-harden-they-do-not-build.md`), and the essential top-down
+acceptance holds even when an agent judges it (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`),
+so a leaf with a command, with a judged criterion or with nothing gets a ticket; one with nothing
+is accepted by "judged by an agent: the node does what its description says and breaks no
+acceptance criterion of its ancestors". The one **escalation** left is `mechanism-unresolvable`: a
+pending mechanism an experiment found infeasible is reported and never a ticket. A goal, a node
+past `pending`, and a container (any node with children, whether or not it has a verification: its
+use cases are the work, and its own verification is the acceptance of its subtree) are skipped.
+A ticket has the shape of the repository's dispatchable issues:
 `## Objective` (the node), `## Acceptance criteria` (the node's own verification: each command as
 "exits 0", each judged criterion as `judged by an agent: <criterion>`), `## Stages` (one to
 resolve and write back a pending mechanism, one to implement), `## Context` (the slice, which
 carries the verification of every ancestor, judged criteria included, as acceptance not to break),
-`## Not included`, `## Dependencies` (`none`), `## Definition of done`, then
-`<!-- budget: <class> -->` and the address `<!-- node: <id> -->`; every body is checked by
-`validate_issue_body` before it is returned. The class is `--budget-class` or
-`tree.ticket_budget_class`, a worker class, never a guess; the labels are the task type label,
-`tree.ticket_labels` and `--label`. `compile` refuses a tree the doctor finds anything in.
+`## Not included`, `## Dependencies` (`none`, or the nodes it waits for), `## Definition of done`
+(the node file written back with `implementation` and `state: implemented`, **never `hardened`**,
+and, when `hardening_blockers` says the node cannot be hardened yet, why), then the markers, one
+comment line each:
+
+| Marker | Says |
+|---|---|
+| `<!-- budget: <class> -->` | the worker class (`--budget-class` or `tree.ticket_budget_class`, a worker class, never a guess) |
+| `<!-- node: <id> -->` | the **address**: the node the ticket came from |
+| `<!-- depends-on: <id>, ... -->` | the node's `depends_on`, present only when it has any |
+| `<!-- touches: <path>, ... -->` | the code the node is known to touch, present only when known |
+
+The touched code is the paths named in the node's `implementation` and, once written, its
+`mechanism` (a path has a `/` or a file extension; a directory covers what is under it). A node that
+names no path touches nothing known, and a component's paths join once the tree has components
+(`docs/tree/dec-a-component-has-a-core-and-extensions.md`). Tickets come **ordered by their
+dependencies**, a dependency before whatever depends on it (foundations and then id among the
+free ones), in the text, the JSON and the files. The labels are the task type label,
+`tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
+returned, and `compile` refuses a tree the doctor finds anything in. The code is
+`agent_os.product.tree.compile` (what is a ticket) over `agent_os.product.dispatch` (the body, the
+markers, the output).
+
+**Dispatch in a v2 host** (agent-os#117,
+`docs/adr/2026-10-07-a-v2-host-dispatches-by-node-address-dependencies-first-and-never-on-the-same-code.md`,
+`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`). A host is a **v2 host** when
+its `config/agents.yaml` sets `tree.dispatch_by_node: true`. In one, and only there, the rules of
+`agent_os.product.dispatch.rules` hold, in code and not in the planner's prompt:
+
+- the guard's dispatchable scan (`dispatchable_scan`) leaves out a ready issue with **no node
+  address**, and one whose `depends-on` node still has an **open ticket** (dependencies first);
+- `worker_task.sh <backend> start` asks `python -m agent_os.product.dispatch start-gate <issue>
+  <running issues...>` after the cap and the module exclusion, and refuses (exit 1, one line per
+  reason on stderr) an issue with no address, with an open dependency, or whose `touches` paths
+  **overlap** those of an issue another worker is running (the same path, or one inside the other's
+  directory). `--force` skips it, like the validation next to it. An issue whose node names no code
+  collides with nothing: the check cannot know what it does not say.
+- the worker's **brief** (`agent_os.issues brief`) ends with the slice of its node
+  (`agent-os-tree context <node>`, cut from the tree as it is at dispatch), never the tree.
+
+Roles: the worker writes back to its own node file (`mechanism`, `implementation`,
+`state: implemented`, never `hardened`, never a goal, a `verification` or a `challenge`) and reads
+no other node; the refiner keeps a ticket's marker lines on every body it writes; the validator
+validates against the node's verification, a command it runs or a criterion it judges, in a
+context separate from the worker's (the issue, the slice and the diff, never the worker's
+transcript), and judges **every** pull request of the branch against the acceptance of its goals and
+use cases, not only the last one; the planner never works around a refusal.
 
 **Recording a change: the `Node-Change` trailer** (`agent-os-tree trailers --base REF [--head REF]
 [--root DIR] [--json]`, agent-os#116, `docs/tree/dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check.md`).
@@ -1259,7 +1304,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume --issue <M>` the slot that recorded issue M, `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot` |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
-| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.product.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes and an escalation for each that lacks a verification. Reads files only; creates no issue |
+| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.product.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |

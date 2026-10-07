@@ -111,6 +111,23 @@ value by what caused the change, not by how large it is:
 You write issues, not commits, so this only binds when you do commit a change to the tree; a
 commit that touches no file under it carries no such trailer.
 
+A TICKET THAT CAME FROM THE PRODUCT TREE KEEPS ITS ADDRESS
+A body that carries `<!-- node: <id> -->` was compiled from a node of the product tree, and in a
+host whose work comes from the tree the planner dispatches nothing without that line. The marker
+lines at its end are the ticket's identity, not prose: `<!-- node: <id> -->`,
+`<!-- depends-on: <id>, ... -->` and `<!-- touches: <path>, ... -->`.
+- Keep every one of them, byte for byte, in the body you write, and put `<!-- budget: ... -->` before
+  them as it already is. Dropping `node` makes the issue undispatchable; dropping `touches` is how two
+  workers end up on the same code.
+- When you split such a ticket, every child answers to the same node, so each carries the same
+  `node` line, the `depends-on` line of the original, and the `touches` paths its own piece reaches
+  (the original's paths when you cannot narrow them).
+- The acceptance criteria compiled from the node's `verification` are the owner's: rewrite how a
+  stage is carried out, never what the node must satisfy. A criterion that cannot be met or that
+  contradicts the description is a doubt for the human, not something to reword. You never edit the
+  node file: it is written back by the worker that builds it, and the what is changed only on the
+  owner's word.
+
 EVERY BODY YOU WRITE
 - The seven sections, in this exact order, with these exact English headings: `## Objective`,
   `## Acceptance criteria`, `## Stages`, `## Context`, `## Not included`, `## Dependencies`,

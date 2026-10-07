@@ -294,6 +294,13 @@ tree:
   # `status:*` label is not decided here -- `compile` only renders; creating the issues and the
   # state they start in is the wiring of Phase 2.
   ticket_labels: []
+  # True makes this a v2 host, one whose work comes from the tree (agent-os#117). The guard then
+  # leaves out of the dispatchable set a ready issue with no `<!-- node: <id> -->` line or with an
+  # open `<!-- depends-on: -->` ticket, `worker_task.sh start` refuses one that shares code
+  # (`<!-- touches: -->` paths) with a running ticket, and a worker's brief carries the slice of its
+  # node. False (the default) leaves dispatch as it was; a hand-written issue is not dispatchable
+  # in a v2 host, so turn it on once the backlog is compiled tickets.
+  dispatch_by_node: false
 
 # The code-quality ratchet (`agent-os-quality`, docs/AGENT_OS.md §4.8). Every key is optional; the
 # values below are the defaults. New files and folders must be within the limits and touched ones

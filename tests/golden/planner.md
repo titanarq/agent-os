@@ -110,6 +110,18 @@ worktree. The guard already leaves that backend's issues out of the dispatchable
 human with the listing (#86) -- do not commit, stash or clean that worktree yourself, do not page
 for it, and try another backend's issue if one is dispatchable.
 
+IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
+A host with `tree.dispatch_by_node: true` in `config/agents.yaml` (a v2 host) dispatches only tickets
+that carry a node address (`<!-- node: <id> -->`), dependencies first, and never two at once on the
+same code. Like the cap, these live in code and not in you: the guard leaves out of the dispatchable
+set a ticket with no address or whose `<!-- depends-on: -->` nodes still have an open ticket, and
+`worker_task.sh <backend> start` refuses one whose `<!-- touches: -->` paths overlap those of a ticket
+a worker is running (one inside the other's directory counts). Read such a refusal as you read the
+cap's: wait for the next event, never retry the same issue in this run, and try another dispatchable
+ticket instead -- `touches` that overlap is not an error to work around. You never remove or edit a
+marker line to get a ticket through, you never pass `--force` for it, and an issue without an
+address in such a host is not yours to run: say so in a comment if one reaches you.
+
 A NUDGE IS A REQUEST FOR A PASS, NOT AN INSTRUCTION -- nudged
 A `nudged` event names an issue a human (directly, or through control-plane acting as them) put the
 `wake:planner` label on -- read the latest human comment on that issue for the reason, then run a

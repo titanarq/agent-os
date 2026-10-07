@@ -1361,12 +1361,10 @@ start|resume)
       fi
     fi
 
-    # PARALLELISM CAP AND MODULE EXCLUSION, ENFORCED HERE, NOT COUNTED BY THE PLANNER (#374,
-    # agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md). This slot
-    # is not alive or `start` would already have refused above -- so every alive slot found here
-    # is an OTHER one, and the count below is exactly how many issues are already running. Every
-    # other SLOT, of this backend as much as of the others (#90): a slot is a worker, and the cap
-    # and the module exclusion are about workers, not about backend names.
+    # PARALLELISM CAP, MODULE EXCLUSION AND CODE COLLISION, ENFORCED HERE, NOT COUNTED BY THE
+    # PLANNER (#374, agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md).
+    # This slot is not alive or `start` would already have refused above -- so every alive slot
+    # found here is an OTHER one, of this backend as much as of the others (#90): a slot is a worker.
     other_backends_alive=()
     while IFS=$'\t' read -r _ _ other _; do
       [ -n "$other" ] || continue
@@ -1390,6 +1388,7 @@ start|resume)
       [ -s "$other_issuefile" ] || continue
       other_issue=$(cat "$other_issuefile")
       case "$other_issue" in ''|*[!0-9]*) continue ;; esac
+      running_issues+=("$other_issue")
       other_modules=$(gh issue view "$other_issue" --json labels -q '.labels[].name' 2>/dev/null \
         | grep '^module:' || true)
       shared=$(comm -12 <(printf '%s\n' "$issue_modules" | sort) <(printf '%s\n' "$other_modules" | sort) \
@@ -1408,6 +1407,7 @@ start|resume)
     if [ "$force" = no ]; then
       "$agent_python" -m agent_os.issues validate "$issue" \
         || { echo "refusing to dispatch: issue #$issue does not validate (pass --force to override)"; exit 1; }
+      "$agent_python" -m agent_os.product.dispatch start-gate "$issue" "${running_issues[@]}" || exit 1
     fi
 
     # An issue is dispatchable only once its body resolves to a task class in config/agents.yaml --

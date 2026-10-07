@@ -43,6 +43,9 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Shared builders sit beside the tests that use them (`tree_helpers`, `compile_support`) and are
+# imported by name from any folder under `tests/product`.
+pythonpath = ["tests/product/tree", "tests/product/dispatch"]
 
 [build-system]
 # `license` as an SPDX expression and `license-files` (PEP 639) need hatchling 1.27 or later.
