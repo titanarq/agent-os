@@ -153,3 +153,14 @@ def test_the_expert_prompt_defers_the_trees_language_to_the_hosts_agents_md():
     assert "stays in English" not in rules
     assert "language rule" in rules
     assert "the host's own AGENTS.md" in rules
+
+
+@pytest.mark.parametrize("role", ["expert", "worker", "refiner"])
+def test_a_role_teaches_one_trailer_block_for_node_change_and_co_authored_by(role):
+    """git reads only the LAST paragraph as trailers: a blank line between `Node-Change:` and
+    `Co-Authored-By:` hides the first from `agent-os-tree trailers`."""
+    values = prompt_substitutions()
+    values.update(WORKTREE="/a/worktree", MAIN_CHECKOUT="/a/checkout")
+    rules = _flattened(render_prompt(role, values))
+    assert "ONE trailer block" in rules
+    assert "git interpret-trailers --parse" in rules
