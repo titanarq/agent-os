@@ -261,7 +261,7 @@ def _build_stand_in_main(directory: pathlib.Path) -> pathlib.Path:
     # whether or not a subprocess inherits this session's own `AGENTS_CONFIG_PATH`.
     (main / "config").mkdir()
     (main / "config" / "agents.yaml").write_text(EXAMPLE_CONFIG.read_text())
-    for name in ("agent_task.sh", "_python.sh"):
+    for name in ("agent_task.sh", "agent_role_instructions.sh", "_python.sh"):
         (main / "agent_os" / "bin" / name).symlink_to(AGENT_OS_DIR / "bin" / name)
     # A repository of its own, holding exactly the farm: every `git worktree add` the chain makes
     # is registered HERE and goes with tmp_path, never under the gitdir of the checkout running
