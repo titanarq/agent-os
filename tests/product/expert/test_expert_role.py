@@ -145,3 +145,11 @@ def test_an_expert_launch_with_no_worktree_refuses_and_launches_nothing(
     assert result.returncode != 0, result.stdout + result.stderr
     assert "ERROR" in result.stdout, result.stdout
     assert not pathlib.Path(launch_environment["STUB_RECORD"]).exists(), "the backend ran"
+
+
+def test_the_expert_prompt_defers_the_trees_language_to_the_hosts_agents_md():
+    """A host's tree may be Spanish: the prompt names no language for what goes into the tree (#135)."""
+    rules = _flattened(_expert_rules())
+    assert "stays in English" not in rules
+    assert "language rule" in rules
+    assert "the host's own AGENTS.md" in rules

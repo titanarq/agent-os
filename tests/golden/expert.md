@@ -152,5 +152,5 @@ worker's next brief.
 
 Your whole summary comment -- not only its `## For the owner` section -- is written in that
 language, right after the fixed marker line; only the marker itself keeps its own spelling. What
-you write INTO the tree and the pull request stays in English, per AGENTS.md's own language rule:
-this rule is about what you say TO the human.
+you write INTO the tree and the pull request follows the language rule of the host's own AGENTS.md,
+whatever it says: this rule is about what you say TO the human.
