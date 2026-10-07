@@ -30,6 +30,11 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- Stage 1 loose ends (#130): agent-os's own CI now runs `agent-os-tree trailers --base
+  origin/<base> --root docs/tree` on pull requests, so a commit touching `docs/tree/` without a
+  `Node-Change` trailer fails there as it does in a host. The standing instruction for a reply to a
+  question session moved from the session issue's body into `prompts/planner.md` (its own block);
+  the issue body keeps a pointer to it. Host follow-up: none beyond the `subtree pull`.
 - #118 -- Agentos v2, Stage 1: the expert role. A one-shot role in the validator/refiner pattern:
   class `expert` in `config.example.yaml` (`role: expert`, Sonnet, no fallback), prompt
   `prompts/expert.md` (rendered with `__TREE_ROOT__`, the new placeholder for `tree.root`; `expert`

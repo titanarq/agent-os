@@ -42,5 +42,11 @@ jobs:
         if: github.event_name == 'pull_request'
         run: .venv/bin/python -m agent_os.quality --base origin/${{ github.base_ref }}
 
+      # Every commit of the pull request that touches the product tree carries `Node-Change`; only
+      # the pull request's own range is judged, so commits already on main are not re-judged.
+      - name: the Node-Change trailer on every commit that touches the product tree
+        if: github.event_name == 'pull_request'
+        run: .venv/bin/python -m agent_os.product.tree trailers --base origin/${{ github.base_ref }} --root docs/tree
+
       - name: the mechanism's suite
         run: .venv/bin/pytest tests -q

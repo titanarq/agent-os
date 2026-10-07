@@ -22,14 +22,10 @@ REPLY_INSTRUCTIONS = (
 )
 
 
-# Said in the issue and not in `prompts/planner.md`: the planner prompt is at its size limit, and
-# the instruction only matters on this issue, which the planner reads when the owner's reply wakes it.
+# The standing instruction lives in `prompts/planner.md`; the issue only points at it.
 PLANNER_INSTRUCTIONS = (
-    'For the planner, after the owner replies: run `"$AGENT_OS_PYTHON" -m agent_os.product.sessions '
-    "answers <this issue>` and never reword an answer. Write one task issue asking a worker to run "
-    "`... sessions apply <this issue>` on a branch, commit exactly what it writes and open a pull "
-    "request whose body carries `Session-Answer: #<this issue>` on its own line. That pull request "
-    "touches the what: the validator checks the transcription and nothing merges it automatically."
+    "For the planner, after the owner replies: the procedure is in `prompts/planner.md`, "
+    '"an answer to a question session".'
 )
 
 
