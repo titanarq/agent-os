@@ -150,6 +150,12 @@ def test_the_real_host_ci_workflow_runs_on_every_pull_request_with_no_path_filte
     assert "scripts/test.sh" in steps
 
 
+def test_the_real_host_ci_workflow_checks_the_node_change_trailer_on_pull_requests(tmp_path):
+    [action] = plan_host_ci_workflow(_project(), tmp_path)
+    assert "-m agent_os.product.tree trailers --base" in action.content
+    assert "github.base_ref" in action.content
+
+
 def test_the_real_host_ci_workflow_carries_no_host_literal(tmp_path):
     text = install_module.HOST_CI_WORKFLOW_SOURCE.read_text()
     for literal in ("roedor", "MatillaM", "titanarq"):
@@ -186,7 +192,7 @@ def test_plan_agent_templates_renders_control_plane_task_writer_and_worker_runne
         rendered = {action.dest.name: action.content for action in actions}
         assert rendered == {
             "control-plane.md": "guard: acme-guard\n",
-            "task-writer.md": "model: opus\n",
+            "task-writer.md": "model: sonnet\n",
             "worker-runner.md": "human: octocat\n",
         }
         for action in actions:

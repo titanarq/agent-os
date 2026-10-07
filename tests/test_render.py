@@ -53,7 +53,7 @@ def test_token_values_covers_every_token_the_issue_names():
         "__MERGE_METHOD__": "merge",
         "__CONTROL_PLANE_MODEL__": "sonnet",
         "__WORKER_RUNNER_MODEL__": "sonnet",
-        "__TASK_WRITER_MODEL__": "opus",
+        "__TASK_WRITER_MODEL__": "sonnet",
     }
 
 
@@ -174,7 +174,7 @@ def _frontmatter_model(rendered: str) -> str:
 
 @pytest.mark.parametrize(
     ("name", "default"),
-    [("control-plane.md", "sonnet"), ("worker-runner.md", "sonnet"), ("task-writer.md", "opus")],
+    [("control-plane.md", "sonnet"), ("worker-runner.md", "sonnet"), ("task-writer.md", "sonnet")],
 )
 def test_an_agent_definition_renders_the_default_model_of_its_role(name, default):
     rendered = render_agent_template((AGENT_TEMPLATES_DIR / name).read_text(), _project())
