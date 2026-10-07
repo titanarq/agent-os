@@ -116,7 +116,13 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     create each App on `<org>/<repo>`'s GitHub settings, with permissions matched to what that
     role calls — workers need Issues (read/write), Contents (push), Pull requests (create); the
     planner needs Issues, Pull requests (read), Projects; the validator additionally needs "Pull
-    request reviews" — install it on the repo, and download its private key. A worker App
+    request reviews" (for a GitHub App that is part of "Pull requests: write", not a separate
+    permission) — install it on the repo, and download its private key. A role with no App of
+    its own signs as `planner_app`, and the **expert** pushes a branch and opens a pull request,
+    so whichever App it signs as needs Contents (read/write): a planner App with Contents
+    read-only fails the expert with `403 Write access to repository not granted`. Point
+    `project.role_apps.expert` at an App that already has Contents write (a worker App does) or
+    grant it on the planner App. A worker App
     without the Workflows permission cannot push a **stale** branch: GitHub refuses to create a
     ref whose tree differs from the default branch under `.github/workflows/`, even when none of
     the branch's own commits touch a workflow — which is exactly the branch `open-pr` pushes
@@ -140,7 +146,10 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
     `project.executables` at any of these whose PATH the launching shell (a systemd user unit,
     typically) does not carry.
-18. **One worktree per backend** — `agent_os/bin/worker_task.sh <backend> init`, once per
+18. **One worktree per backend** — a private host needs a git credential helper first, or the
+    first fetch fails: `gh auth setup-git`, or repo-local
+    `git config credential.https://github.com.helper '!gh auth git-credential'`.
+    Then `agent_os/bin/worker_task.sh <backend> init`, once per
     `project.backends` entry that sets a `worktree`: idempotent `git worktree add` on a fresh
     branch from `origin/main` when the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
     either is missing. A backend that should run more than one worker at once sets
@@ -192,7 +201,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
     each App's secrets, each `project.executables` entry, each worktree, the notify topic file, the
     guard timer's `is-active`, and a workflow that reports a check on a host-only PR — one line per
-    check, exit 1 on any failure. It never calls `agent_guard.py check` or any other trigger a
+    check, exit 1 on any failure. The guard-timer check is expected red until step 22 arms the
+    timer. It never calls `agent_guard.py check` or any other trigger a
     role reacts to, so running it costs nothing.
 
 (`agent-os-guard`, `agent-os-issues`, `agent-os-lib`, `agent-os-install`, `agent-os-doctor` are the

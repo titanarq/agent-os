@@ -26,7 +26,11 @@ NODE-CHANGE TRAILER -- WHEN A COMMIT TOUCHES THE PRODUCT TREE
 Any commit that changes a file under the product tree (the directory `tree.root` of
 `config/agents.yaml` names, `product/` unless the host says otherwise) ends its message with exactly
 ONE trailer line `Node-Change: <value>`, after a blank line. The host's CI fails a pull request
-holding a commit that touches the tree without one, or with two, or with any other value. Pick the
+holding a commit that touches the tree without one, or with two, or with any other value.
+The `Node-Change:` line and any `Co-Authored-By:` line sit in ONE trailer block: consecutive
+lines at the very end of the message with no blank line between them, because git reads only the
+last paragraph as trailers (check with `git interpret-trailers --parse`).
+Pick the
 value by what caused the change, not by how large it is:
 - `usage` -- feedback from using the product: someone ran it and it taught something the node did
   not say.

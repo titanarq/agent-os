@@ -30,6 +30,18 @@ that closed several small issues at once name them all. This file starts on 2026
   with a goal that has no `verification` goes red -- give each goal at least one evaluator, a
   `judge` is enough; a reader of `context --json` finds the entries of `verification` with a
   `kind` now.
+- #132, #135 -- rollout fixes for the first v2 host (batch 1). An expert launch that gets no
+  worktree (origin's default branch cannot be fetched) now exits non-zero and launches nothing,
+  instead of starting in the main checkout: the expert writes a branch, unlike the validator, which
+  still degrades to reading the diff. The expert prompt no longer says what goes into the tree
+  "stays in English": it follows the language rule of the host's own AGENTS.md. `docs/ADOPTION.md`:
+  the App an expert signs as needs Contents read/write (`project.role_apps.expert` can point at one
+  that has it); "Pull request reviews" is part of "Pull requests: write" for a GitHub App; a
+  private host needs a git credential helper before the first fetch (`init`); the guard-timer
+  doctor check is red until step 22.
+  The expert, worker and refiner prompts now teach that `Node-Change:` and any `Co-Authored-By:`
+  sit in ONE trailer block (no blank line between them): git reads only the last paragraph as
+  trailers, so a blank line hid `Node-Change` from `agent-os-tree trailers` on the first host.
 - #133 -- the first v2 host's adoption PR was red in both workflows. `agent-os-quality` now always
   skips the config file it loaded when that file is inside the repository (a host's
   `config/agents.yaml`, generated from the 466-line example), next to `tree.root` and the vendored

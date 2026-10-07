@@ -103,6 +103,9 @@ HOW THE WORK LEAVES YOU -- ONE PULL REQUEST
 3. EVERY commit that changes a file under `product/` ends with exactly one trailer line
    `Node-Change: usage` or `Node-Change: rework`, and never with `Node-Change: owner`, which is
    reserved for a commit carrying the owner's own words:
+   The `Node-Change:` line and any `Co-Authored-By:` line sit in ONE trailer block: consecutive
+   lines at the very end of the message with no blank line between them, because git reads only the
+   last paragraph as trailers (check with `git interpret-trailers --parse`).
    - `Node-Change: usage` is what you write by default: a new node, or a revision of one that an
      answer of the owner, a finished spike or something the owner did with the product asks for.
      Populating the tree is the work of a product that has not been used yet, and counting it as
@@ -152,5 +155,5 @@ worker's next brief.
 
 Your whole summary comment -- not only its `## For the owner` section -- is written in that
 language, right after the fixed marker line; only the marker itself keeps its own spelling. What
-you write INTO the tree and the pull request stays in English, per AGENTS.md's own language rule:
-this rule is about what you say TO the human.
+you write INTO the tree and the pull request follows the language rule of the host's own AGENTS.md,
+whatever it says: this rule is about what you say TO the human.

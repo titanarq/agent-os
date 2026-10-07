@@ -637,11 +637,11 @@ trap 'agent_remove_worktree; exit 143' INT TERM HUP
 if [ "$runs_tests" = yes ]; then
   agent_prepare_worktree "$role" "$subject" "$run_stamp"
   prepare_status=$?
-  # 1 is "no worktree", which the run survives by reading the diff only; 2 is a worktree the host's
-  # own provisioning could not make runnable (agent-os#41), and a review launched on it would
-  # request changes on correct code for a failure that is the environment's -- so no run at all.
-  if [ "$prepare_status" -eq 2 ]; then
-    echo "ERROR: the worktree for #$subject could not be provisioned -- no $role run launched" \
+  # 1 is "no worktree": a validator survives it by reading the diff, the expert (it WRITES a branch)
+  # never starts in the main checkout (#135). 2 is a worktree the host's provisioning could not make
+  # runnable (agent-os#41): a review on it would fail for the environment's fault. No run at all.
+  if [ "$prepare_status" -eq 2 ] || { [ "$role" = expert ] && [ "$prepare_status" -ne 0 ]; }; then
+    echo "ERROR: no usable worktree for #$subject (status $prepare_status) -- no $role run launched" \
       | tee -a "$logfile"
     exit 1
   fi
