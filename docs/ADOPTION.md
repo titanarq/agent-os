@@ -213,6 +213,13 @@ with no console-script equivalent.)
     `agent_os/bin/worker_task.sh <backend> watch` (tail the event stream),
     `journalctl --user -u <guard_unit>.service -f` (tick output), and
     `.cache/<role>/runs.tsv` (cost as it accrues).
+    **A host whose work comes from a product tree** (agent-os#117) sets `tree.dispatch_by_node:
+    true` in `config/agents.yaml` once its tickets exist (`agent-os-tree compile`, each carries its
+    node address): from then on the guard leaves out any ready issue with no `<!-- node: <id> -->`
+    line or with an open dependency, and `worker_task.sh start` refuses one that shares code with a
+    running ticket (`docs/AGENT_OS.md` §4.6, Dispatch in a v2 host). A host with hand-written
+    issues in its backlog leaves the key off, or those issues stop being dispatchable the moment it
+    is on. After a `subtree pull` nothing changes until the key is set.
     In a v2 host (a product tree under `tree.root`), the first population of the tree is the
     expert's: once the owner has written the goals and their evaluators and opened an issue that
     says what to populate, `agent_os/bin/agent_task.sh expert <issue> --dry-run` shows the class,

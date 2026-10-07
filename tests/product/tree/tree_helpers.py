@@ -127,3 +127,14 @@ def experiment_entry(
     if outcome != "open":
         entry["finding"] = "f"
     return {**entry, **fields}
+
+
+def write_unresolvable_node(root: pathlib.Path, record_id: str, *, parent: str) -> pathlib.Path:
+    """A use case whose pending mechanism an experiment found infeasible: what `compile` escalates."""
+    return write_node(
+        root,
+        record_id,
+        "use-case",
+        parent=parent,
+        experiments=[experiment_entry("infeasible")],
+    )

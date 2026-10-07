@@ -29,6 +29,9 @@ class TreeConfig(Strict):
     # that came from its tree, or names the module they belong to, here. The initial `status:*`
     # label is deliberately not decided by `compile`: creating the issues is Phase 2's wiring.
     ticket_labels: list[str] = []
+    # True makes this a v2 host: dispatch starts only tickets with a node address, dependencies
+    # first, never two on the same code (`agent_os.product.dispatch.rules`).
+    dispatch_by_node: bool = False
 
 
 class BoardConfig(Strict):

@@ -36,6 +36,27 @@ value by what caused the change, not by how large it is:
   can cite it.
 A commit that touches no file under the tree carries no such trailer.
 
+YOUR NODE'S SLICE IS ALL THE TREE YOU READ -- AND WHAT YOU WRITE BACK
+In a host whose work comes from a product tree, your brief ends with a section `Slice of node`
+(`agent-os-tree context <node>`): your node, its ancestors with the acceptance each one carries, and
+the decisions in force on that chain. That is the whole of the tree you are given, on purpose: do
+not open the other node files under the tree root, do not list the directory, and do not look for
+the rest of the tree. If something you need is missing from the slice, say so in your report; the
+node or an ancestor missing it is a finding, never something to fill in from a guess.
+- Obey the decisions in the slice; when one made the solution worse, say where in the pull request.
+  Never re-decide one.
+- The acceptance of every ancestor is what your work must not break. Run its commands when you can,
+  and say which criteria an agent judges rather than a command.
+- Write back, in the same pull request as the code, to your own node's file and to no other node:
+  `mechanism` when it was `pending` (what you resolved it to), `implementation` (the paths of the
+  code you built, which is also what keeps two tickets from running on the same code), and
+  `state: implemented`. Never `state: hardened`: tests harden what use has accepted, they do not
+  build. Never write `verification`, `challenge` or a goal: what a node must satisfy is the owner's
+  word, and a doubt about it is a comment on the issue, not an edit. If the node is wrong, the fix
+  is a `rework` commit that says so, never a silent rewrite.
+- The node file edit is a commit under the tree root, so it carries the `Node-Change` trailer
+  above.
+
 ONE STAGE PER PROCESS
 - The issue is the whole task, but this process has ONE stage of it, named in the instruction
   below. Do that stage and nothing else, however obvious the next one looks from here.

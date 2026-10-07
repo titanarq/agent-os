@@ -185,9 +185,8 @@ class Node(Strict):
     # Declared by the expert who writes the node; empty means the action reads nothing the click
     # does not carry, and an action that needs more pays the slow path's extra turn.
     reads: list[NonBlank] = Field(default_factory=list)
-    # Commands and criteria an agent judges. An executable one (a `command`) is mandatory for
-    # dispatch: a leaf node without any escalates instead of becoming a ticket
-    # (`agent_os.product.tree.compile`), and a hardened node needs one (`hardened-needs-verification`). On a
+    # Commands and criteria an agent judges. None is needed to dispatch a leaf
+    # (`agent_os.product.tree.compile`); a hardened node needs a `command` (`hardened-needs-verification`). On a
     # goal, or on any node with children, it is the acceptance of the subtree -- an evaluator the
     # work below must not break, never work itself -- and a goal must have at least one
     # (`goal-without-evaluators`).

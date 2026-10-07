@@ -3,8 +3,7 @@
 project: the repository and the module vocabulary come from `config/agents.yaml`'s `project:`
 section (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
 
-No third-party GitHub library and no new dependency: every call is `gh api` / `gh issue` /
-`gh label` under `subprocess`.
+No third-party GitHub library: every call is `gh api` / `gh issue` / `gh label` under `subprocess`.
 
     python -m agent_os.issues list [--all] [--type T] [--label L] [--state open|closed]
     python -m agent_os.issues show <N>
@@ -97,6 +96,7 @@ from agent_os.lib import (
     replace_blocker,
     validate_issue_body,
 )
+from agent_os.product.dispatch.brief_slice import brief_slice_section
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -1202,7 +1202,7 @@ def cmd_brief(args: argparse.Namespace) -> None:
     repo = repo_name()
     issue, parent = fetch_brief_sources(repo, args.number)
     supplement = pathlib.Path(args.supplement).read_text() if args.supplement else None
-    text = compose_brief(issue, parent, supplement)
+    text = compose_brief(issue, parent, supplement) + brief_slice_section(issue.get("body"))
     if args.output:
         pathlib.Path(args.output).write_text(text)
     else:
