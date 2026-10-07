@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 import yaml
-from conftest import EXAMPLE_CONFIG
+from conftest import EXAMPLE_CONFIG, SHIPPED_EXAMPLE_CONFIG
 from pydantic import ValidationError
 
 from agent_os.lib import AgentsConfig, TreeConfig, load_agents_config
@@ -21,7 +21,8 @@ def example_data() -> dict:
 
 
 def test_the_example_config_documents_every_tree_key_and_no_other():
-    assert set(example_data()["tree"]) == set(TreeConfig.model_fields)
+    shipped = yaml.safe_load(SHIPPED_EXAMPLE_CONFIG.read_text())
+    assert set(shipped["tree"]) == set(TreeConfig.model_fields)
 
 
 def test_the_example_config_loads_and_its_ticket_class_is_a_worker_class():

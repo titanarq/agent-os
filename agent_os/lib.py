@@ -143,6 +143,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.product.config import BoardConfig, TreeConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
@@ -637,15 +638,15 @@ def _backends_from_deprecated_maps(data: dict) -> dict:
 
 
 class AgentModels(Strict):
-    """The `model:` of each installed `.claude/agents/*.md` definition, rendered as
-    `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__`. A definition
-    has exactly one model, so a duty that needs a different one is its own definition
-    (`task-writer`, split out of the control plane). The value is opaque to the tool: whatever
-    `claude --model` accepts, an alias (`sonnet`, `opus`) or a full id (agent-os#96)."""
+    """The `model:` of each installed `.claude/agents/*.md` definition (`__CONTROL_PLANE_MODEL__`...),
+    opaque to the tool: whatever `claude --model` accepts (agent-os#96). Sonnet everywhere but the
+    Stage 2 `custodian` and `consolidator` (Opus; keys only, nothing reads them yet, #116)."""
 
     control_plane: str = "sonnet"
     worker_runner: str = "sonnet"
-    task_writer: str = "opus"
+    task_writer: str = "sonnet"
+    custodian: str = "opus"
+    consolidator: str = "opus"
 
 
 class ProjectConfig(Strict):
@@ -974,24 +975,6 @@ class PuntalConfig(Strict):
         return value
 
 
-class TreeConfig(Strict):
-    """Where a host's product tree lives and how the tickets compiled from it are named
-    (`agent_os.product.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
-
-    # The directory holding the product tree AND the decision ledger -- one directory of Markdown
-    # files, nodes and decisions together, in any subdirectories the host likes -- relative to the
-    # host's root. `agent-os-tree --root` overrides it for one run.
-    root: str = "product"
-    # The worker class a compiled ticket names in its `<!-- budget: <class> -->` line. Empty by
-    # default, like `project.guard_unit`: a mechanism that does not know a host's class names does
-    # not invent one, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
-    ticket_budget_class: str = ""
-    # Labels every compiled ticket carries besides its task type label (a host marks tree tickets or
-    # names their module). The initial `status:*` label is not decided by `compile`: Phase 2's wiring.
-    ticket_labels: list[str] = []
-    owner_only_paths: list[str] = []  # evaluators besides goals (fnmatch): never auto-merged
-
-
 class AgentsConfig(Strict):
     project: ProjectConfig
     # Every section after `project:` is optional, so a config that predates it still loads; an absent
@@ -1001,6 +984,7 @@ class AgentsConfig(Strict):
     puntal: PuntalConfig = PuntalConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
+    board: BoardConfig = BoardConfig()
     quality: QualityConfig = QualityConfig()
 
     @model_validator(mode="after")

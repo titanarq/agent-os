@@ -39,3 +39,9 @@ jobs:
 
       - name: the host's test command
         run: __TEST_COMMAND__
+
+      # Every commit that touches the product tree says why: `Node-Change: usage | rework | owner`
+      # (docs/AGENT_OS.md §4.6). Reads git only, on the history the checkout above fetched.
+      - name: the Node-Change trailer on every commit that touches the product tree
+        if: github.event_name == 'pull_request'
+        run: agent_os/.venv/bin/python -m agent_os.product.tree trailers --base origin/${{ github.base_ref }}

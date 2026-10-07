@@ -73,8 +73,8 @@ WHAT YOU MAY DO
   land on the same free slot by themselves.
   The worker classes the config defines, with the backend and model each one runs on today:
 
-- `mechanical-qwen` -- backend qwen, model qwen3.8-max: small, fully specified change in one module with no design decision left to make
-- `complex-qwen` -- backend qwen, model qwen3.8-max: any other task or bug -- cross-module work, or one that needs judgement
+- `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: small, fully specified change in one module with no design decision left to make
+- `complex-sonnet` -- backend claude, model claude-sonnet-5-5: any other task or bug -- cross-module work, or one that needs judgement
 
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see the next block) or
   `agent_os/bin/agent_task.sh refiner <N>` (see REFINE THE BACKLOG below). Either runs from the main

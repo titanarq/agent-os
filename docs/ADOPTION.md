@@ -108,7 +108,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     matching `project.board_columns`: `Backlog`, `Ready for AI`, `In progress`, `AI completed`,
     `Review`, `Done`.
 14. **One GitHub App per identity** — `project.backends.<name>.app` for each worker backend
-    (`project.backends.qwen.app`, `project.backends.claude.app` in the example),
+    (`project.backends.claude.app` in the example, which describes one backend; a second one is
+    your own addition),
     `project.planner_app`, and optionally `project.role_apps.validator`/`.refiner` (falling back to
     `planner_app` when unset, §7 row (p)). This is a browser step with no manifest automation in
     the mechanism (`agent_os.gh_app_token` only mints tokens for an App that already exists):
@@ -166,6 +167,16 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     SHA reports zero checks. For the same reason, never make `ci-agent-os.yml`'s job a required
     status check in branch protection: on a host-only PR it does not run, so it never reports. The
     rendered file is a starting point — add the setup your test command needs before its step.
+    It also carries a **`Node-Change` trailer step** (agent-os#116): every commit of a pull request
+    that touches the product tree (`tree.root`, default `product/`) must end with exactly one
+    `Node-Change: usage | rework | owner` trailer, or the step fails
+    (`agent-os-tree trailers`, `docs/AGENT_OS.md` §4.6). The step runs on the mechanism's interpreter
+    the ratchet's bootstrap step builds and on the full history that checkout fetches; a host
+    with no tree yet passes it with nothing to check.
+    A host adopting this after a `subtree pull` needs no config change, but its own existing
+    `config/agents.yaml` keeps the models it names: the new defaults (Sonnet for every role, Opus
+    only for the `custodian` and `consolidator` keys of `project.agent_models`) apply to a host only
+    when it edits its config to match.
     It also carries the **code-quality ratchet** (§4.8 of `AGENT_OS.md`): a step that bootstraps the
     mechanism's interpreter and runs `agent-os-quality --base origin/<base branch>`, failing a PR
     whose new files or folders break the limits in `quality:` or whose touched ones got worse. A
@@ -207,6 +218,15 @@ with no console-script equivalent.)
     `agent_os/bin/worker_task.sh <backend> watch` (tail the event stream),
     `journalctl --user -u <guard_unit>.service -f` (tick output), and
     `.cache/<role>/runs.tsv` (cost as it accrues).
+
+    **Optional, once the host has a product tree (`tree.root`): the progress board.** Run
+    `gh auth refresh -s project` (the token behind `gh` needs the `project` scope), optionally set
+    the `board:` section of `config/agents.yaml` (`owner`, `number` or `title`; the defaults are the
+    authenticated user and a Project titled `Agentos progress board`), preview with
+    `agent-os-tree board sync --dry-run`, then run `agent-os-tree board sync` (idempotent; run it
+    again whenever the tree changes, or from a host's CI). The owner orders the backlog by filling
+    the Project's `Order` number field by hand; `agent-os-tree board order [--out FILE]` reads that
+    order back for the planner.
 
 ## 6. Pulling improvements, and sending one back
 
