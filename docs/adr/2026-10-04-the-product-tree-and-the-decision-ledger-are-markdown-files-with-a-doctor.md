@@ -141,6 +141,29 @@ are all judged still escalates as `missing-verification`; dispatching without on
 plan. Agentos's own four goals moved their evaluators out of their body and into `verification` as
 `judge` entries. Nothing else in the format moved.
 
+**Changed 2026-10-07 (Stage 1 of Agentos v2, #113): implemented, experiments, depends_on, challenge.**
+Four additions to the node format, each from a decision under `docs/tree/`. (1) The state
+`implemented` sits between `improvised` and `hardened` (`dec-tests-harden-they-do-not-build`). (2)
+`experiments` replaces `spikes`, with no alias: a node still carrying `spikes` is a `schema` error.
+An entry has a `kind` (`spike`, `demand-probe`, `question`, `lookup`) and may be `open`; a `question`
+carries its `scope` (`what` or `how`) and, for `what`, the `default_answer` that stands until the
+owner answers (`dec-a-doubt-of-how-is-settled-by-an-experiment`). Decided here, because a
+question has to end somewhere: the outcome vocabulary gained `answered`, for a `question` only, and
+a `finding` is required once the outcome is not `open`. An open `what` question makes its node not
+hardenable. (3) `depends_on` lists node ids; the doctor adds `dangling-dependency` and
+`dependency-cycle` (`dec-dispatch-never-runs-two-tickets-on-the-same-code`). It is a work field, so a
+goal carries none. (4) `challenge` (`reason`: `no-solution`, `no-verification`, `over-cost`; optional
+`explanation`) flags a node early so the owner decides (`dec-a-challenge-is-flagged-early-and-the-owner-decides`);
+a goal may carry it. "Not hardenable" -- an open `what` question or a challenge on the node or on
+anything it depends on, transitively -- is the function `hardening_blockers` / `is_hardenable` of
+`agent_os.product.tree.hardening`, and the slice prints it; making `compile` use it, and dispatch order
+by `depends_on`, are the compile step's. `compile`'s rule is otherwise unchanged (an `implemented`
+node is past `pending`, so it is not dispatched). The consequence above that says "there is no
+node-to-node dependency field" no longer holds. Agentos's own `docs/tree/` had no node carrying
+`spikes`, so nothing in it migrated. To keep each module under 300 lines the reference checks and the
+slice's field sections moved out of `checks.py` and `slicing.py` (`reference_checks.py`,
+`slicing_fields.py`); the codes did not change.
+
 ## Consequences
 - A host gets a tree and a ledger it can diff, review and gate in CI, and every red line has a code.
   A host wires the gate itself: `agent-os-tree validate` in its test command, or `check_tree` from

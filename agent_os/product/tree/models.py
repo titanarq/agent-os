@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from agent_os.lib import Strict
 
@@ -50,7 +50,14 @@ MECHANISM_PENDING = "pending"
 # tests run top-down from the goals, so a goal's verification is the acceptance that keeps the work
 # under it from drifting, never work to dispatch -- and it is the one field a goal MUST carry
 # (`goal-without-evaluators`).
-WORK_FIELDS = ("mechanism", "implementation", "spikes", "foundation", "state")
+WORK_FIELDS = (
+    "mechanism",
+    "implementation",
+    "experiments",
+    "depends_on",
+    "foundation",
+    "state",
+)
 
 # The two fields that are the Markdown body rather than frontmatter, by record type.
 BODY_FIELD_BY_TYPE = {**dict.fromkeys(NODE_TYPES, "description"), DECISION_TYPE: "statement"}
@@ -98,15 +105,56 @@ class Verification(Strict):
         return self.judge is not None
 
 
-class SpikeResult(Strict):
-    """What a timeboxed spike found. Difficulty is measured by spikes, never by an agent's own
-    estimate, so the outcome is a closed vocabulary a tool can act on: an `infeasible` spike on a
-    node whose mechanism is still pending makes it undispatchable (`mechanism-unresolvable`)."""
+class Experiment(Strict):
+    """What an experiment on a node set out to find out, and what it found. An experiment is how a
+    doubt is settled by evidence and never by an agent's own estimate
+    (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`), so its outcome is a closed
+    vocabulary a tool can act on: an `infeasible` one on a node whose mechanism is still pending
+    makes it undispatchable (`mechanism-unresolvable`), and an `open` `what` question keeps its
+    node from hardening (`Node.has_open_what_question`).
 
+    A `question` carries its scope: a doubt of `how` goes to an experiment, a doubt of `what` goes
+    to a question session with a default answer that stands until the owner answers it."""
+
+    kind: Literal["spike", "demand-probe", "question", "lookup"]
     question: NonBlank
-    outcome: Literal["feasible", "infeasible", "inconclusive"]
-    finding: NonBlank
+    outcome: Literal["open", "feasible", "infeasible", "inconclusive", "answered"]
+    # What was found. An experiment that is still `open` has found nothing yet.
+    finding: NonBlank | None = None
+    # When it was raised.
     date: datetime.date
+    scope: Literal["what", "how"] | None = None
+    default_answer: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def _is_coherent_for_its_kind(self) -> Experiment:
+        if self.outcome != "open" and self.finding is None:
+            raise ValueError("an experiment that is not `open` needs a `finding`")
+        if self.kind != "question":
+            if self.scope is not None or self.default_answer is not None:
+                raise ValueError("`scope` and `default_answer` belong to a `question`")
+            if self.outcome == "answered":
+                raise ValueError("only a `question` is `answered`")
+            return self
+        if self.scope is None:
+            raise ValueError("a `question` needs a `scope`, `what` or `how`")
+        if self.scope == "what" and self.default_answer is None:
+            raise ValueError("a `what` question needs the `default_answer` that stands meanwhile")
+        return self
+
+    @property
+    def is_open_what_question(self) -> bool:
+        return self.kind == "question" and self.scope == "what" and self.outcome == "open"
+
+
+class Challenge(Strict):
+    """A node flagged as possibly not finishable, early, so the owner decides whether to go on
+    (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`). The reason is one of
+    three: no solution was found, no verification can be written, or the cost exceeds what the goal
+    accepts. A challenge blocks the hardening of the node and of what depends on it."""
+
+    reason: Literal["no-solution", "no-verification", "over-cost"]
+    explanation: NonBlank | None = None
 
 
 class Node(Strict):
@@ -144,11 +192,32 @@ class Node(Strict):
     # work below must not break, never work itself -- and a goal must have at least one
     # (`goal-without-evaluators`).
     verification: list[Verification] = Field(default_factory=list)
-    state: Literal["pending", "improvised", "hardened"] = "pending"
+    # pending -> improvised (a puntal serves it) -> implemented (deterministic code, no tests yet)
+    # -> hardened (tests written from the accepted interactions)
+    # (`docs/tree/dec-tests-harden-they-do-not-build.md`).
+    state: Literal["pending", "improvised", "implemented", "hardened"] = "pending"
     # A foundation node (persistence, identity, UI skeleton) must be hardened before the shell goes
     # live and is built as a normal issue, never improvised.
     foundation: bool = False
-    spikes: list[SpikeResult] = Field(default_factory=list)
+    # Open doubts and what was found out about them; the one place difficulty is measured.
+    experiments: list[Experiment] = Field(default_factory=list)
+    # The nodes that must be done first, by id; checked by the doctor (`dangling-dependency`,
+    # `dependency-cycle`). Dispatch orders by it and never runs two dependent tickets at once
+    # (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`).
+    depends_on: list[Identifier] = Field(default_factory=list)
+    challenge: Challenge | None = None
+
+    @field_validator("depends_on")
+    @classmethod
+    def _names_each_dependency_once(cls, value: list[str]) -> list[str]:
+        repeated = sorted({node_id for node_id in value if value.count(node_id) > 1})
+        if repeated:
+            raise ValueError(f"a dependency is listed twice: {', '.join(repeated)}")
+        return value
+
+    @property
+    def has_open_what_question(self) -> bool:
+        return any(experiment.is_open_what_question for experiment in self.experiments)
 
     @property
     def has_executable_verification(self) -> bool:

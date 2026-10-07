@@ -650,12 +650,14 @@ body; every other field is frontmatter. An unknown field is an error.
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a `command` is **mandatory for dispatch** of a leaf and for a `hardened` node | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
-| `state` | optional, default `pending` | `pending`, `improvised`, `hardened` |
+| `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |
 | `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
-| `spikes` | optional | timeboxed spike results: `question`, `outcome` (`feasible`, `infeasible`, `inconclusive`), `finding`, `date` |
+| `experiments` | optional | what was tried or is still to be found out about the node (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`); replaces `spikes`. Each entry: `kind` (`spike`, `demand-probe`, `question`, `lookup`), `question`, `outcome` (`open`, `feasible`, `infeasible`, `inconclusive`, and `answered` for a question only), `finding` (required unless `open`), `date`, and for a `question` only its `scope` (`what` or `how`, required) and its `default_answer` (required for `what`: it stands until the owner answers). An open `what` question marks the node **not hardenable** |
+| `depends_on` | optional | ids of the nodes that must be done first, each once (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`); the doctor checks that each exists and that the edges do not loop. What dispatch does with it is the compile step's |
+| `challenge` | optional | the node is flagged as possibly not finishable (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`): `reason` (`no-solution`, `no-verification`, `over-cost`) and an optional `explanation`. It marks the node, and every node that depends on it, **not hardenable**; the owner decides whether to go on. Any node may carry it, a goal included |
 
-A goal carries none of `mechanism`, `implementation`, `spikes`, `foundation` or a state other than
-`pending`: it is not something to build. It **must** carry a `verification`, which is acceptance and
+A goal carries none of `mechanism`, `implementation`, `experiments`, `depends_on`, `foundation` or a
+state other than `pending` (a `challenge` it may): it is not something to build. It **must** carry a `verification`, which is acceptance and
 never dispatched work: **tests run top-down from the goals.** A goal's verification (and a
 requirement's, once it has use cases) is the evaluator that keeps the work under it from drifting;
 the tests written bottom-up at the leaves consolidate reliability. A node with children is a
@@ -710,7 +712,7 @@ pointer.
 | `dangling-parent` | the `parent` is not the id of any node |
 | `parent-type-mismatch` | a requirement is not under a goal, or a use case not under a requirement |
 | `parent-cycle` | the `parent` pointers loop |
-| `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `spikes`, `foundation`, or a state other than `pending`); `verification` is not one |
+| `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `experiments`, `depends_on`, `foundation`, or a state other than `pending`); `verification` is not one |
 | `goal-without-evaluators` | a goal's `verification` is empty: it needs at least one evaluator, a `command` or a `judge` |
 | `missing-work-field` | a requirement or use case has no `mechanism` (write `pending` to defer it) |
 | `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal issues, and the shell does not go live until they are hardened |
@@ -723,6 +725,10 @@ pointer.
 | `dangling-successor` | `superseded_by` is not the id of any decision |
 | `successor-cycle` | the `superseded_by` pointers loop |
 | `dangling-friction-node` | a friction entry's `node` is not the id of any node |
+| `dangling-dependency` | a node's `depends_on` names an id that is not a node |
+| `dependency-cycle` | the `depends_on` edges loop; every node on the cycle is named, a node that only depends on one is not |
+
+**Not hardenable** is a property of the model, not a check: `agent_os.product.tree.hardening` (`hardening_blockers(tree, node_id)`, `is_hardenable`) says which doubts keep a node from hardening -- an open `what` question, or a `challenge`, on the node or on anything it depends on, directly or not -- and why. A node's own `has_open_what_question` is the first half. `compile` does not use it yet.
 
 A reference to a file that exists but failed to load is not also reported as dangling: the target
 has its own defect, and one fault is one line.
@@ -736,7 +742,7 @@ premises, rejected alternatives, review triggers and the *count* of its friction
 criterion an agent judges is rendered for the node and for every ancestor as a line
 `judged by an agent: <criterion>` (one line, its whitespace collapsed); in `--json` every
 `verification` entry has a `kind`, and a judged one is `{"kind": "judge", "judge": ..., "label":
-"judged by an agent"}` where a command is `{"kind": "command", "command": ..., "expects": ...}`. An
+"judged by an agent"}` where a command is `{"kind": "command", "command": ..., "expects": ...}`. The node's header also says what it `depends on` (when it does) and whether it is `hardenable`, with what blocks it; its experiments and its challenge have a section each, and `--json` carries the fields plus `hardenable` and `hardening_blockers`. An
 `under-review` decision is in the slice labelled "UNDER REVIEW -- still obeyed while it is
 challenged"; a superseded one never is. It contains no sibling, no descendant and no decision that
 does not bind the node, so its size is bounded by one chain of ancestors however large the tree
@@ -749,8 +755,8 @@ renders; it creates no issue. A node becomes a ticket when it is a functional re
 case with no children, `pending`, has an executable `verification` (a `command`; a judged criterion
 is acceptance and does not make a node dispatchable -- the rule itself is Stage 1's to change,
 `docs/tree/dec-tests-harden-they-do-not-build.md`), and its mechanism can be resolved (written, or
-`pending` with no spike having found it `infeasible`). A node that is pending but has no executable
-verification (a leaf), or whose pending mechanism a spike found infeasible, is reported as an
+`pending` with no experiment having found it `infeasible`). A node that is pending but has no executable
+verification (a leaf), or whose pending mechanism an experiment found infeasible, is reported as an
 **escalation** -- `missing-verification` or `mechanism-unresolvable` -- and never as a ticket. A goal,
 a node past `pending`, and a container (any node with children, whether or not it has a
 verification: its use cases are the work, and its own verification is the acceptance of its
