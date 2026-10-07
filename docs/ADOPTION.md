@@ -221,6 +221,15 @@ with no console-script equivalent.)
     issues in its backlog leaves the key off, or those issues stop being dispatchable the moment it
     is on. After a `subtree pull` nothing changes until the key is set.
 
+    **Optional, once the host has a product tree (`tree.root`): the progress board.** Run
+    `gh auth refresh -s project` (the token behind `gh` needs the `project` scope), optionally set
+    the `board:` section of `config/agents.yaml` (`owner`, `number` or `title`; the defaults are the
+    authenticated user and a Project titled `Agentos progress board`), preview with
+    `agent-os-tree board sync --dry-run`, then run `agent-os-tree board sync` (idempotent; run it
+    again whenever the tree changes, or from a host's CI). The owner orders the backlog by filling
+    the Project's `Order` number field by hand; `agent-os-tree board order [--out FILE]` reads that
+    order back for the planner.
+
 ## 6. Pulling improvements, and sending one back
 
 25. **Pull** whatever the mechanism gained elsewhere since the last sync:

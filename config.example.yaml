@@ -302,6 +302,24 @@ tree:
   # in a v2 host, so turn it on once the backlog is compiled tickets.
   dispatch_by_node: false
 
+# The progress board (`agent-os-tree board sync|order`, docs/AGENT_OS.md §4.6): a GitHub Project
+# generated from the tree, one item per functional requirement, as a view -- the files stay the
+# record. Every key is optional; the values below are the defaults. The token behind `gh` needs the
+# `project` scope (`gh auth refresh -s project`).
+board:
+  # The `--owner` of every `gh project` call: a user or organization login; `@me` is the
+  # authenticated user.
+  owner: "@me"
+  # The Project's number. 0 finds it by `title` among the owner's Projects and creates it on a real
+  # sync when none has that title; a number pins it.
+  number: 0
+  title: Agentos progress board
+  # A text field on each item: the count of its parts by state. Sync creates and rewrites it.
+  progress_field: Progress
+  # A number field the owner fills by hand (lower first). Sync creates it and never writes it;
+  # `agent-os-tree board order` reads it back as the owner's order of the backlog.
+  order_field: Order
+
 # The code-quality ratchet (`agent-os-quality`, docs/AGENT_OS.md §4.8). Every key is optional; the
 # values below are the defaults. New files and folders must be within the limits and touched ones
 # may never get worse than on the pull request's base branch.

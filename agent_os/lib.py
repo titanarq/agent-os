@@ -143,6 +143,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.product.config import BoardConfig, TreeConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
@@ -974,24 +975,6 @@ class PuntalConfig(Strict):
         return value
 
 
-class TreeConfig(Strict):
-    """Where a host's product tree lives and how the tickets compiled from it are named
-    (`agent_os.product.tree`, Phase 1 of `docs/AGENTOS_V2_PLAN.md`)."""
-
-    # The directory holding the product tree AND the decision ledger (Markdown files, nodes and
-    # decisions together), relative to the host's root. `agent-os-tree --root` overrides it.
-    root: str = "product"
-    # The worker class a compiled ticket names in its `<!-- budget: <class> -->` line. Empty by
-    # default, so `agent-os-tree compile` refuses until this or `--budget-class` says which.
-    ticket_budget_class: str = ""
-    # Labels every compiled ticket carries besides its task type label, e.g. a marker for the
-    # tickets that came from the tree. The initial `status:*` label is not decided by `compile`.
-    ticket_labels: list[str] = []
-    # True makes this a v2 host: dispatch starts only tickets with a node address, dependencies
-    # first, never two on the same code (`agent_os.product.dispatch.rules`).
-    dispatch_by_node: bool = False
-
-
 class AgentsConfig(Strict):
     project: ProjectConfig
     # Every section after `project:` is optional, so a config that predates it still loads; an absent
@@ -1001,6 +984,7 @@ class AgentsConfig(Strict):
     puntal: PuntalConfig = PuntalConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
+    board: BoardConfig = BoardConfig()
     quality: QualityConfig = QualityConfig()
 
     @model_validator(mode="after")

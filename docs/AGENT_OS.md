@@ -538,6 +538,7 @@ one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
+| `board.*` | the progress board's GitHub Project (§4.6), all optional: `owner` (`@me`), `number` (0: found by `title`, created on a real sync), `title`, `progress_field`, `order_field` |
 | `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the slow path's contract), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
@@ -832,6 +833,26 @@ Agentos's own tree is `docs/tree/`: its goals and functional requirements (the w
 `mechanism: pending` until the how is decided), the plan's founding decisions as the ledger's first
 entries, and the decisions taken since. `tests/product/tree/test_tree_founding_decisions.py` runs the doctor and
 the slicing over it.
+
+**The progress board** (`agent-os-tree board sync [--dry-run] [--json]`, `board order [--out FILE]`;
+`agent_os.product.board`) is a GitHub Project (v2) generated from the tree, as a *view*: the files
+stay the memory of record (`docs/tree/dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check.md`),
+and the Project is never read back except for the owner's order. A **branch** is a functional
+requirement; its **parts** are its use cases (a requirement with none is its own one part). Sync
+creates one draft item per branch (title `<title> (<fr id>)`; body: the goal, the parts with their
+state `pending|improvised|implemented|hardened`, the open `what` questions with their default
+answer, the challenges, `depends_on`) and a `Progress` text field with the count of parts by state.
+It is **idempotent**: the plan is computed from what the Project holds, so an unchanged tree makes
+no `gh` write; a branch is recognised by the `<!-- agent-os-board: <fr id> -->` first line of its
+body. An item whose requirement left the tree is reported as an `orphan` and kept, never deleted
+(it carries the owner's order). `--dry-run` prints the plan and calls only read-only `gh`
+commands. The owner orders the backlog by writing a number in the Project's `Order` field (lower
+first; sync creates the field and never writes it); `board order` prints, and with `--out` writes,
+`{"ordered": [...], "unordered": [...], "requirements": [...]}` -- the numbered requirements
+first, then the rest in id order. Dispatch consuming it is the planner's (#117); the finishing
+reliability per branch is left to Stage 2. The token behind `gh` needs the `project` scope; a
+missing `gh` or a refusal is one line on stderr and exit 1. This is the one `agent-os-tree`
+subcommand that reaches the network.
 
 ### 4.7 The puntal driver (Agentos v2)
 
@@ -1304,7 +1325,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume --issue <M>` the slot that recorded issue M, `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot` |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
-| `agent-os-tree validate\|doctor\|context\|compile` (`agent_os.product.tree`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
+| `agent-os-tree validate\|doctor\|context\|compile\|board` (`agent_os.product.tree`, `agent_os.product.board`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |
