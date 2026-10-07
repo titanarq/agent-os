@@ -14,6 +14,7 @@ mechanism: |-
   periodically and decides whether a rollback needs the owner. Symptoms (rework that does not decay,
   high unverified exposure) trigger experiments. A successor model runs the method battery once; a
   CLI update gets the free flag check.
+implementation: 'Stage 1 part only (the validator judges every pull request against its branch goals): prompts/validator.md ("A PULL REQUEST FROM THE PRODUCT TREE IS JUDGED AGAINST ITS NODE AND ITS GOALS"), #117; history, rollback and the custodian are Stages 2-3'
 ---
 Progress is a chain of small verified steps, so a wrong turn is caught soon and undoing it
 loses at most the last step. The product keeps going over months, across changes of

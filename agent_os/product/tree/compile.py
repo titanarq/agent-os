@@ -9,60 +9,71 @@ A ticket has the shape of the repository's own dispatchable issues -- the seven 
 `agent_os.lib.REQUIRED_SECTIONS` in order, then the `<!-- budget: <class> -->` line -- and
 `validate_issue_body`, the one implementation of "is this a brief an agent could start from", is
 asked about every body before it is returned, so a ticket the dispatcher would refuse is never
-rendered. Its address is one more marker line, `<!-- node: <id> -->`: Phase 2 finds the node a
-ticket came from, and the ticket a node already has, by that line alone.
+rendered. Three more marker lines say what the ticket is (`agent_os.product.dispatch.markers`): its
+node address, the nodes it depends on and the code it touches. Phase 2 finds the node a ticket came
+from, and a v2 host's planner decides from them what may start. Tickets come ordered by their
+dependencies, a dependency before whatever depends on it.
 
 Which nodes become tickets (the rule is one place, `_classify`):
 
 - a goal is never a ticket, whether or not it carries a verification: that is its acceptance;
-- a node past `pending` (improvised, hardened) is not dispatched by this step;
+- a node past `pending` (improvised, implemented, hardened) is not dispatched by this step;
 - a node with children is a container -- its use cases are the work -- and is skipped without
   comment, whether or not it has a verification: tests run top-down from the goals, so a
   container's verification is the acceptance of its subtree (it reaches every descendant's ticket
   as context, see `agent_os.product.tree.slicing`) and never a ticket of its own;
-- every other pending node needs an executable verification -- a `command`; a criterion an agent
-  judges is acceptance and not executable -- and a mechanism that can be resolved (written, or
-  `pending` with no experiment having found it infeasible). One that lacks either is an ESCALATION:
-  reported, with its reason, and never turned into a ticket. A node's judged criteria are still
-  rendered in its ticket's acceptance criteria, labelled as judged by an agent.
+- every other pending node is dispatched, with a command, a judged criterion or neither: tests
+  harden, they do not build (`docs/tree/dec-tests-harden-they-do-not-build.md`), and the essential
+  top-down acceptance holds even when an agent judges it. The one thing that stops it is a
+  mechanism that cannot be resolved (`pending`, with an experiment having found it infeasible):
+  an ESCALATION, reported with its reason and never turned into a ticket.
+
+A ticket builds, it never hardens: its definition of done leaves the node `implemented`, and says
+so, with the doubts that keep the node from hardening (`agent_os.product.tree.hardening`), when it
+has any.
 """
 
 from __future__ import annotations
 
-import json
-import pathlib
-import re
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from agent_os.issues import prefixed_title, type_labels
 from agent_os.lib import AgentsConfig, validate_issue_body
+from agent_os.product.dispatch.compile_output import (
+    compile_as_data,
+    render_compile_json,
+    render_compile_text,
+    write_compile_files,
+)
+from agent_os.product.dispatch.markers import parse_node_marker
+from agent_os.product.dispatch.results import CompileResult, Escalation, Ticket
+from agent_os.product.dispatch.ticket_body import render_ticket_body
+from agent_os.product.dispatch.touched_code import touched_paths_of
 from agent_os.product.tree.checks import check_tree
+from agent_os.product.tree.hardening import hardening_blockers
 from agent_os.product.tree.loader import Defect, Tree
 from agent_os.product.tree.models import MECHANISM_PENDING, Node
-from agent_os.product.tree.slicing import (
-    JUDGED_BY_AGENT_LABEL,
-    Slice,
-    assemble_slice,
-    judged_criterion_line,
-    render_ancestors,
-    render_decisions,
-    render_node,
-)
+from agent_os.product.tree.reference_checks import nodes_reachable_through_dependencies
+from agent_os.product.tree.slicing import assemble_slice
 
-NODE_MARKER_RE = re.compile(r"<!--\s*node:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*-->")
+__all__ = [
+    "MECHANISM_UNRESOLVABLE",
+    "CompileError",
+    "CompileResult",
+    "Escalation",
+    "Ticket",
+    "compile_as_data",
+    "compile_tree",
+    "parse_node_marker",
+    "render_compile_json",
+    "render_compile_text",
+    "render_ticket_body",
+    "write_compile_files",
+]
 
-MISSING_VERIFICATION = "missing-verification"
 MECHANISM_UNRESOLVABLE = "mechanism-unresolvable"
 
 TASK_TYPE = "task"
-
-
-def parse_node_marker(body: str) -> str | None:
-    """The id of the node a ticket body was compiled from, or None: the counterpart of
-    `agent_os.lib.parse_budget_line` for the address line."""
-    match = NODE_MARKER_RE.search(body or "")
-    return match.group(1) if match else None
 
 
 class CompileError(Exception):
@@ -71,34 +82,6 @@ class CompileError(Exception):
     def __init__(self, message: str, defects: tuple[Defect, ...] = ()) -> None:
         super().__init__(message)
         self.defects = defects
-
-
-@dataclass(frozen=True)
-class Ticket:
-    node_id: str
-    # The node's file, relative to the host's root when the tree sits under it.
-    path: str
-    title: str
-    body: str
-    labels: tuple[str, ...]
-    budget_class: str
-
-
-@dataclass(frozen=True)
-class Escalation:
-    node_id: str
-    path: str
-    code: str
-    message: str
-
-
-@dataclass(frozen=True)
-class CompileResult:
-    tickets: tuple[Ticket, ...]
-    escalations: tuple[Escalation, ...]
-    goals: int
-    containers: int
-    past_pending: int
 
 
 def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
@@ -111,17 +94,6 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
     if has_children:
         return "container"
     reasons: list[tuple[str, str]] = []
-    if not node.has_executable_verification:
-        reasons.append(
-            (
-                MISSING_VERIFICATION,
-                (
-                    f"pending {node.type} with no executable `verification`: a node without one "
-                    "escalates instead of dispatching -- write the command that proves it, or "
-                    "ask the owner what does"
-                ),
-            )
-        )
     infeasible = [e for e in node.experiments if e.outcome == "infeasible"]
     if node.mechanism == MECHANISM_PENDING and infeasible:
         reasons.append(
@@ -135,81 +107,6 @@ def _classify(node: Node, has_children: bool) -> str | list[tuple[str, str]]:
             )
         )
     return reasons
-
-
-def _acceptance_criteria(node: Node) -> list[str]:
-    return [
-        f"- {judged_criterion_line(check)}"
-        if check.is_judged
-        else f"- `{check.command}` exits 0" + (f": {check.expects}" if check.expects else "")
-        for check in node.verification
-    ]
-
-
-def _stages(node: Node, node_file: str) -> list[str]:
-    stages = []
-    if node.mechanism == MECHANISM_PENDING:
-        stages.append(
-            f"- [ ] Resolve the solution mechanism of `{node.id}` (experiment first if feasibility is "
-            f"in doubt) and write it into `mechanism` of `{node_file}`; verified by the tree "
-            "doctor passing"
-        )
-    judged = any(check.is_judged for check in node.verification)
-    verified_by = (
-        f"those commands, the criteria {JUDGED_BY_AGENT_LABEL} and the project's tests"
-        if judged
-        else "those commands and the project's tests"
-    )
-    stages.append(
-        f"- [ ] Implement `{node.id}` until every acceptance criterion passes; verified by "
-        f"{verified_by}"
-    )
-    return stages
-
-
-def render_ticket_body(cut: Slice, *, budget_class: str, tree_root: str) -> str:
-    node = cut.node
-    node_file = f"{tree_root}/{cut.relative_path}"
-    context = "\n\n".join(
-        [
-            (
-                f"Compiled from node `{node.id}` of the product tree under `{tree_root}`; its "
-                f"file is `{node_file}`. Everything an agent needs about it is below, and the "
-                "rest of the tree is deliberately absent."
-            ),
-            render_node(cut, level=3, with_description=False, with_verification=False),
-            render_ancestors(cut, level=3),
-            render_decisions(cut, level=3),
-        ]
-    )
-    sections = [
-        ("## Objective", f"Build the {node.type} `{node.id}`: {node.title}\n\n{node.description}"),
-        ("## Acceptance criteria", "\n".join(_acceptance_criteria(node))),
-        ("## Stages", "\n".join(_stages(node, node_file))),
-        ("## Context", context),
-        (
-            "## Not included",
-            (
-                f"- Anything outside `{node.id}`: its siblings and its descendants have tickets "
-                "of their own.\n"
-                "- Re-deciding a decision listed under Context: obey it, and say in the pull "
-                "request where it made the solution worse."
-            ),
-        ),
-        ("## Dependencies", "none"),
-        (
-            "## Definition of done",
-            (
-                "- Every acceptance criterion passes.\n"
-                f"- `{node_file}` is updated in the same pull request: `mechanism` when it was "
-                f"`{MECHANISM_PENDING}`, `implementation`, and `state: hardened`; the tree "
-                "doctor passes.\n"
-                "- Tests and documentation as the project's AGENTS.md asks."
-            ),
-        ),
-    ]
-    body = "\n\n".join(f"{heading}\n{text}" for heading, text in sections)
-    return f"{body}\n\n<!-- budget: {budget_class} -->\n<!-- node: {node.id} -->\n"
 
 
 def _require_worker_class(config: AgentsConfig, budget_class: str) -> None:
@@ -233,6 +130,44 @@ def _labels(config: AgentsConfig, extra_labels: Sequence[str]) -> tuple[str, ...
     return tuple(dict.fromkeys([available[TASK_TYPE], *config.tree.ticket_labels, *extra_labels]))
 
 
+def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
+    """`node_ids` with every node after the nodes it depends on, directly or through others;
+    foundations first and then by id among the nodes that are free to go. The doctor has refused a
+    cycle by now, so this always finishes."""
+    wanted = set(node_ids)
+    waiting_for = {
+        node_id: nodes_reachable_through_dependencies(tree, node_id) & wanted - {node_id}
+        for node_id in node_ids
+    }
+    ordered: list[str] = []
+    while waiting_for:
+        free = [node_id for node_id, blockers in waiting_for.items() if not blockers]
+        chosen = min(free, key=lambda node_id: (not tree.nodes[node_id].foundation, node_id))
+        ordered.append(chosen)
+        del waiting_for[chosen]
+        for blockers in waiting_for.values():
+            blockers.discard(chosen)
+    return ordered
+
+
+def _render_ticket(
+    tree: Tree, node: Node, config: AgentsConfig, *, budget_class: str, tree_root: str
+) -> tuple[str, tuple[str, ...]]:
+    body = render_ticket_body(
+        assemble_slice(tree, node.id),
+        budget_class=budget_class,
+        tree_root=tree_root,
+        blockers=hardening_blockers(tree, node.id),
+    )
+    failures = validate_issue_body(body, task_classes=config.classes, open_issue_numbers=set())
+    if failures:
+        raise CompileError(
+            f"the ticket rendered from {node.id!r} is not a dispatchable issue body: "
+            + "; ".join(failures)
+        )
+    return body, touched_paths_of(node)
+
+
 def compile_tree(
     tree: Tree,
     config: AgentsConfig,
@@ -250,37 +185,35 @@ def compile_tree(
     _require_worker_class(config, budget_class)
     labels = _labels(config, extra_labels)
     parents = {node.parent for node in tree.nodes.values() if node.parent is not None}
-    tickets: list[Ticket] = []
+    dispatchable: list[str] = []
     escalations: list[Escalation] = []
     skipped = {"goal": 0, "past-pending": 0, "container": 0}
-    # Foundation nodes first: the shell does not go live until they are hardened, so they are what
-    # a human reading the output wants to see before anything else.
-    for node in sorted(tree.nodes.values(), key=lambda item: (not item.foundation, item.id)):
+    for node in sorted(tree.nodes.values(), key=lambda item: item.id):
         verdict = _classify(node, node.id in parents)
         path = f"{tree_root}/{tree.paths[node.id].relative_to(tree.root).as_posix()}"
         if isinstance(verdict, str):
             skipped[verdict] += 1
-            continue
-        if verdict:
+        elif verdict:
             escalations += [Escalation(node.id, path, code, message) for code, message in verdict]
-            continue
-        body = render_ticket_body(
-            assemble_slice(tree, node.id), budget_class=budget_class, tree_root=tree_root
+        else:
+            dispatchable.append(node.id)
+    tickets: list[Ticket] = []
+    for node_id in _in_dependency_order(tree, dispatchable):
+        node = tree.nodes[node_id]
+        path = f"{tree_root}/{tree.paths[node_id].relative_to(tree.root).as_posix()}"
+        body, touched_paths = _render_ticket(
+            tree, node, config, budget_class=budget_class, tree_root=tree_root
         )
-        failures = validate_issue_body(body, task_classes=config.classes, open_issue_numbers=set())
-        if failures:
-            raise CompileError(
-                f"the ticket rendered from {node.id!r} is not a dispatchable issue body: "
-                + "; ".join(failures)
-            )
         tickets.append(
             Ticket(
-                node_id=node.id,
+                node_id=node_id,
                 path=path,
                 title=prefixed_title(node.title, TASK_TYPE),
                 body=body,
                 labels=labels,
                 budget_class=budget_class,
+                depends_on=tuple(node.depends_on),
+                touched_paths=touched_paths,
             )
         )
     return CompileResult(
@@ -290,87 +223,3 @@ def compile_tree(
         containers=skipped["container"],
         past_pending=skipped["past-pending"],
     )
-
-
-def _summary(result: CompileResult) -> dict[str, int]:
-    return {
-        "tickets": len(result.tickets),
-        "escalations": len(result.escalations),
-        "goals_skipped": result.goals,
-        "containers_skipped": result.containers,
-        "past_pending_skipped": result.past_pending,
-    }
-
-
-def render_compile_text(result: CompileResult) -> str:
-    summary = _summary(result)
-    lines = [
-        (
-            f"compiled {summary['tickets']} ticket(s), {summary['escalations']} escalation(s); "
-            f"not dispatched by this step: {summary['goals_skipped']} goal(s), "
-            f"{summary['containers_skipped']} container(s), "
-            f"{summary['past_pending_skipped']} node(s) past pending"
-        )
-    ]
-    for ticket in result.tickets:
-        lines += [
-            "",
-            f"=== ticket: {ticket.node_id} ===",
-            f"title: {ticket.title}",
-            f"labels: {', '.join(ticket.labels)}",
-            f"budget: {ticket.budget_class}",
-            f"node: {ticket.path}",
-            "---",
-            ticket.body.rstrip("\n"),
-        ]
-    for escalation in result.escalations:
-        lines += [
-            "",
-            f"=== escalation: {escalation.node_id} ===",
-            f"{escalation.path}: {escalation.code}: {escalation.message}",
-        ]
-    return "\n".join(lines) + "\n"
-
-
-def compile_as_data(result: CompileResult) -> dict:
-    return {
-        "summary": _summary(result),
-        "tickets": [
-            {
-                "node": ticket.node_id,
-                "path": ticket.path,
-                "title": ticket.title,
-                "labels": list(ticket.labels),
-                "budget_class": ticket.budget_class,
-                "body": ticket.body,
-            }
-            for ticket in result.tickets
-        ],
-        "escalations": [
-            {
-                "node": escalation.node_id,
-                "path": escalation.path,
-                "code": escalation.code,
-                "message": escalation.message,
-            }
-            for escalation in result.escalations
-        ],
-    }
-
-
-def render_compile_json(result: CompileResult) -> str:
-    return json.dumps(compile_as_data(result), indent=2, ensure_ascii=False) + "\n"
-
-
-def write_compile_files(result: CompileResult, out_dir: pathlib.Path) -> list[pathlib.Path]:
-    """`<node id>.md` per ticket, holding exactly the issue body (what `issues.py create
-    --body-file` takes), and `compile.json` holding everything else: titles, labels, escalations."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    written = []
-    for ticket in result.tickets:
-        path = out_dir / f"{ticket.node_id}.md"
-        path.write_text(ticket.body, encoding="utf-8")
-        written.append(path)
-    index = out_dir / "compile.json"
-    index.write_text(render_compile_json(result), encoding="utf-8")
-    return [*written, index]
