@@ -14,6 +14,7 @@ import yaml
 from agent_os.cli import AGENT_OS_DIR
 
 EXAMPLE_CONFIG = AGENT_OS_DIR / "config.example.yaml"
+MULTI_BACKEND_CONFIG = AGENT_OS_DIR / "tests" / "product" / "config" / "multi_backend_config.yaml"
 DRIVER = AGENT_OS_DIR / "bin" / "puntal_task.sh"
 BENCH = AGENT_OS_DIR / "bench" / "puntal"
 FAKE = BENCH / "fake_claude.py"
@@ -23,10 +24,11 @@ NODE_FILE = BENCH / "nodes" / "uc-1-file-a-ticket.md"
 BOARD_NODE_FILE = BENCH / "nodes" / "uc-3-see-the-board.md"
 
 
-def write_config(
-    tmp_path, *, puntal_section=None, puntal_class=None, class_backend=None, base=EXAMPLE_CONFIG
-):
-    data = yaml.safe_load(base.read_text())
+def write_config(tmp_path, *, puntal_section=None, puntal_class=None, class_backend=None):
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
+    if class_backend and class_backend not in data["project"]["backends"]:
+        # The shipped example describes one backend; a class on another needs the multi-backend shape.
+        data = yaml.safe_load(MULTI_BACKEND_CONFIG.read_text())
     data["puntal"].update(puntal_section or {})
     data["classes"]["puntal"].update(puntal_class or {})
     if class_backend:
