@@ -8,6 +8,11 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1c, C (branch `fix/rollout-stage1c`) -- `worker_task.sh <backend> status` no longer
+  says "no events yet" right after a stage ended: `stage-exit` archives the stage's events under
+  `.cache/spend/<issue>/` and empties the live log, and `status` (token/cost report and last
+  assistant text) now falls back to this backend's newest archived stage of the recorded issue,
+  saying which file it shows.
 - Rollout stage 1c, B (branch `fix/rollout-stage1c`) -- a pull request with a red or unfinished CI
   check can no longer be announced as ready. The validator approved a PR whose `tests` check was in
   FAILURE and the planner then said "the human merges". `issues.py move N review` (what the

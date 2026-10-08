@@ -334,6 +334,19 @@ RULES=$("$agent_python" -m agent_os.lib render-prompt worker \
 alive_pidfile() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 alive() { alive_pidfile "$pidfile"; }
 
+# The file `status` reads events from: the live log, or -- once `stage-exit` has archived the
+# finished stage and emptied it -- this backend's newest archived stage of the recorded issue
+# (the archive names sort by their UTC timestamp). Empty output when neither has events.
+readable_events_file() {
+  local issue newest
+  if [ -s "$events" ]; then echo "$events"; return 0; fi
+  issue=$(cat "$issuefile" 2>/dev/null || true)
+  case "$issue" in ''|*[!0-9]*) return 0 ;; esac
+  newest=$(ls -1 "$spenddir/$issue"/*-"$backend"-stage*.jsonl 2>/dev/null | sort | tail -1)
+  [ -n "$newest" ] && [ -s "$newest" ] && echo "$newest"
+  return 0
+}
+
 # Latest per-turn context size, cumulative output, turn count, session id -- read off the
 # stream-json events. Delegates to agent_os.lib so there is exactly one implementation of
 # "how big is a turn" / "did the run fail", shared with agent_os.guard's budget check.
@@ -344,8 +357,12 @@ alive() { alive_pidfile "$pidfile"; }
 # are the same measure at the two scopes a run is judged at: `max_context` for this stage process,
 # `max_total_tokens` for every stage the issue has taken (#387).
 usage_report() {
-  [ -s "$events" ] || { echo "  (no events yet)"; return; }
-  "$agent_python" -m agent_os.lib usage-report "$events" "$bodyfile" |
+  local report_events
+  report_events=$(readable_events_file)
+  [ -n "$report_events" ] || { echo "  (no events yet)"; return; }
+  [ "$report_events" = "$events" ] ||
+    echo "  (live log empty; showing the latest archived stage: ${report_events##*/})"
+  "$agent_python" -m agent_os.lib usage-report "$report_events" "$bodyfile" |
     awk -v extra="$(issue_token_line)" \
       '{ print } extra != "" && /^  context/ { print extra; extra = "" }'
 }
@@ -1977,7 +1994,7 @@ status)
   sid=$(grep -o '"session_id":"[^"]*"' "$events" 2>/dev/null | tail -1 | cut -d'"' -f4)
   [ -n "$sid" ] && echo "$sid" > "$sidfile"
   echo "--- last assistant text ---"
-  "$agent_python" - "$events" <<'PY' 2>/dev/null || true
+  "$agent_python" - "$(readable_events_file)" <<'PY' 2>/dev/null || true
 import json, sys, pathlib
 texts = []
 for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():

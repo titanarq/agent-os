@@ -3237,6 +3237,38 @@ def test_the_status_report_prints_the_issues_token_total_next_to_the_stage_conte
     assert "$" not in status.stdout, status.stdout
 
 
+def test_status_reads_the_latest_archived_stage_when_the_live_log_was_emptied(tmp_path):
+    """`stage-exit` archives the finished stage under `.cache/spend/<issue>/` and empties the live
+    log, so right after a stage `status` used to say "no events yet" about a run that had spent
+    tokens. It now falls back to the newest archived stage of the issue and says so."""
+    stage_titles = ("Write the failing test", "Make it pass")
+    environment, cache, _worktree, _tmp = _staged_environment(
+        tmp_path,
+        stage_titles=stage_titles,
+        mode="hang",
+        subjects=("stage 1/2: Write the failing test",),
+    )
+    (cache / "worker_qwen.issue").write_text("347\n")
+    (cache / "worker_qwen.stage").write_text("1/2\n")
+    (cache / "worker_qwen.body.md").write_text(_staged_body(*stage_titles) + "\n")
+    _archive_qwen_stage(cache, "qwen", 347, 1, total_tokens=600)
+    (cache / "worker_qwen.jsonl").write_text("")
+
+    status = subprocess.run(
+        ["bash", str(DRIVER), "qwen", "status"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert status.returncode == 0, status.stdout + status.stderr
+    assert "(no events yet)" not in status.stdout, status.stdout
+    assert "(live log empty; showing the latest archived stage:" in status.stdout, status.stdout
+    assert "  context" in status.stdout, status.stdout
+    assert "600 tokens across every stage of #347" in status.stdout, status.stdout
+
+
 # ---------------------------------------------------------------------------------------------
 # THE BACKEND'S EXECUTABLE COMES FROM CONFIG, NOT FROM THE LAUNCHER'S PATH (#380). The incident:
 # on the first unattended dispatch (#363, 2026-09-16) `qwen` lived under nvm, the PATH the systemd

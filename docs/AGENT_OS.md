@@ -385,7 +385,7 @@ cuts on a measurement, never on the absence of one.
 
 | Where can I see spend today? | Exists? | Where |
 |---|---|---|
-| Per run | Yes | the run's log, its `runs.tsv` row, or `worker_task.sh <backend> status`/`collect` while live or just-finished |
+| Per run | Yes | the run's log, its `runs.tsv` row, or `worker_task.sh <backend> status`/`collect` while live or just-finished (once `stage-exit` has emptied the live log, `status` shows the newest archived stage of the issue) |
 | Per issue (summed across every stage's `start`/`resume`) | **In tokens, yes; in dollars, partially** | `agent_lib.cumulative_total_tokens` and `cumulative_cost_usd` sum the same listing — `.cache/spend/<issue>/*.jsonl` plus the live one (#375, #387). The TOKEN sum is printed for a human by `worker_task.sh <backend> status`/`collect` (one `issue …` line under the stage's own `context`, its ceiling beside it) and by the stage gate's own cut message; the DOLLAR sum still needs the CLI subcommand run by hand (`agent_lib.py cumulative-cost …`) and reads `0.0000` on every Qwen issue. No comment on the issue or the PR carries either |
 | Per feature | **No** | nothing joins a feature's children to the `.jsonl`/`runs.tsv` rows of their attempts |
 | Total versus budget | **One issue, yes; across issues, no** | an issue's own two ceilings are compared automatically in two places — the guard's tick on a live run, the driver's stage gate before chaining (#375, #387) — and `status` prints the token figure beside its ceiling. Nothing sums across issues: `runs.tsv` supports an `awk` for a role's daily total (`docs/runbooks/agent_monitor.md:130-132`) and no equivalent exists for workers |
