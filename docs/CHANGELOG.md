@@ -8,6 +8,9 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 6 (no issue; branch `fix/rollout-stage1f`) -- `docs/ADOPTION.md` step 16 says that the
+  drivers link the mechanism's `agent_os/.venv` into every worktree (`agent_os_link_mechanism_venv`),
+  where and when, and that nothing is linked by hand. A test ties the step to the function it names.
 - Rollout stage 1f, 5 (no issue; branch `fix/rollout-stage1f`) -- the planner prompt says what to do with
   `open-pr`'s own endings. `BLOCKED reason=<reason>` (`malformed_node_change_trailer`, `push_rejected`,
   `workflows_permission`, `merge_failed`) reaches the planner as a `worker_cut` event, and nothing in its

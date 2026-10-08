@@ -148,7 +148,14 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 
 16. **The mechanism's own interpreter** — `bash agent_os/bootstrap.sh` builds `agent_os/.venv` and
     installs the package into it, editable, with `pytest` and `ruff`. Idempotent; run it again
-    after every `git subtree pull` (step 25).
+    after every `git subtree pull` (step 25). Run it in the main checkout once: the drivers link
+    that `agent_os/.venv` into every worktree they make or start a run in (`agent_os_link_mechanism_venv`
+    in `agent_os/bin/_python.sh`: a worker's worktree at `init`, `start` and `resume`, and the
+    throwaway worktree of a one-shot role), at the same relative path, so `agent_os/.venv/bin/pytest`
+    and the interpreter the rendered agent definitions name resolve there. A link, never a copy, and
+    only where git ignores it (the mechanism's `.gitignore` names `.venv`), so it never shows up as
+    an untracked file that refuses the next `start`. There is nothing to link by hand or to commit;
+    a worktree is linked only to a `.venv` that already exists, so build it before `init`.
 17. **Binaries** — `gh` (authenticated with `repo`+`project` scopes), `git`, `python3.12`, the
     backend CLI(s) a role runs (`claude`, `qwen`, or whichever the host configures), `curl`
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
