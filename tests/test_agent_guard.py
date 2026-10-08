@@ -1568,7 +1568,6 @@ def test_check_preserves_the_marker_when_it_writes_done(tmp_path, invocations):
     cache.mkdir()
     (cache / "worker_claude.state").write_text("STARTED\nissue=341 label=status:doing\n")
     (cache / "worker_claude.issue").write_text("341")
-    agent_guard.cache_dir(tmp_path).mkdir(parents=True)
     agent_guard.check("claude", main=tmp_path)
     assert read_state_marker(cache / "worker_claude.state") == ("DONE", 341, "status:doing")
 
