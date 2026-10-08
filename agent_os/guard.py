@@ -921,6 +921,13 @@ def _wake_locked(*, main: Path, now: datetime) -> str:
     pending = pending_events(main)
     if not pending:
         return "no unconsumed planner events -- nothing to wake for"
+    # The same full stop `tick` honours: a worker launched by hand still ends through `check` ->
+    # `wake`, and without this the pause on the epic did not stop its planner. The events stay on
+    # disk, so the first wake after the pause is lifted reads them all.
+    if _agents_paused(main=main):
+        return (
+            f"epic #{TRACKING_EPIC_ISSUE} carries {AGENTS_PAUSED_LABEL} -- events left, no planner"
+        )
 
     planner = load_planner_config()
     already = runs_today(now, main=main)

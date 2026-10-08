@@ -8,6 +8,11 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1c, A (no issue; branch `fix/rollout-stage1c`) -- `wake` now honours
+  `status:agents-paused` like `tick` does, through the same `_agents_paused` check. A worker started
+  by hand ends through `check` -> `wake`, and with the epic paused it used to wake the planner, which
+  launched the validator. Under the pause the events are still written and stay on disk; the first
+  wake after the label is removed reads them.
 - Rollout stage 1b (no issue; branch `fix/rollout-stage1b`) -- `context` and the ticket's Context now
   carry the findings of each ancestor's experiments (`kind: question -- finding`; `experiments` in
   `--json`), so the owner's answers and the decided stack reach the tickets. Also `compile`: a use case inherits the

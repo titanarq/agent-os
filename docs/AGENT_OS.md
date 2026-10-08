@@ -92,7 +92,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | Nothing dispatchable, everything blocked/capped | Planner's own judgment | after acting on its events, everything named is `blocked-on-human` or at its relaunch cap | `notify.sh` (ntfy) | `agent_os/bin/planner_task.sh:199-205` |
 | Daily planner-run cap reached | Guard (`wake`), mechanically | `planner.max_runs_per_day` (40) | one ntfy page (`paged-<date>`); events wait for tomorrow | `agent_os.guard:531-541, 560-578` |
 | CI red on the PR | CI | every `pull_request` | a GitHub check; touches no label | `.github/workflows/ci.yml:1-68` |
-| Tracking epic carries `status:agents-paused` | Human, exclusively | human decision | nothing else adds/removes it; the tick reads it and writes no events at all that tick | `agent_os.guard:847-866, 1122-1124`; `issues.py move` never touches it (`agent_lib.py:112-121`) |
+| Tracking epic carries `status:agents-paused` | Human, exclusively | human decision | nothing else adds/removes it; the tick reads it and writes no events at all that tick; `wake` (also reached from a worker's exit hook `check`) reads it too and runs no planner while it is set -- the events it was handed stay on disk | `agent_os.guard:847-866, 1122-1124`; `issues.py move` never touches it (`agent_lib.py:112-121`) |
 
 Fixed since the table above was first written: the one-issue-per-`module:`-label exclusion
 between backends was a prompt sentence with no filter until #374 moved it, plus a configured
