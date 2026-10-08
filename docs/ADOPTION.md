@@ -163,7 +163,10 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     either is missing. A backend that should run more than one worker at once sets
     `project.backends.<name>.slots: N` (agent-os#90, ADR
     `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`): slot 1 is `worktree`,
-    slot N is `<worktree>-N`, and the same `init` creates every missing one. Raise
+    slot N is `<worktree>-N`, and the same `init` creates every missing one. A worktree that was
+    lost (the directory deleted, a clone moved) is recreated by running `init` again: it reuses the
+    `agent-os/init-<backend>` branch when that holds nothing `origin/main` lacks, and otherwise
+    stops and prints the `git` commands to keep or drop the branch. Raise
     `planner.max_parallel_issues` with it -- that stays the cap across every slot of every
     backend -- and give the issues `module:` labels, which keep two slots off the same area.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App

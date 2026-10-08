@@ -8,6 +8,13 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 2 (no issue; branch `fix/rollout-stage1f`) -- `worker_task.sh <backend> init`
+  recreates a lost worktree. With the directory gone but `agent-os/init-<backend>` still there it died
+  on git's "a branch named ... already exists". `init` now forgets the registrations of vanished
+  worktrees (`git worktree prune`), reuses the branch -- moved to the tip of `origin/main` -- when it
+  holds no commit `origin/main` lacks, and otherwise stops, leaves the branch alone and prints the
+  `git` commands that keep or drop it (the same for a branch checked out in another worktree). The
+  logic is `bin/worker_init_worktree.sh`; `worker_task.sh` shrank by 17 lines.
 - Rollout stage 1f, 1 (no issue; branch `fix/rollout-stage1f`) -- a GitHub App that cannot read CI
   checks is found before the first pull request and said in one line. At the first host the validator
   failed `issues.py move N review` with GraphQL's "Resource not accessible by integration": its App
