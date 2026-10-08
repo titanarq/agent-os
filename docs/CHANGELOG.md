@@ -8,6 +8,13 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1c, B (branch `fix/rollout-stage1c`) -- a pull request with a red or unfinished CI
+  check can no longer be announced as ready. The validator approved a PR whose `tests` check was in
+  FAILURE and the planner then said "the human merges". `issues.py move N review` (what the
+  validator runs after approving) now reads the checks of the open PR whose body says `Closes #N`
+  (`agent_os/review/pull_request_checks.py`) and refuses, naming the check, while any is failing or
+  still running; the validator prompt now tells it to read `gh pr checks` first and request changes
+  citing the failed check. An issue with no open PR is not gated.
 - Rollout stage 1c, A (no issue; branch `fix/rollout-stage1c`) -- `wake` now honours
   `status:agents-paused` like `tick` does, through the same `_agents_paused` check. A worker started
   by hand ends through `check` -> `wake`, and with the epic paused it used to wake the planner, which

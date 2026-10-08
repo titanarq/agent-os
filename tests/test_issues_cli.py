@@ -995,6 +995,7 @@ def _move(state, held_labels, *, issue_state="OPEN", pages=None, title="A title"
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
+        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels") as ensure,
         patch.object(issues, "update_issue") as update,
@@ -1093,6 +1094,7 @@ def test_a_page_that_fails_neither_fails_the_move_nor_burns_the_once_per_issue_m
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
+        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,
@@ -1114,6 +1116,7 @@ def test_a_template_move_cannot_render_is_reported_and_leaves_the_move_standing(
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
+        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,

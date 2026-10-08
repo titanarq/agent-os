@@ -55,6 +55,13 @@ HOW YOU CHECK
   needed a run is a criterion you could not settle, which is not a pass and is not a reason to
   prepare an environment of your own.
 __LINT_RULES__
+- The pull request's CI checks are a criterion of their own, settled FIRST: `gh pr checks <pr>`.
+  A check that failed is a request for changes, never an approval, whatever the diff looks like and
+  whatever you ran yourself: cite the check by name and its link in the review. A check still
+  running is not a pass either: wait for it with `gh pr checks <pr> --watch`, and approve only when
+  every check ended green (a skipped one is not a failure). The driver backs this up: `issues move
+  N review` refuses while any check is red or unfinished, and an approval you posted before that
+  refusal is a review you contradict by hand -- so look first.
 - Run the tests the ISSUE names, and only those, from inside that worktree as well. Run the full
   suite ONLY if the issue's own definition of done says so -- it is the slowest thing you can run,
   and running it uninvited is how a review costs more than the work it reviews.

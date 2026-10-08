@@ -97,6 +97,7 @@ from agent_os.lib import (
     validate_issue_body,
 )
 from agent_os.product.dispatch.brief_slice import brief_slice_section
+from agent_os.review.pull_request_checks import refusal_for_issue
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -1136,12 +1137,29 @@ def issue_for_move(repo: str, number: int) -> dict:
     }
 
 
+def refuse_review_while_checks_are_not_green(repo: str, number: int) -> None:
+    """`move N review` is what the validator runs after approving: it must not announce "ready to
+    merge" for a pull request whose CI is red or still running."""
+    open_pull_requests = (
+        gh_json(
+            "pr", "list", "--repo", repo, "--state", "open", "--limit", "200",
+            "--json", "number,body,statusCheckRollup",
+        )
+        or []
+    )  # fmt: skip
+    refusal = refusal_for_issue(number, open_pull_requests)
+    if refusal:
+        sys.exit(f"move #{number} review refused: {refusal}")
+
+
 def move_issue(repo: str, number: int, state: str, project: ProjectConfig) -> None:
     """Moves one issue to `state`: its label set, its open/closed state, its board column, and the
     review page. The target label is already known to exist -- `cmd_move` makes sure of it once
     for however many issues it moves."""
     vocabulary = project.labels
     target = vocabulary.label_for_state(state)
+    if state == "review":
+        refuse_review_while_checks_are_not_green(repo, number)
     current = issue_for_move(repo, number)
     # Exactly one state label at a time: every other one comes off, whatever it was, so an issue
     # can never read as two states at once. `status:agents-paused` is not a state and is never
