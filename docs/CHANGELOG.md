@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 3 (no issue; branch `fix/rollout-stage1f`) -- the agent definitions no longer send a
+  host to wrapper scripts it may not have. `agents/{control-plane,task-writer,worker-runner}.md` told the
+  subagent to run `scripts/worker_task.sh`, `scripts/issues.py`, `scripts/notify.sh`,
+  `scripts/worker_progress.sh` and `scripts/agent_lib.py`: shims the first host wrote and a host that
+  vendors the mechanism and writes none (the second one) does not have. They now name
+  `__MECHANISM_DIR__/bin/<driver>.sh` and `__MECHANISM_DIR__/.venv/bin/python -m agent_os.<module>`, with
+  the new render token `__MECHANISM_DIR__` (`agent_os`, the `git subtree` prefix). A host that keeps its
+  shims loses nothing: they still `exec` into those files. Re-run `agent-os-install --force` to refresh
+  the rendered definitions. `install.resolve_exec_start` needed no change: it already uses
+  `python -m agent_os.guard tick` when `scripts/agent_guard.py` is absent.
 - Rollout stage 1f, 2 (no issue; branch `fix/rollout-stage1f`) -- `worker_task.sh <backend> init`
   recreates a lost worktree. With the directory gone but `agent-os/init-<backend>` still there it died
   on git's "a branch named ... already exists". `init` now forgets the registrations of vanished

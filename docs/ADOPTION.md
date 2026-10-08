@@ -178,7 +178,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, with
     `ExecStart=` on the interpreter from step 16 (never a `.venv` at the host root; install refuses
     when step 16 has not been run and `AGENT_OS_PYTHON` is unset); copies
-    `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from `agent_os/agents/*.md`),
+    `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from `agent_os/agents/*.md`;
+    they name the mechanism's own `agent_os/bin/*.sh` and `agent_os/.venv/bin/python -m agent_os.<module>`,
+    so a host needs no `scripts/` wrapper for them),
     `.github/ISSUE_TEMPLATE/{task,bug}.md` and `.github/workflows/ci-agent-os.yml`, each only if
     absent — and `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
     on every pull request with no path filter. Keep it unless your own CI already reports a check

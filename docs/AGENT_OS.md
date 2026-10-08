@@ -503,7 +503,12 @@ and `gh`/backend/`git` stubs only, no database, no network — except `test_agen
 `scripts/{worker_task,agent_task,planner_task,worker_progress,notify,qwen_task}.sh` and
 `scripts/{agent_guard,agent_lib,issues,gh_app_token}.py` — roedor's own compatibility shims, each a
 one-line `exec` into `agent_os/`, listed in `mechanism.own_paths` and never in
-`project.forbidden_paths`.
+`project.forbidden_paths`. The `.claude/agents/*.md` definitions do not depend on them: they name the
+commands through the `__MECHANISM_DIR__` token (`agent_os`, the vendoring prefix), as
+`__MECHANISM_DIR__/bin/worker_task.sh` and `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues`,
+files every host has (stage 1f; before it they named `scripts/worker_task.sh` and
+`scripts/issues.py`, which a host that wrote no shims did not have). `agent-os-install`'s guard
+unit already fell back to `python -m agent_os.guard tick` when there is no `scripts/agent_guard.py`.
 
 ### 4.2 Configuration (`config/agents.yaml`)
 

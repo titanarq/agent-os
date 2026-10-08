@@ -10,6 +10,9 @@ Pure filesystem. This file must not request the `engine` or `db_sandbox` fixture
 
 from __future__ import annotations
 
+import importlib.util
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -49,6 +52,7 @@ def test_token_values_covers_every_token_the_issue_names():
         "__HUMAN_LOGIN__": "octocat",
         "__TEST_COMMAND__": "scripts/test.sh",
         "__MODULE_DOCS__": "docs/modules",
+        "__MECHANISM_DIR__": "agent_os",
         "__REPO__": "owner/name",
         "__MERGE_METHOD__": "merge",
         "__CONTROL_PLANE_MODEL__": "sonnet",
@@ -210,9 +214,39 @@ def test_an_unknown_agent_models_key_is_refused_when_the_config_loads():
 def test_the_control_plane_routes_task_writing_to_the_task_writer_and_does_not_write_tasks():
     rendered = _rendered_control_plane(_project())
     assert "task-writer" in rendered
-    assert "scripts/issues.py create" not in rendered
+    assert "agent_os.issues create" not in rendered
     task_writer = render_agent_template(
         (AGENT_TEMPLATES_DIR / "task-writer.md").read_text(), _project()
     )
-    assert "scripts/issues.py create" in task_writer
+    assert "agent_os.issues create" in task_writer
     assert "issues.py validate N" in task_writer
+
+
+# ---- the commands an agent definition names are the mechanism's own: every host has them -------
+
+AGENT_TEMPLATE_NAMES = ["control-plane.md", "task-writer.md", "worker-runner.md"]
+MECHANISM_DRIVER_NAMED = re.compile(r"agent_os/bin/([\w.-]+\.sh)")
+MECHANISM_MODULE_NAMED = re.compile(r"agent_os/\.venv/bin/python -m (agent_os(?:\.\w+)+)")
+
+
+def _rendered_agent_template(name: str) -> str:
+    # A test command with no `scripts/` in it: whatever remains of that spelling is the template's.
+    project = _project(test_command="make check")
+    return render_agent_template((AGENT_TEMPLATES_DIR / name).read_text(), project)
+
+
+@pytest.mark.parametrize("name", AGENT_TEMPLATE_NAMES)
+def test_an_agent_definition_names_no_wrapper_script_a_host_may_not_have(name):
+    # `scripts/worker_task.sh` and `scripts/issues.py` were the first host's own shims; a host
+    # that vendors the mechanism and writes none was told to run files it does not have.
+    assert "scripts/" not in _rendered_agent_template(name)
+
+
+def test_every_command_the_agent_definitions_name_exists_in_the_mechanism():
+    rendered = "\n".join(_rendered_agent_template(name) for name in AGENT_TEMPLATE_NAMES)
+    drivers = set(MECHANISM_DRIVER_NAMED.findall(rendered))
+    modules = set(MECHANISM_MODULE_NAMED.findall(rendered))
+    assert {"worker_task.sh", "worker_progress.sh", "notify.sh"} <= drivers
+    assert {"agent_os.issues", "agent_os.lib"} <= modules
+    assert [name for name in drivers if not (AGENT_OS_DIR / "bin" / name).is_file()] == []
+    assert [name for name in modules if importlib.util.find_spec(name) is None] == []
