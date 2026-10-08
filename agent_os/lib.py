@@ -949,8 +949,8 @@ class PuntalConfig(Strict):
     # The app's persistence API: the command (shell-split) behind `./state get tickets T-1` and the
     # pre-helper's reads. `--persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank it.
     persistence_command: str = ""
-    # A text file (relative to the host's root) describing its subcommands, rendered into the slow
-    # path's contract at `__PERSISTENCE_API__`.
+    # A text file (relative to the host's root) describing its subcommands, rendered at
+    # `__PERSISTENCE_API__` in both paths' contracts (the fast one, with no tool, reads it).
     persistence_api_file: str = ""
     # The app's EXECUTOR: the command (shell-split) that applies a plan's operations atomically
     # (agent_os/product/puntal/fast/executor.py). Empty makes the fast path refuse unless the caller

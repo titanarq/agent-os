@@ -8,6 +8,14 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, D (no issue; branch `fix/rollout-stage1e`) -- the fast path's contract carries the
+  app's data API. `puntal.persistence_api_file` was rendered into the slow path's contract only
+  (`prompts/puntal_slow.md`), while the fast turn -- no tool, no `--help` -- is the one that plans the
+  operations over the app's data. `prompts/puntal.md` now has a `__PERSISTENCE_API__` placeholder
+  (answered with `__STATE_COMMAND__` too, like the slow one) filled with the same text under the heading
+  `THE APP'S DATA API`, introduced as reference only because the turn runs none of its commands; a host
+  that configures no file gets exactly the contract it had. `docs/AGENT_OS.md` §4.2 and §4.7;
+  `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`.
 - Rollout stage 1e, C (no issue; branch `fix/rollout-stage1e`) -- the foundation rule is said the
   way the decision says it. The comment of `Node.foundation`, `docs/AGENT_OS.md` §4.6 (the field and
   the `foundation-improvised` row) and the check's own text said a foundation is HARDENED before the

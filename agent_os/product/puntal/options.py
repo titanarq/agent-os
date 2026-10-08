@@ -20,6 +20,7 @@ from agent_os.lib import (
     render_prompt,
 )
 from agent_os.product.puntal.constants import (
+    FAST_PATH_API_INTRODUCTION,
     PATH_FAST,
     PATH_SLOW,
     PUNTAL_ROLE,
@@ -93,10 +94,18 @@ def _render_contracts(config, host_root: pathlib.Path) -> tuple[str, str]:
         api_text = api_path.read_text()
     extras = prompt_extras_path(PUNTAL_ROLE, config.project)
     try:
-        fast = render_prompt(PUNTAL_ROLE, {}, extras)
+        # The API text goes in first, so that it may use `__STATE_COMMAND__` itself. Both paths
+        # get it: the slow one to call it, the fast one to know what its operations apply to.
+        fast = render_prompt(
+            PUNTAL_ROLE,
+            {
+                "PERSISTENCE_API": FAST_PATH_API_INTRODUCTION + api_text if api_text else "",
+                "STATE_COMMAND": STATE_COMMAND,
+            },
+            extras,
+        )
         slow = render_prompt(
             SLOW_PATH_PROMPT,
-            # The API text goes in first, so that it may use `__STATE_COMMAND__` itself.
             {"PERSISTENCE_API": api_text, "STATE_COMMAND": STATE_COMMAND},
             extras,
         )

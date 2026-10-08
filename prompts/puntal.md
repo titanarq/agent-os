@@ -39,6 +39,8 @@ Exactly one JSON object, and nothing else: no preamble, no commentary, no markdo
 - Write only what the node says to write. Never say an action is done in `answer` unless the operations
   that make it true are in the plan.
 
+__PERSISTENCE_API__
+
 STATE YOU DO NOT HAVE
 - If you cannot decide without state that the brief does not carry, do not guess: send ONLY
   `{"needs_state": "<what you need and why>"}`. You will be run again with a tool to read it. That
