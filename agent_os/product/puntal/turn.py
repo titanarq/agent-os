@@ -43,10 +43,12 @@ def run_turn(
     brief: str,
     with_state_tool: bool,
     log,
+    actor: str = "",
 ) -> TurnRun:
-    """Runs the backend once. `with_state_tool` is the slow path's: the `./state` shim, the one Bash
-    rule that lets it run, and an observer that audits every call. Without it the turn has no tool at
-    all, and any call it makes is a contract violation."""
+    """Runs the backend once. `with_state_tool` is the slow path's: the `./state` shim (which runs
+    the app's persistence command as `actor`), the one Bash rule that lets it run, and an observer
+    that audits every call. Without it the turn has no tool at all, and any call it makes is a
+    contract violation."""
     flags = flags_for(options, with_state_tool=with_state_tool)
     argv = [options.executable, *flags, "--system-prompt", contract, brief]
     observer = StreamObserver(ceilings, tools_allowed=with_state_tool)
@@ -56,7 +58,9 @@ def run_turn(
     started_s = clock.now()
     try:
         if with_state_tool:
-            write_state_shim(scratch, options.host_root, shlex.split(options.persistence_command))
+            write_state_shim(
+                scratch, options.host_root, shlex.split(options.persistence_command), actor
+            )
         log.write(f"--- turn: {kind} ---\n")
         log.flush()
         try:

@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, E (no issue; branch `fix/rollout-stage1e`) -- the puntal's interface says who
+  acts. The executor, the pre-helper's reads and the slow path's `./state` did not know who clicked,
+  and the only way to tell them was to export an environment variable the mechanism never defined
+  (what the shell exported reached them by inheritance, undocumented). The contract is
+  now one variable, `PUNTAL_ACTOR`: the `--json` request accepts `actor` (text; anything else is a
+  `not_run` refusal) and sets it for all three; without one, what the caller exported is passed on
+  unchanged; without that, it is not set. The slow path's shim exports it itself. The brief and the
+  telemetry do not carry it. `docs/AGENT_OS.md` §4.7 documents the variables the driver reads and
+  sets (`agent_os/product/puntal/fast/actor.py`).
 - Rollout stage 1e, D (no issue; branch `fix/rollout-stage1e`) -- the fast path's contract carries the
   app's data API. `puntal.persistence_api_file` was rendered into the slow path's contract only
   (`prompts/puntal_slow.md`), while the fast turn -- no tool, no `--help` -- is the one that plans the

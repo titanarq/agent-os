@@ -14,6 +14,7 @@ import time
 
 from agent_os.lib import ProjectConfig, backend_executable
 from agent_os.product.puntal.constants import (
+    ACTOR_VARIABLE,
     ALLOW_RULE,
     PERSISTENCE_TOOL,
     SHIM_NAME,
@@ -79,15 +80,21 @@ def backend_executable_for(backend: str, project: ProjectConfig) -> str:
     return os.environ.get(variable) or backend_executable(backend, project=project)
 
 
-def write_state_shim(scratch: pathlib.Path, host_root: pathlib.Path, argv: list[str]) -> None:
+def write_state_shim(
+    scratch: pathlib.Path, host_root: pathlib.Path, argv: list[str], actor: str = ""
+) -> None:
     """The puntal's whole tool: `./state ...` in the scratch directory, which runs the app's
-    persistence command from the host's root with the arguments it was given."""
+    persistence command from the host's root with the arguments it was given. The actor, when there
+    is one, is set in the shim itself: whether the backend's own tool passes the environment on is
+    not the driver's to rely on."""
     command = list(argv)
     if "/" in command[0] and not os.path.isabs(command[0]):
         command[0] = str(host_root / command[0])
     shim = scratch / SHIM_NAME
+    export_actor = f"export {ACTOR_VARIABLE}={shlex.quote(actor)}\n" if actor else ""
     shim.write_text(
         "#!/bin/sh\n"
+        f"{export_actor}"
         f"cd {shlex.quote(str(host_root))} || exit 1\n"
         f'exec {" ".join(shlex.quote(part) for part in command)} "$@"\n'
     )

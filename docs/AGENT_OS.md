@@ -1005,13 +1005,29 @@ nobody: the caller is waiting for the answer on stdout.
 JSON out, independent of the app's stack. One request object on stdin: `action` (required), `node`
 (the slice as text, with the optional `reads` frontmatter) or `node_file`, `node_id`, `payload` (any
 JSON value), `state`, `reads` (more read commands), `session_id`, `invocation_id`, `labels`,
-`retry_of` (the invocation a retry of the owner's replaces) and `previous_attempt`
-(`{"plan": ..., "errors": [...]}`, a plan the app applied itself and could not). One envelope on
+`retry_of` (the invocation a retry of the owner's replaces), `previous_attempt`
+(`{"plan": ..., "errors": [...]}`, a plan the app applied itself and could not) and `actor` (who
+clicked: text, anything else is refused as `not_run`; see the environment below). One envelope on
 stdout: `invocation_id`, `outcome` (the telemetry's, or `not_run`), `exit_status`, `detail`, `path`,
 `answer` (a JSON value or text), `answer_text` (what the plain CLI would print), `operations`,
 `bindings`, `applied`, `gap_note`, `retries`. With `--plan-only` the executor is not called: the
 operations and the answer come back as the puntal wrote them, placeholders included, for the app to
 apply through its own API and fill in (then `previous_attempt` hands a failure back for a retry).
+
+**The environment of the app's commands.** The pre-helper's reads, the executor and the slow path's
+`./state` are the app's own commands, run by the driver for one person's click, and neither the plan
+nor the operations say who that person is. The contract is one environment variable
+(`agent_os/product/puntal/fast/actor.py`), alongside the ones the driver reads:
+
+| Variable | Who sets it | For |
+|---|---|---|
+| `PUNTAL_ACTOR` | the JSON request's `actor`; else whatever the host's shell exported, passed on unchanged; else unset (the driver never invents an actor) | who acts. The reads, the executor and the slow path's tool all see the same value; the shim exports it itself instead of relying on the backend's tool to pass the environment on. A command in any language reads it, so the operations' shape and the configured command lines do not change: an app that stamps who created a ticket does it in its executor, which keeps derived data the app's and not the puntal's |
+| `PUNTAL_PERSISTENCE_COMMAND`, `PUNTAL_EXECUTOR_COMMAND` | the host's shell | outrank `puntal.persistence_command` and `puntal.executor_command`; `--persistence-command` and `--executor-command` outrank these |
+| `AGENT_CACHE_DIR` | the host's shell | moves the run's logs, `runs.tsv`, the telemetry and the feedback file |
+| `PUNTAL_<BACKEND>_BIN` | a test or a bench | names the backend binary a stub stands in for |
+
+The actor is for the app's commands only: the brief does not carry it, so the model never sees it,
+and the telemetry does not record it.
 
 **Owner feedback** (`feedback`). One line in `.cache/puntal/feedback.jsonl` (beside the telemetry
 file, or `--feedback-file`) per verdict, keyed by `invocation_id`: `schema`, `invocation_id`,

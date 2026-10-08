@@ -51,12 +51,20 @@ def _crash(reason: str) -> ExecutorVerdict:
     return ExecutorVerdict(ok=False, bindings={}, errors=[reason], crashed=True)
 
 
-def run_executor(command: list[str], operations: list, *, timeout_seconds: int) -> ExecutorVerdict:
+def run_executor(
+    command: list[str],
+    operations: list,
+    *,
+    timeout_seconds: int,
+    environment: dict[str, str] | None = None,
+) -> ExecutorVerdict:
     """Runs the app's executor on `operations` and reads its verdict. Never raises: whatever goes
-    wrong is a crashed verdict, so the caller has one shape to handle."""
+    wrong is a crashed verdict, so the caller has one shape to handle. `environment` is where the
+    executor learns who acts (`fast.actor`, `PUNTAL_ACTOR`); None leaves it as it is."""
     try:
         completed = subprocess.run(
             command,
+            env=environment,
             input=json.dumps({"operations": operations}),
             capture_output=True,
             text=True,

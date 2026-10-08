@@ -49,6 +49,8 @@ class Request:
     declaration_problems: list[str] = dataclasses.field(default_factory=list)
     # A plan the caller applied itself and that failed: `{"plan": ..., "errors": [...]}`.
     previous_attempt: dict | None = None
+    # Who clicked, for the app's own commands (`PUNTAL_ACTOR`, `fast/actor.py`); empty names nobody.
+    actor: str = ""
 
 
 @dataclasses.dataclass(frozen=True)

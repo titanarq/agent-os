@@ -30,6 +30,10 @@ FAST_PATH_API_INTRODUCTION = (
     "the app stores and how, so that the operations you send are ones its code can apply.\n\n"
 )
 
+# The environment variable through which the app's own commands (the pre-helper's reads, the
+# executor, the slow path's `./state`) learn who is acting (`fast/actor.py`, docs/AGENT_OS.md 4.7).
+ACTOR_VARIABLE = "PUNTAL_ACTOR"
+
 # The line that ends a slow-path response which asked for something its node does not describe.
 GAP_MARKER = "GAP:"
 
