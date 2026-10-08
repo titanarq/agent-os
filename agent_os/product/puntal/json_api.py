@@ -6,8 +6,10 @@ The request (a shell in any language builds it): `action` (required), `node` -- 
 text, which may open with the frontmatter that declares its `reads` -- or `node_file`, `node_id`,
 `payload` (any JSON value; text stays text), `state` (text, or any JSON value), `reads` (more read
 commands, as a node declares them), `session_id`, `invocation_id`, `labels` (an object),
-`retry_of` (an invocation id: a retry the owner asked for) and `previous_attempt`
-(`{"plan": ..., "errors": [...]}`: a plan the app applied itself and could not).
+`retry_of` (an invocation id: a retry the owner asked for), `previous_attempt`
+(`{"plan": ..., "errors": [...]}`: a plan the app applied itself and could not) and `actor` (who
+clicked: text, set as `PUNTAL_ACTOR` for the app's own commands -- the reads, the executor, the slow
+path's tool -- see `fast/actor.py`).
 
 The envelope: `invocation_id`, `outcome` (the telemetry's: `ok`, `error`, `timeout`,
 `contract_violation`, `ceiling_cut`, `invalid_plan`, `executor_failed`, or `not_run`), `exit_status`,
@@ -66,6 +68,9 @@ def request_from_json(text: str) -> Request:
     attempt = document.get("previous_attempt")
     if attempt is not None and not isinstance(attempt, dict):
         raise PuntalRefused("`previous_attempt` must be an object")
+    actor = document.get("actor", "")
+    if not isinstance(actor, str) or "\x00" in actor:
+        raise PuntalRefused("`actor` must be text: who clicked, for the app's own commands")
     declaration = split_node_declaration(node_text)
     return Request(
         action=action,
@@ -79,6 +84,7 @@ def request_from_json(text: str) -> Request:
         declared_reads=[*declaration.reads, *(read.strip() for read in reads)],
         declaration_problems=declaration.problems,
         previous_attempt=attempt,
+        actor=actor.strip(),
     )
 
 

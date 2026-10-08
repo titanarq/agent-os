@@ -15,6 +15,7 @@ file reads as a document and a diff of it reads as one.
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, field_validator, model_validator
@@ -179,6 +180,11 @@ class Node(Strict):
     # Where the built thing lives (a path, a symbol, a pull request). Free text; required once the
     # node is hardened (`hardened-needs-implementation`).
     implementation: NonBlank | None = None
+    # The code the node touches, as paths under the host's root (a directory covers what is under it):
+    # what dispatch compares so that two tickets never run on the same code. Absent, they are derived
+    # from the prose of `implementation` and `mechanism` (`dispatch.touched_code`), which takes
+    # `http.client` or `p.ej` for files. Present -- `[]` too: "no known code" -- it decides alone.
+    touches: list[str] | None = None
     # The state this node's action reads, as the read commands of the app's persistence API that
     # the puntal's pre-helper runs and loads into its brief before the model turn
     # (`agent_os.product.puntal.fast.pre_helper`): `list tickets`, `get tickets {payload.id}`.
@@ -195,8 +201,12 @@ class Node(Strict):
     # -> hardened (tests written from the accepted interactions)
     # (`docs/tree/dec-tests-harden-they-do-not-build.md`).
     state: Literal["pending", "improvised", "implemented", "hardened"] = "pending"
-    # A foundation node (persistence, identity, UI skeleton) must be hardened before the shell goes
-    # live and is built as a normal issue, never improvised.
+    # A foundation node (persistence, identity, UI skeleton) is built as a normal ticket and never
+    # improvised (`foundation-improvised`): it is implemented and accepted -- the essential top-down
+    # acceptance, then the owner's in the first test session -- before the shell goes live, and its
+    # tests come later, when it hardens: foundations follow the same rule as every node
+    # (`docs/tree/dec-tests-harden-they-do-not-build.md`). The flag is per node: the doctor reads
+    # the node's own, and `compile` only orders the work under a foundation requirement with them.
     foundation: bool = False
     # Open doubts and what was found out about them; the one place difficulty is measured.
     experiments: list[Experiment] = Field(default_factory=list)
@@ -205,6 +215,20 @@ class Node(Strict):
     # (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`).
     depends_on: list[Identifier] = Field(default_factory=list)
     challenge: Challenge | None = None
+
+    @field_validator("touches")
+    @classmethod
+    def _names_paths_a_ticket_marker_can_carry(cls, value: list[str] | None) -> list[str] | None:
+        for path in value or []:
+            if not re.fullmatch(r"[^\s,]+", path) or "-->" in path:
+                raise ValueError(
+                    f"a touched path is a single word (no whitespace, comma or '-->'), got {path!r}"
+                )
+            if not path.removeprefix("./").strip("/").strip("."):
+                raise ValueError(
+                    f"a touched path names a file or directory under the host's root, got {path!r}"
+                )
+        return value
 
     @field_validator("depends_on")
     @classmethod

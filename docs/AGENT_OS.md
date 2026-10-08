@@ -558,7 +558,7 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `expert`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
 | `board.*` | the progress board's GitHub Project (§4.6), all optional: `owner` (`@me`), `number` (0: found by `title`, created on a real sync), `title`, `progress_field`, `order_field` |
-| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the slow path's contract), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract of both paths: the slow path calls it, the fast path reads it as reference for the operations it plans), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -672,10 +672,11 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
+| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a leaf is dispatched with a command, a judged criterion or none (the ticket's acceptance is then judged by an agent); a `command` is **mandatory for a `hardened` node** | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |
-| `foundation` | optional, default false | persistence, identity, UI skeleton: hardened before the shell goes live, built as a normal issue |
+| `foundation` | optional, default false | persistence, identity, UI skeleton: built as a normal ticket and never improvised (`foundation-improvised`). It is **implemented and accepted** -- the essential top-down acceptance, then the owner's in the first test session -- before the shell goes live, and its tests come later, when it hardens: foundations follow the same rule as every node (`docs/tree/dec-tests-harden-they-do-not-build.md`). The flag is **per node**: the doctor reads the node's own, so a use case under a foundation requirement that is not flagged itself may be improvised, and `compile` only orders it with the foundations |
 | `experiments` | optional | what was tried or is still to be found out about the node (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`); replaces `spikes`. Each entry: `kind` (`spike`, `demand-probe`, `question`, `lookup`), `question`, `outcome` (`open`, `feasible`, `infeasible`, `inconclusive`, and `answered` for a question only), `finding` (required unless `open`), `date`, and for a `question` only its `scope` (`what` or `how`, required) and its `default_answer` (required for `what`: it stands until the owner answers). An open `what` question marks the node **not hardenable** |
 | `depends_on` | optional | ids of the nodes that must be done first, each once (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`); the doctor checks that each exists and that the edges do not loop. `compile` writes it into the ticket and orders the tickets by it, and a v2 host's dispatch starts a ticket only once the tickets of those nodes are closed (see Dispatch in a v2 host) |
 | `challenge` | optional | the node is flagged as possibly not finishable (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`): `reason` (`no-solution`, `no-verification`, `over-cost`) and an optional `explanation`. It marks the node, and every node that depends on it, **not hardenable**; the owner decides whether to go on. Any node may carry it, a goal included |
@@ -739,7 +740,7 @@ pointer.
 | `goal-carries-work-fields` | a goal carries a work field (`mechanism`, `implementation`, `experiments`, `depends_on`, `foundation`, or a state other than `pending`); `verification` is not one |
 | `goal-without-evaluators` | a goal's `verification` is empty: it needs at least one evaluator, a `command` or a `judge` |
 | `missing-work-field` | a requirement or use case has no `mechanism` (write `pending` to defer it) |
-| `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal issues, and the shell does not go live until they are hardened |
+| `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal tickets, and the shell does not go live until they are implemented and accepted (their tests come later) |
 | `hardened-needs-implementation` | a hardened node has no `implementation` |
 | `hardened-needs-verification` | a hardened node has no `verification` with a `command`: tests harden, and a judged criterion alone is acceptance, not hardening |
 | `dangling-decision` | a node's `decisions` names an id that is not a decision |
@@ -782,9 +783,15 @@ case with no children, `pending`, and its mechanism can be resolved (written, or
 experiment having found it `infeasible`). **No verification is needed to dispatch**: tests harden,
 they do not build (`docs/tree/dec-tests-harden-they-do-not-build.md`), and the essential top-down
 acceptance holds even when an agent judges it (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`),
-so a leaf with a command, with a judged criterion or with nothing gets a ticket; one with nothing
-is accepted by "judged by an agent: the node does what its description says and breaks no
-acceptance criterion of its ancestors". The one **escalation** left is `mechanism-unresolvable`: a
+so a leaf with a command, with a judged criterion or with nothing gets a ticket. One with nothing is
+accepted by criteria **derived** from what it is: `judged by an agent: <node> does what its
+description says (the Objective above)` -- the validator's rule for such a node -- and then one line
+per acceptance criterion each ancestor carries, the nearest first and the goal's evaluators last
+(a goal always has at least one): `judged by an agent: with <node> built, <ancestor> still holds:
+<criterion>`. It is not refused: a refusal would make the node wait for a specification that use
+has not validated yet, which is what the decision removed (`docs/tree/fr-a-usable-product-exists-early.md`:
+nothing waits for a complete specification), and the criterion is never empty because the goal
+above it has evaluators. The one **escalation** left is `mechanism-unresolvable`: a
 pending mechanism an experiment found infeasible is reported and never a ticket. A goal, a node
 past `pending`, and a container (any node with children, whether or not it has a verification: its
 use cases are the work, and its own verification is the acceptance of its subtree) are skipped.
@@ -796,7 +803,12 @@ carries the verification of every ancestor, judged criteria included, as accepta
 `## Not included`, `## Dependencies` (`none`, or the nodes it waits for), `## Definition of done`
 (the node file written back with `implementation` and `state: implemented`, **never `hardened`**,
 and, when `hardening_blockers` says the node cannot be hardened yet, why), then the markers, one
-comment line each:
+comment line each. **A ticket builds and asks for no test of the node**: tests harden what use has
+accepted, they do not build, and foundations follow the same rule
+(`docs/tree/dec-tests-harden-they-do-not-build.md`). The implementation stage is verified by the
+acceptance criteria and then by the owner's use; the definition of done says in one line that no
+test is written for the node, that the project's existing tests must keep passing, and that
+documentation is as the project's `AGENTS.md` asks. Its tests are written when the node hardens.
 
 | Marker | Says |
 |---|---|
@@ -805,17 +817,22 @@ comment line each:
 | `<!-- depends-on: <id>, ... -->` | the node's `depends_on`, present only when it has any |
 | `<!-- touches: <path>, ... -->` | the code the node is known to touch, present only when known |
 
-The touched code is the paths named in the node's `implementation` and, once written, its
-`mechanism` (a path has a `/` or a file extension; a directory covers what is under it). A node that
-names no path touches nothing known, and a component's paths join once the tree has components
+The touched code is the node's `touches` when it declares one (it decides, and no prose is read);
+otherwise the paths named in its `implementation` and, once written, its `mechanism` (a path has a
+`/` or a file extension; a directory covers what is under it). A node that names no path touches
+nothing known, and a component's paths join once the tree has components
 (`docs/tree/dec-a-component-has-a-core-and-extensions.md`). Tickets come **ordered by their
 dependencies**, a dependency before whatever depends on it (foundations and then id among the
 free ones). A ticket's dependencies are its node's `depends_on` **plus those of every ancestor**
 (a use case is part of its requirement, so it cannot start before the requirement can), and a
 dependency on a container stands for the work under it; a use case under a `foundation`
 requirement is ordered with the foundations. Those effective dependencies are what the ticket's
-`depends-on` marker and Dependencies section carry, and dependencies that only loop once inherited
-make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
+`depends-on` marker and Dependencies section carry, **as tickets**: dispatch only waits for an open
+ticket, so a dependency on a node that never gets one (already `improvised`, `implemented` or
+`hardened`, or escalated) is replaced, in its place, by what that node waits for, as many levels down
+as there are such nodes (`agent_os.product.dispatch.ticket_dependencies`); left standing it would
+let the ticket start before the foundations under that node. Dependencies that only loop once
+inherited make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
 returned, and `compile` refuses a tree the doctor finds anything in. The code is
 `agent_os.product.tree.compile` (what is a ticket) over `agent_os.product.dispatch` (the body, the
@@ -959,7 +976,11 @@ puntal plans in one model turn and code does everything else.** The binding deci
    `allocate` bound. The puntal cannot know a new id, only the app can; it names it and the executor
    fills it in. At most 50 operations; an unknown key, an unknown operation, a placeholder nobody
    bound (or bound later) is a validation error. A markdown fence around the object and a trailing
-   `GAP:` line are tolerated.
+   `GAP:` line are tolerated. The turn's contract (`prompts/puntal.md`) carries the app's data API
+   when the host documents one (`puntal.persistence_api_file`, under the heading `THE APP'S DATA
+   API`, introduced as reference only because this turn runs none of its commands): the turn that
+   plans the operations is the one that must know what the app stores and how, and it cannot ask
+   `--help`. A host that documents none gets no such section.
 3. *Executor (code, on the critical path).* The validated operations go to the app's executor, one
    call: `puntal.executor_command` reads `{"operations": [...]}` on stdin and prints
    `{"ok": true, "bindings": {"name": value}}` or `{"ok": false, "errors": [...]}`, exit 0 either way
@@ -1012,13 +1033,29 @@ nobody: the caller is waiting for the answer on stdout.
 JSON out, independent of the app's stack. One request object on stdin: `action` (required), `node`
 (the slice as text, with the optional `reads` frontmatter) or `node_file`, `node_id`, `payload` (any
 JSON value), `state`, `reads` (more read commands), `session_id`, `invocation_id`, `labels`,
-`retry_of` (the invocation a retry of the owner's replaces) and `previous_attempt`
-(`{"plan": ..., "errors": [...]}`, a plan the app applied itself and could not). One envelope on
+`retry_of` (the invocation a retry of the owner's replaces), `previous_attempt`
+(`{"plan": ..., "errors": [...]}`, a plan the app applied itself and could not) and `actor` (who
+clicked: text, anything else is refused as `not_run`; see the environment below). One envelope on
 stdout: `invocation_id`, `outcome` (the telemetry's, or `not_run`), `exit_status`, `detail`, `path`,
 `answer` (a JSON value or text), `answer_text` (what the plain CLI would print), `operations`,
 `bindings`, `applied`, `gap_note`, `retries`. With `--plan-only` the executor is not called: the
 operations and the answer come back as the puntal wrote them, placeholders included, for the app to
 apply through its own API and fill in (then `previous_attempt` hands a failure back for a retry).
+
+**The environment of the app's commands.** The pre-helper's reads, the executor and the slow path's
+`./state` are the app's own commands, run by the driver for one person's click, and neither the plan
+nor the operations say who that person is. The contract is one environment variable
+(`agent_os/product/puntal/fast/actor.py`), alongside the ones the driver reads:
+
+| Variable | Who sets it | For |
+|---|---|---|
+| `PUNTAL_ACTOR` | the JSON request's `actor`; else whatever the host's shell exported, passed on unchanged; else unset (the driver never invents an actor) | who acts. The reads, the executor and the slow path's tool all see the same value; the shim exports it itself instead of relying on the backend's tool to pass the environment on. A command in any language reads it, so the operations' shape and the configured command lines do not change: an app that stamps who created a ticket does it in its executor, which keeps derived data the app's and not the puntal's |
+| `PUNTAL_PERSISTENCE_COMMAND`, `PUNTAL_EXECUTOR_COMMAND` | the host's shell | outrank `puntal.persistence_command` and `puntal.executor_command`; `--persistence-command` and `--executor-command` outrank these |
+| `AGENT_CACHE_DIR` | the host's shell | moves the run's logs, `runs.tsv`, the telemetry and the feedback file |
+| `PUNTAL_<BACKEND>_BIN` | a test or a bench | names the backend binary a stub stands in for |
+
+The actor is for the app's commands only: the brief does not carry it, so the model never sees it,
+and the telemetry does not record it.
 
 **Owner feedback** (`feedback`). One line in `.cache/puntal/feedback.jsonl` (beside the telemetry
 file, or `--feedback-file`) per verdict, keyed by `invocation_id`: `schema`, `invocation_id`,

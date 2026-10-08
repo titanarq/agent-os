@@ -90,8 +90,8 @@ CHECKS: dict[str, str] = {
         "a functional requirement or a use case has no `mechanism` (write `pending` to defer it)"
     ),
     FOUNDATION_IMPROVISED: (
-        "a foundation node is `improvised`; foundations are built as normal issues and the shell "
-        "does not go live until they are hardened"
+        "a foundation node is `improvised`; foundations are built as normal tickets and the shell "
+        "does not go live until they are implemented and accepted (their tests come later)"
     ),
     HARDENED_NEEDS_IMPLEMENTATION: "a hardened node has no `implementation` pointer",
     HARDENED_NEEDS_VERIFICATION: (
@@ -182,6 +182,8 @@ def _check_node_records(tree: Tree) -> list[Defect]:
                     f"a {node.type} needs a `mechanism` (write `{MECHANISM_PENDING}` to defer it)",
                 )
             )
+        # The node's own flag, not inherited: a use case under a foundation requirement that is not
+        # itself flagged may be improvised; `compile` orders it with the foundations, nothing more.
         if node.foundation and node.state == "improvised":
             defects.append(
                 Defect(path, FOUNDATION_IMPROVISED, "a foundation node is built, never improvised")

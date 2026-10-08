@@ -20,6 +20,20 @@ PERSISTENCE_TOOL = "Bash"
 # The CLI's permission rule for exactly that command and its arguments.
 ALLOW_RULE = f"{PERSISTENCE_TOOL}({STATE_COMMAND} *)"
 
+# What introduces the app's data API in the FAST contract, whose turn has no tool: the text the host
+# configured (`puntal.persistence_api_file`) describes commands, and the fast turn must not take them
+# for something it can run. Part of the mechanism and not of the prompt template, so that a host
+# that documents no API gets no heading with nothing under it.
+FAST_PATH_API_INTRODUCTION = (
+    "THE APP'S DATA API\n"
+    "Reference only: you have no tool in this turn and run none of these commands. It tells you what "
+    "the app stores and how, so that the operations you send are ones its code can apply.\n\n"
+)
+
+# The environment variable through which the app's own commands (the pre-helper's reads, the
+# executor, the slow path's `./state`) learn who is acting (`fast/actor.py`, docs/AGENT_OS.md 4.7).
+ACTOR_VARIABLE = "PUNTAL_ACTOR"
+
 # The line that ends a slow-path response which asked for something its node does not describe.
 GAP_MARKER = "GAP:"
 

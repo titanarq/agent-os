@@ -14,11 +14,13 @@ import re
 import tomllib
 
 import pytest
+from tree_helpers import write_node, write_sound_tree
 
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import TreeConfig
-from agent_os.product.tree.checks import CHECKS
+from agent_os.product.tree.checks import CHECKS, check_tree
 from agent_os.product.tree.compile import MECHANISM_UNRESOLVABLE
+from agent_os.product.tree.loader import load_tree
 from agent_os.product.tree.models import (
     Challenge,
     Decision,
@@ -129,3 +131,66 @@ def test_the_console_script_resolves_to_a_callable():
     scripts = tomllib.loads((AGENT_OS_DIR / "pyproject.toml").read_text())["project"]["scripts"]
     module_name, _, attribute = scripts["agent-os-tree"].partition(":")
     assert callable(getattr(importlib.import_module(module_name), attribute))
+
+
+# --- foundations: implemented and accepted, tests later ------------------------------------------
+
+# `docs/tree/dec-tests-harden-they-do-not-build.md` ("Foundations follow the same rule") and
+# `docs/tree/fr-a-usable-product-exists-early.md` (the shell goes live once the foundations are
+# implemented and accepted): no text may say a foundation is HARDENED before the shell goes live.
+STALE_FOUNDATION_PHRASES = ("hardened before the shell goes live", "until they are hardened")
+
+
+def table_row(section: str, code: str) -> str:
+    row = re.search(rf"^\| `{code}` \|(.+)\|$", section, flags=re.MULTILINE)
+    assert row, code
+    return row.group(1)
+
+
+def test_no_text_says_a_foundation_is_hardened_before_the_shell_goes_live():
+    texts = {
+        path: path.read_text()
+        for path in [
+            *AGENT_OS_DIR.glob("agent_os/**/*.py"),
+            AGENT_OS_DOC,
+            AGENT_OS_DIR / "docs" / "AGENTOS_V2_PLAN.md",
+        ]
+    }
+    stale = [
+        f"{path.relative_to(AGENT_OS_DIR)}: {phrase}"
+        for path, text in texts.items()
+        for phrase in STALE_FOUNDATION_PHRASES
+        if phrase in text
+    ]
+    assert stale == []
+
+
+def test_the_docs_and_the_check_say_a_foundation_is_implemented_and_accepted_not_hardened():
+    section = section_of_the_tree_doc()
+    for text in (
+        table_row(section, "foundation"),
+        table_row(section, "foundation-improvised"),
+        CHECKS["foundation-improvised"],
+    ):
+        assert "implemented and accepted" in text
+        assert "tests" in table_row(section, "foundation")
+    assert "dec-tests-harden-they-do-not-build" in table_row(section, "foundation")
+
+
+def test_the_foundation_flag_is_per_node_and_the_docs_say_so(tmp_path):
+    write_sound_tree(tmp_path)
+    write_node(
+        tmp_path,
+        "fr-store",
+        "functional-requirement",
+        parent="goal-notes",
+        foundation=True,
+    )
+    write_node(tmp_path, "uc-store-note", "use-case", parent="fr-store", state="improvised")
+    assert check_tree(load_tree(tmp_path)) == []
+    assert "per node" in table_row(section_of_the_tree_doc(), "foundation")
+
+
+def test_the_field_table_has_a_row_for_touches_and_says_a_present_one_decides():
+    row = table_row(section_of_the_tree_doc(), "touches")
+    assert "decides" in row and "`touches: []`" in row and "derived" in row

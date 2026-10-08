@@ -19,6 +19,7 @@ from agent_os.product.puntal.constants import (
     PATH_SLOW,
     PuntalRefused,
 )
+from agent_os.product.puntal.fast.actor import actor_of, command_environment
 from agent_os.product.puntal.fast.brief import build_brief
 from agent_os.product.puntal.fast.pre_helper import load_declared_state
 from agent_os.product.puntal.invocation import invoke
@@ -141,6 +142,7 @@ def dry_run_brief(request: Request, options: Options) -> str:
             allowed_subcommands=options.read_subcommands,
             host_root=options.host_root,
             timeout_seconds=options.ceilings.timeout_seconds,
+            environment=command_environment(actor_of(request.actor)),
         ).text
     elif options.path == PATH_FAST:
         loaded = ""

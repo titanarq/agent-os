@@ -59,6 +59,64 @@ that closed several small issues at once name them all. This file starts on 2026
   same sentence instead of the GraphQL error; `docs/ADOPTION.md` step 14 lists the permissions each
   App needs. `linked_boards` moved out of `doctor.py` to `agent_os/product/tracker/linked_boards.py`
   and the `prompt_extras` doctor tests to `tests/product/doctor/`, so neither file grew.
+- Rollout stage 1e, F (no issue; branch `fix/rollout-stage1e`) -- a node can declare the code it
+  touches. Dispatch compared the paths it guessed from the prose of `implementation` and `mechanism`,
+  and the guess takes any word with a slash or an extension for a file (`http.client`, `p.ej`,
+  `docs/VECTOR.md` in passing), so a ticket could be held back, or let collide, by something that is
+  not the node's code. The tree format gains an optional `touches:` list. When present it decides:
+  the ticket's `touches` marker is exactly that and the prose is not read; `touches: []` says "no known
+  code". When absent the derivation is unchanged. An entry is one word (no whitespace, comma or `-->`,
+  which the marker could not carry) naming something under the root, not the root; a bad one is a
+  `schema` defect. `docs/AGENT_OS.md` §4.6 (the field table and the Tickets paragraph).
+- Rollout stage 1e, E (no issue; branch `fix/rollout-stage1e`) -- the puntal's interface says who
+  acts. The executor, the pre-helper's reads and the slow path's `./state` did not know who clicked,
+  and the only way to tell them was to export an environment variable the mechanism never defined
+  (what the shell exported reached them by inheritance, undocumented). The contract is
+  now one variable, `PUNTAL_ACTOR`: the `--json` request accepts `actor` (text; anything else is a
+  `not_run` refusal) and sets it for all three; without one, what the caller exported is passed on
+  unchanged; without that, it is not set. The slow path's shim exports it itself. The brief and the
+  telemetry do not carry it. `docs/AGENT_OS.md` §4.7 documents the variables the driver reads and
+  sets (`agent_os/product/puntal/fast/actor.py`).
+- Rollout stage 1e, D (no issue; branch `fix/rollout-stage1e`) -- the fast path's contract carries the
+  app's data API. `puntal.persistence_api_file` was rendered into the slow path's contract only
+  (`prompts/puntal_slow.md`), while the fast turn -- no tool, no `--help` -- is the one that plans the
+  operations over the app's data. `prompts/puntal.md` now has a `__PERSISTENCE_API__` placeholder
+  (answered with `__STATE_COMMAND__` too, like the slow one) filled with the same text under the heading
+  `THE APP'S DATA API`, introduced as reference only because the turn runs none of its commands; a host
+  that configures no file gets exactly the contract it had. `docs/AGENT_OS.md` §4.2 and §4.7;
+  `docs/tree/dec-a-puntal-plans-in-one-turn-and-code-executes.md`.
+- Rollout stage 1e, C (no issue; branch `fix/rollout-stage1e`) -- the foundation rule is said the
+  way the decision says it. The comment of `Node.foundation`, `docs/AGENT_OS.md` §4.6 (the field and
+  the `foundation-improvised` row) and the check's own text said a foundation is HARDENED before the
+  shell goes live; `dec-tests-harden-they-do-not-build` ("foundations follow the same rule") and
+  `fr-a-usable-product-exists-early` say implemented and accepted -- the essential top-down acceptance,
+  then the owner's in the first test session -- with the tests later. All now say that. The check
+  itself is unchanged and is documented as what it is: it reads the node's own `foundation` flag and
+  does not inherit it, so a use case under a foundation requirement that is not itself flagged may be
+  improvised (`compile` only orders it with the foundations). Also the plan's Phase 1 node model lists
+  the state `implemented`.
+- Rollout stage 1e, B (no issue; branch `fix/rollout-stage1e`) -- a ticket depends only on nodes
+  that have a ticket. `compile` left in `depends-on` every node the ticket depended on, including
+  those that never get a ticket (`improvised`, `implemented`, `hardened`, escalated), and dispatch
+  waits only for an open ticket: a ticket could start before the foundations under such a node. A
+  dependency without a ticket is now replaced, in its place, by that node's own dependencies (its
+  requirements' included), through as many such nodes as there are, each ticket named once. The
+  dependency helpers moved out of `compile.py` into `agent_os/product/dispatch/ticket_dependencies.py`.
+  `docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`; `docs/AGENT_OS.md` §4.6.
+- Rollout stage 1e, A (no issue; branch `fix/rollout-stage1e`) -- a compiled ticket builds and no
+  longer asks for tests. `compile` wrote "verified by ... the project's tests" and "Tests and
+  documentation as the project's AGENTS.md asks" into every ticket, which `dec-tests-harden-they-do-not-build`
+  rules out for an implementation or a foundation (it passes the essential top-down acceptance and then
+  the owner's use; its tests come when it hardens). The implementation stage is now verified by the
+  acceptance criteria and then by the owner's use, and the definition of done carries one line: no test
+  is written for the node, the tests the project already has keep passing, documentation as the
+  project's `AGENTS.md` asks (the blocked-hardening line no longer says "do not write hardening tests"
+  next to an order to write tests). A node with no `verification` is no longer accepted by one generic
+  sentence: its criteria are derived from its description (the validator's rule for such a node) and
+  from the acceptance each ancestor carries, one `judged by an agent: with <node> built, <ancestor>
+  still holds: <criterion>` line each, the goal's evaluators included. It is not refused: dispatch does
+  not wait for a verification (`dec-tests-harden-they-do-not-build`,
+  `fr-a-usable-product-exists-early`). `docs/AGENT_OS.md` §4.6.
 - Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
   read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
   those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture

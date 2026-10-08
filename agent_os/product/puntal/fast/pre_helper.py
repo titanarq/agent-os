@@ -118,11 +118,17 @@ def _words_of(read: str, payload: dict | None, allowed: tuple[str, ...]) -> list
     ]
 
 
-def _run_read(argv: list[str], host_root: pathlib.Path, timeout_seconds: int) -> tuple[bool, str]:
+def _run_read(
+    argv: list[str],
+    host_root: pathlib.Path,
+    timeout_seconds: int,
+    environment: dict[str, str] | None,
+) -> tuple[bool, str]:
     try:
         completed = subprocess.run(
             argv,
             cwd=host_root,
+            env=environment,
             capture_output=True,
             text=True,
             check=False,
@@ -149,7 +155,9 @@ def load_declared_state(
     allowed_subcommands: tuple[str, ...],
     host_root: pathlib.Path,
     timeout_seconds: int,
+    environment: dict[str, str] | None = None,
 ) -> LoadedState:
+    """`environment` is the reads' own (`fast.actor.command_environment`); None leaves it as it is."""
     started = time.monotonic()
     payload = _payload_object(payload_text)
     command = list(persistence_command)
@@ -169,7 +177,10 @@ def load_declared_state(
             outcomes[read] = f"skipped: {error.args[0]}"
     with ThreadPoolExecutor(max_workers=max(1, len(runnable))) as pool:
         futures = [
-            (label, pool.submit(_run_read, [*command, *words], host_root, timeout_seconds))
+            (
+                label,
+                pool.submit(_run_read, [*command, *words], host_root, timeout_seconds, environment),
+            )
             for label, words in runnable
         ]
         failed_runs = 0

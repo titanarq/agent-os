@@ -25,6 +25,7 @@ from agent_os.product.puntal.constants import (
     PATH_SLOW,
     PUNTAL_ROLE,
 )
+from agent_os.product.puntal.fast.actor import actor_of, command_environment
 from agent_os.product.puntal.fast.brief import (
     build_brief,
     previous_attempt_section,
@@ -63,6 +64,7 @@ class InvocationRun:
 
     def __init__(self, request: Request, options: Options, clock: Clock, log) -> None:
         self.request, self.options, self.clock, self.log = request, options, clock, log
+        self.actor = actor_of(request.actor)
         self.turns: list[TurnRun] = []
         self.kind = "slow" if options.path == PATH_SLOW else "plan"
         self.slow_path_reason: str | None = "forced by --path slow" if self.kind == "slow" else None
@@ -91,6 +93,7 @@ class InvocationRun:
             allowed_subcommands=self.options.read_subcommands,
             host_root=self.options.host_root,
             timeout_seconds=self.options.ceilings.timeout_seconds,
+            environment=command_environment(self.actor),
         )
         self.pre_helper_s = self.clock.now() - started
 
@@ -120,6 +123,7 @@ class InvocationRun:
             brief=self.brief(),
             with_state_tool=on_slow_path,
             log=self.log,
+            actor=self.actor,
         )
         turn.outcome, turn.outcome_detail = classify_turn(turn.run, turn.observer)
         self.turns.append(turn)
@@ -131,6 +135,7 @@ class InvocationRun:
             resolve_executor_command(self.options.executor_command, self.options.host_root),
             plan.operations,
             timeout_seconds=self.options.executor_timeout_seconds,
+            environment=command_environment(self.actor),
         )
         self.executor_s = self.clock.now() - started
         self.executor_row = {

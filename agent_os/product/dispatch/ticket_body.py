@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from agent_os.product.dispatch.markers import render_marker_lines
 from agent_os.product.dispatch.touched_code import touched_paths_of
 from agent_os.product.tree.hardening import HardeningBlocker
-from agent_os.product.tree.models import MECHANISM_PENDING, Node
+from agent_os.product.tree.models import MECHANISM_PENDING, Node, Verification
 from agent_os.product.tree.slicing import (
     JUDGED_BY_AGENT_LABEL,
     Slice,
@@ -18,29 +18,51 @@ from agent_os.product.tree.slicing import (
 )
 
 
-def _acceptance_criteria(node: Node) -> list[str]:
-    if not node.verification:
-        return [
-            (
-                f"- judged by an agent: `{node.id}` does what its description says and breaks no "
-                "acceptance criterion of its ancestors listed under Context"
-            )
-        ]
+def _own_criterion_line(check: Verification) -> str:
+    if check.is_judged:
+        return f"- {judged_criterion_line(check)}"
+    return f"- `{check.command}` exits 0" + (f": {check.expects}" if check.expects else "")
+
+
+def _inherited_criterion_line(node: Node, ancestor: Node, check: Verification) -> str:
+    if check.is_judged:
+        held = " ".join((check.judge or "").split())
+    else:
+        held = f"`{' '.join((check.command or '').split())}` exits 0" + (
+            f": {check.expects}" if check.expects else ""
+        )
+    return f"- {JUDGED_BY_AGENT_LABEL}: with `{node.id}` built, `{ancestor.id}` still holds: {held}"
+
+
+def _acceptance_criteria(node: Node, ancestors: Sequence[Node]) -> list[str]:
+    """The node's own verification, as it is written. A node with none is accepted by what a judge
+    can still check against: its description, and the acceptance each ancestor carries (nearest
+    first, the goal's evaluators last), which a goal always has
+    (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`). Dispatch does not wait
+    for a verification (`docs/tree/dec-tests-harden-they-do-not-build.md`), and the validator's rule
+    for such a node -- judge it against its description -- is the first line."""
+    if node.verification:
+        return [_own_criterion_line(check) for check in node.verification]
     return [
-        f"- {judged_criterion_line(check)}"
-        if check.is_judged
-        else f"- `{check.command}` exits 0" + (f": {check.expects}" if check.expects else "")
-        for check in node.verification
+        (
+            f"- {JUDGED_BY_AGENT_LABEL}: `{node.id}` does what its description says "
+            "(the Objective above)"
+        ),
+        *(
+            _inherited_criterion_line(node, ancestor, check)
+            for ancestor in ancestors
+            for check in ancestor.verification
+        ),
     ]
 
 
 def _verified_by(node: Node) -> str:
     judged = any(check.is_judged for check in node.verification)
     if not node.has_executable_verification:
-        return f"the criteria {JUDGED_BY_AGENT_LABEL} and the project's tests"
+        return f"the criteria {JUDGED_BY_AGENT_LABEL} and then the owner's use"
     if judged:
-        return f"those commands, the criteria {JUDGED_BY_AGENT_LABEL} and the project's tests"
-    return "those commands and the project's tests"
+        return f"those commands, the criteria {JUDGED_BY_AGENT_LABEL} and then the owner's use"
+    return "those commands and then the owner's use"
 
 
 def _stages(node: Node, node_file: str) -> list[str]:
@@ -77,14 +99,20 @@ def _definition_of_done(node: Node, node_file: str, blockers: Sequence[Hardening
             "`state: implemented`; the tree doctor passes. The commit carries the `Node-Change` "
             "trailer."
         ),
-        "- The node is not marked `hardened`: tests harden what use has accepted, they do not build.",
+        (
+            "- No test is written for this node: tests harden what use has accepted, they do not "
+            "build (`docs/tree/dec-tests-harden-they-do-not-build.md`), so the node is not "
+            "marked `hardened` either. Its acceptance criteria are how it is verified; the tests "
+            "the project already has must keep passing, and what the project's AGENTS.md asks of "
+            "the tests of new code waits for the node's hardening."
+        ),
     ]
     if blockers:
         reasons = "; ".join(f"`{blocker.node_id}`: {blocker.reason}" for blocker in blockers)
         lines.append(
-            f"- The node cannot be hardened yet ({reasons}); do not write hardening tests."
+            f"- The node cannot be hardened yet ({reasons}); this ticket does not wait for that."
         )
-    lines.append("- Tests and documentation as the project's AGENTS.md asks.")
+    lines.append("- Documentation as the project's AGENTS.md asks.")
     return "\n".join(lines)
 
 
@@ -116,7 +144,7 @@ def render_ticket_body(
     )
     sections = [
         ("## Objective", f"Build the {node.type} `{node.id}`: {node.title}\n\n{node.description}"),
-        ("## Acceptance criteria", "\n".join(_acceptance_criteria(node))),
+        ("## Acceptance criteria", "\n".join(_acceptance_criteria(node, cut.ancestors))),
         ("## Stages", "\n".join(_stages(node, node_file))),
         ("## Context", context),
         (
