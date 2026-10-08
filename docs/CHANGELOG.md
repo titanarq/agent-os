@@ -8,6 +8,57 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 6 (no issue; branch `fix/rollout-stage1f`) -- `docs/ADOPTION.md` step 16 says that the
+  drivers link the mechanism's `agent_os/.venv` into every worktree (`agent_os_link_mechanism_venv`),
+  where and when, and that nothing is linked by hand. A test ties the step to the function it names.
+- Rollout stage 1f, 5 (no issue; branch `fix/rollout-stage1f`) -- the planner prompt says what to do with
+  `open-pr`'s own endings. `BLOCKED reason=<reason>` (`malformed_node_change_trailer`, `push_rejected`,
+  `workflows_permission`, `merge_failed`) reaches the planner as a `worker_cut` event, and nothing in its
+  prompt described it, so it read as a cut stage to relaunch. The paragraph on a worker that asked a
+  question (`status:blocked-on-human` set by the planner) now also covers it: the work is committed and no
+  pull request exists; never `resume` the issue nor re-run `open-pr` blindly; make sure the issue is
+  `status:blocked-on-human` and mention the human with the reason. A new test reads the reasons from
+  `bin/worker_task.sh` and `bin/worker_publication_refusals.sh` and fails when the prompt does not name
+  one. `prompts/planner.md` stays at 300 lines, its ratchet limit (it was 298): the addition went into an
+  existing paragraph and one bullet was re-wrapped without losing a word. Golden `planner.md` changed by
+  exactly those lines (read diff by diff: the heading, the new sentences, the re-wrapped bullet).
+- Rollout stage 1f, 4 (no issue; branch `fix/rollout-stage1f`) -- the freeze commit carries the `Node-Change`
+  trailer, so `open-pr` is no longer blocked by its own pre-merge freeze. `WIP: cut by guard (before_merge)`
+  committed a run's leftover tree edits with no trailer, and since 1d, A `open-pr` refused the branch for a
+  commit no agent wrote (the host CI would have failed it too). `freeze_uncommitted_work` now commits
+  through `agent_os.product.tracker.freeze_commit`: when the staged work touches `tree.root` the commit
+  ends with `Node-Change: <reason of the branch>` -- the nearest `usage` or `rework` among the branch's
+  own commits, `usage` if none, never `owner` -- and a freeze that touches nothing in the tree has no
+  trailer. The alternative of exempting freeze commits from the check was rejected: it would leave the
+  nodes they changed without a recorded reason. `worker_task.sh` shrank by 2 lines.
+- Rollout stage 1f, 3 (no issue; branch `fix/rollout-stage1f`) -- the agent definitions no longer send a
+  host to wrapper scripts it may not have. `agents/{control-plane,task-writer,worker-runner}.md` told the
+  subagent to run `scripts/worker_task.sh`, `scripts/issues.py`, `scripts/notify.sh`,
+  `scripts/worker_progress.sh` and `scripts/agent_lib.py`: shims the first host wrote and a host that
+  vendors the mechanism and writes none (the second one) does not have. They now name
+  `__MECHANISM_DIR__/bin/<driver>.sh` and `__MECHANISM_DIR__/.venv/bin/python -m agent_os.<module>`, with
+  the new render token `__MECHANISM_DIR__` (`agent_os`, the `git subtree` prefix). A host that keeps its
+  shims loses nothing: they still `exec` into those files. Re-run `agent-os-install --force` to refresh
+  the rendered definitions. `install.resolve_exec_start` needed no change: it already uses
+  `python -m agent_os.guard tick` when `scripts/agent_guard.py` is absent.
+- Rollout stage 1f, 2 (no issue; branch `fix/rollout-stage1f`) -- `worker_task.sh <backend> init`
+  recreates a lost worktree. With the directory gone but `agent-os/init-<backend>` still there it died
+  on git's "a branch named ... already exists". `init` now forgets the registrations of vanished
+  worktrees (`git worktree prune`), reuses the branch -- moved to the tip of `origin/main` -- when it
+  holds no commit `origin/main` lacks, and otherwise stops, leaves the branch alone and prints the
+  `git` commands that keep or drop it (the same for a branch checked out in another worktree). The
+  logic is `bin/worker_init_worktree.sh`; `worker_task.sh` shrank by 17 lines.
+- Rollout stage 1f, 1 (no issue; branch `fix/rollout-stage1f`) -- a GitHub App that cannot read CI
+  checks is found before the first pull request and said in one line. At the first host the validator
+  failed `issues.py move N review` with GraphQL's "Resource not accessible by integration": its App
+  had no Checks (read) nor Commit statuses (read). `agent-os-doctor` has a new check, "GitHub Apps
+  read CI checks", that mints the installation token of the planner's and the validator's Apps and
+  asks for the check runs and the commit statuses of the default branch's head
+  (`agent_os/product/tracker/app_check_access.py`), failing with the App, the permissions it lacks and
+  the remedy (grant them, then accept them on the installation); `move N review` now exits with that
+  same sentence instead of the GraphQL error; `docs/ADOPTION.md` step 14 lists the permissions each
+  App needs. `linked_boards` moved out of `doctor.py` to `agent_os/product/tracker/linked_boards.py`
+  and the `prompt_extras` doctor tests to `tests/product/doctor/`, so neither file grew.
 - Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
   read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
   those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture

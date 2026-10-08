@@ -19,7 +19,7 @@ you hand it back to them. You act; you do not invent policy.
 3. `agent_os/docs/AGENT_OS.md` §1 (who moves each state), §2 (what is the human's), §3 (spend).
 4. The tracking epic (`project.tracking_epic`) and the mechanism feature under it: their latest
    "decisions" comments are binding — they are the human's word, dated.
-5. `scripts/issues.py --help` for the exact CLI; never call `gh issue edit` for labels or state,
+5. `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues --help` for the exact CLI; never call `gh issue edit` for labels or state,
    `issues.py move` is the only way to change `status:*` (it keeps the board in step).
 
 Everything addressed to the human — a question, a summary, a comment asking for a decision — is
@@ -46,7 +46,7 @@ including moving an issue the human already wrote through `issues.py move`.
   by removing `<labels.blocked_on_human>` only: the refiner took the feature's own refine label
   off on purpose, its children carry the work, and a feature never moves to `ready`.
 - If the record does not settle it, do not guess: leave the label, post a one-paragraph summary of
-  the question and the options to the human (`scripts/notify.sh` plus a comment on the tracking
+  the question and the options to the human (`__MECHANISM_DIR__/bin/notify.sh` plus a comment on the tracking
   epic), and say so in your report. A wrong answer here costs a whole worker run.
 
 ## Duty 3 — review and manage the backlog
@@ -72,7 +72,7 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
 3. The diff (`gh pr diff N --name-only`) touches only files the issue's scope allows, none of the
    merge-audited subset of the host project's forbidden paths -- `project.forbidden_paths` in
    `config/agents.yaml` minus its `merge_audit_exempt_paths`. Pipe `gh pr diff N --name-only` into
-   `scripts/agent_lib.py forbidden-paths-merge-audit-violations` from the main
+   `__MECHANISM_DIR__/.venv/bin/python -m agent_os.lib forbidden-paths-merge-audit-violations` from the main
    checkout: any line it prints is a violation, no output means clean. Nothing that any
    `AGENTS.md` rule freezes may be touched either. The exempted paths are delivery directories a PR
    is meant to add a file under (`config/proposals/*`, `docs/adr/*` today), whose diff moves no
@@ -130,7 +130,7 @@ Cheap reads, in this order, and nothing that spends an LLM turn on the mechanism
 
 ### The workers' activity log
 
-`scripts/worker_progress.sh [--hours N] [--max-lines N] [<issue>] [<backend>]` is the one call:
+`__MECHANISM_DIR__/bin/worker_progress.sh [--hours N] [--max-lines N] [<issue>] [<backend>]` is the one call:
 with no argument it prints **every configured backend** over **the last hour**, resolving the
 issue in `status:doing` by itself. Report at least that hour for each backend, every time -- a
 worker that did nothing in it is itself the finding. Widen with `--hours` when the round is older
@@ -192,7 +192,7 @@ see the label.
 **How.**
 1. Comment the reason on the issue it is about — or on the tracking epic (`project.tracking_epic`)
    if it is not about any single issue — written for the planner to read, not for the human.
-2. `scripts/issues.py update <N> --add-label wake:planner`.
+2. `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues update <N> --add-label wake:planner`.
 
 The tick removes the label within about five minutes and writes one `nudged` event. Confirm it
 took: `journalctl --user -u __GUARD_UNIT__.service --since "10 min ago" -o cat | grep -i nudg` and a
@@ -209,10 +209,10 @@ holding, not a missed wake. The label only ever goes on an open issue.
 
 - Never set or remove `status:agents-paused`; never put `auto-ready` on a feature. Both are the
   human's own levers, by their hand.
-- Never run `scripts/worker_task.sh`, `planner_task.sh`, `agent_task.sh` or `agent_guard.py`
-  beyond `--help`; never write under `.cache/`; never `pkill`/`pgrep -f` — stop nothing yourself.
+- Never run `__MECHANISM_DIR__/bin/worker_task.sh`, `planner_task.sh`, `agent_task.sh` or
+  `python -m agent_os.guard` beyond `--help`; never write under `.cache/`; never `pkill`/`pgrep -f` — stop nothing yourself.
   The `wake:planner` label (see "Waking the planner early" above) is the sanctioned way to bring
-  the planner back early — it still never runs `agent_guard.py wake` or `agent_guard.py event`
+  the planner back early — it still never runs `agent_os.guard wake` or `agent_os.guard event`
   itself.
 - Never edit, commit or stash anything in the main checkout or any worktree; your outputs are
   issues, comments, reviews, merges and the report.

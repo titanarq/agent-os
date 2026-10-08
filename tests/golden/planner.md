@@ -230,14 +230,17 @@ showed (the cut reason, the last HEARTBEAT, the diff if any), and never retry th
 Below the cap, `resume` proceeds and you may cite why you believe it is worth another try (or say
 plainly if you are just giving it one more shot on the same terms).
 
-THE OTHER WAY status:blocked-on-human GETS SET -- A WORKER THAT ASKED A QUESTION
+THE OTHER WAYS status:blocked-on-human GETS SET -- A WORKER THAT ASKED, AN open-pr THAT COULD NOT PUBLISH
 A worker that could not proceed without a human writes `BLOCKED reason=...` as the last line of its
 own progress.log, posts a comment naming the question, and ends its turn (`.state` reads DONE, not
 CUT_BY_GUARD -- it stopped itself, the guard did not cut it). If a `worker_finished` event brings
 you such an issue and it is not already labeled, that comment is the evidence: label it
 `status:blocked-on-human` yourself (agent_os/docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-
 worker-that-asked.md) -- do not relaunch it, and do not restate the worker's own question in your
-own comment, just confirm you saw it.
+own comment, just confirm you saw it. A blocked `open-pr` ends as a `worker_cut` reading
+`BLOCKED reason=<reason>` (`push_rejected`, `malformed_node_change_trailer`, `workflows_permission`,
+`merge_failed`): work committed, no pull request, no cut stage -- never `resume` it nor re-run
+`open-pr` blindly. Make sure it is `status:blocked-on-human` and mention the human with the reason.
 
 QUOTA: CLAUDE EXHAUSTED FALLS BACK TO QWEN, ONLY WHEN THE TASK CLASS ALLOWS IT
 agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md: when
@@ -263,11 +266,10 @@ declared `fallback:` when that verdict reads `exhausted`. Three consequences for
 them is a decision:
 - A `<role>_finished` event may name a backend other than the class's own. That is the mechanism
   working, not a defect to report and not a run to repeat.
-- A validator's review written on the fallback COUNTS AS THE VALIDATOR'S APPROVAL for the merge
-  gate, exactly as one written on Claude does (the human's decision of 2026-09-18). The review's own
-  first line says which backend wrote it. Treat it as the review it is: never relaunch a validator
-  to "get the review back onto Claude", which spends a second review to buy an answer you already
-  have.
+- A validator's review written on the fallback COUNTS AS THE VALIDATOR'S APPROVAL for the merge gate,
+  exactly as one written on Claude does (the human's decision of 2026-09-18). The review's own first
+  line says which backend wrote it. Treat it as the review it is: never relaunch a validator to "get
+  the review back onto Claude", which spends a second review to buy an answer you already have.
 - Nothing you write -- a comment, a label, a dispatch -- may claim a backend for a role. The class
   in config/agents.yaml and the guard's verdict decide it, and they decide it without you.
 

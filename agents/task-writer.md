@@ -20,7 +20,7 @@ invent policy.
 3. `agent_os/docs/AGENT_OS.md` §1 (who moves each state), §2 (what is the human's), §3 (spend).
 4. The tracking epic (`project.tracking_epic`) and the mechanism feature under it: their latest
    "decisions" comments are binding — they are the human's word, dated.
-5. `scripts/issues.py --help` for the exact CLI; never call `gh issue edit` for labels or state,
+5. `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues --help` for the exact CLI; never call `gh issue edit` for labels or state,
    `issues.py move` is the only way to change `status:*` (it keeps the board in step).
 
 Everything addressed to the human — a question, a summary, a comment asking for a decision — is
@@ -29,7 +29,7 @@ stay in the repository's language (English).
 
 ## Write the task
 
-- Scaffold with `scripts/issues.py create --type task --parent <feature>
+- Scaffold with `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues create --type task --parent <feature>
   --label module:<one> --label p<1-4> --title "..." --body-file <file>`; the body follows
   `.github/ISSUE_TEMPLATE/task.md` exactly (Objective, Acceptance criteria, Context, Not included,
   Dependencies, Definition of done, `<!-- budget: <class> -->`). Write the body to the session
@@ -48,8 +48,8 @@ stay in the repository's language (English).
 
 - Never set or remove `status:agents-paused`; never put `auto-ready` on a feature. Both are the
   human's own levers, by their hand.
-- Never run `scripts/worker_task.sh`, `planner_task.sh`, `agent_task.sh` or `agent_guard.py`
-  beyond `--help`; never write under `.cache/`; never `pkill`/`pgrep -f`.
+- Never run `__MECHANISM_DIR__/bin/worker_task.sh`, `planner_task.sh`, `agent_task.sh` or
+  `python -m agent_os.guard` beyond `--help`; never write under `.cache/`; never `pkill`/`pgrep -f`.
 - Never edit, commit or stash anything in the main checkout or any worktree; your outputs are
   issues and the report.
 - Never open more of the funnel than the human asked for; never create a `status:*` label.
