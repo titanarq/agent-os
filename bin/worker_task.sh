@@ -612,13 +612,11 @@ freeze_uncommitted_work() {
     swept_note+=$'\n'"$(printf '  %s\n' "${swept[@]}")"
   fi
   git -C "$worktree" diff --cached --quiet && return 1
-  if [ -n "$swept_note" ]; then
-    # Named in the body, not only taken: a reader of the branch has to be able to tell work the
-    # agent committed from work a freeze swept in.
-    git -C "$worktree" commit -q -m "$WIP_SUBJECT ($reason)" -m "$swept_note"
-  else
-    git -C "$worktree" commit -q -m "$WIP_SUBJECT ($reason)"
-  fi
+  # The note is the commit's body: a reader of the branch has to be able to tell work the agent
+  # committed from work a freeze swept in. The commit carries the `Node-Change` trailer the host's
+  # CI asks of every commit that touches the product tree (`tracker/freeze_commit.py`).
+  "$agent_python" -m agent_os.product.tracker.freeze_commit --worktree "$worktree" \
+    --subject "$WIP_SUBJECT ($reason)" --body "$swept_note"
 }
 
 # SCRATCH IS INVISIBLE TO GIT IN EVERY WORKER WORKTREE (#86). `scratchpad/` is where the RULES send

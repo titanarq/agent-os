@@ -856,6 +856,17 @@ only the last paragraph as trailers, so the line is there and still invisible. T
 (`templates/ci-host.yml`) runs it on every pull request against the base branch; the worker's and the
 refiner's prompts say when each value applies.
 
+A freeze commit (`WIP: cut by guard (<reason>)`: the guard's cut of a run, or `open-pr`'s pre-merge
+freeze of a finished run's leftovers) is a commit no agent wrote, and when it touches the tree it
+carries the trailer too (`agent_os.product.tracker.freeze_commit`, stage 1f; before it the freeze was
+the one commit that failed the check of `open-pr` and of the host CI). It cannot know why the node
+changed, so it repeats the reason of the branch it freezes -- the nearest `usage` or `rework` among the
+commits the branch has and its base lacks -- and says `usage` when there is none; never `owner`. Leaving
+the freeze out of the check would leave the nodes it changed with no recorded reason, and the history
+is that record (`docs/tree/dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check.md`). A freeze
+that touches nothing under the tree root carries no trailer, and a config that does not load costs
+the trailer (said on stderr) but never the commit.
+
 `owner` is the owner's word and an agent never writes it: a worker records what it builds as `usage`
 (or `rework` when it corrects a rejection), and `--agent-authored` says that an agent wrote the whole
 range, so `owner` there is a defect (`owner-word-by-agent`). `worker_task.sh open-pr` always asks it

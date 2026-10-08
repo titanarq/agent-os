@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 4 (no issue; branch `fix/rollout-stage1f`) -- the freeze commit carries the `Node-Change`
+  trailer, so `open-pr` is no longer blocked by its own pre-merge freeze. `WIP: cut by guard (before_merge)`
+  committed a run's leftover tree edits with no trailer, and since 1d, A `open-pr` refused the branch for a
+  commit no agent wrote (the host CI would have failed it too). `freeze_uncommitted_work` now commits
+  through `agent_os.product.tracker.freeze_commit`: when the staged work touches `tree.root` the commit
+  ends with `Node-Change: <reason of the branch>` -- the nearest `usage` or `rework` among the branch's
+  own commits, `usage` if none, never `owner` -- and a freeze that touches nothing in the tree has no
+  trailer. The alternative of exempting freeze commits from the check was rejected: it would leave the
+  nodes they changed without a recorded reason. `worker_task.sh` shrank by 2 lines.
 - Rollout stage 1f, 3 (no issue; branch `fix/rollout-stage1f`) -- the agent definitions no longer send a
   host to wrapper scripts it may not have. `agents/{control-plane,task-writer,worker-runner}.md` told the
   subagent to run `scripts/worker_task.sh`, `scripts/issues.py`, `scripts/notify.sh`,
