@@ -965,10 +965,10 @@ def test_cmd_validate_prints_ok_and_returns_on_a_clean_issue(capsys):
 
 @pytest.fixture(autouse=True)
 def review_pages_in_a_temporary_directory(tmp_path, monkeypatch):
-    """`move N review` pages once per issue and records that in `.cache/paged-review/<N>`. Every
-    test in this file gets its own, so no run of the suite can page for real or inherit a marker
-    written by another test."""
+    """`move N review` pages once per issue and records that in `.cache/paged-review/<N>`; every
+    test gets its own, so none pages for real or inherits a marker. The CI gate has its own tests."""
     monkeypatch.setattr(issues, "REVIEW_PAGES_DIR", tmp_path / "paged-review")
+    monkeypatch.setattr(issues, "refuse_review_while_checks_are_not_green", lambda *_: None)
 
 
 @pytest.fixture(autouse=True)

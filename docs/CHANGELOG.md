@@ -8,6 +8,23 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1c, C (branch `fix/rollout-stage1c`) -- `worker_task.sh <backend> status` no longer
+  says "no events yet" right after a stage ended: `stage-exit` archives the stage's events under
+  `.cache/spend/<issue>/` and empties the live log, and `status` (token/cost report and last
+  assistant text) now falls back to this backend's newest archived stage of the recorded issue,
+  saying which file it shows.
+- Rollout stage 1c, B (branch `fix/rollout-stage1c`) -- a pull request with a red or unfinished CI
+  check can no longer be announced as ready. The validator approved a PR whose `tests` check was in
+  FAILURE and the planner then said "the human merges". `issues.py move N review` (what the
+  validator runs after approving) now reads the checks of the open PR whose body says `Closes #N`
+  (`agent_os/product/tracker/pull_request_checks.py`) and refuses, naming the check, while any is failing or
+  still running; the validator prompt now tells it to read `gh pr checks` first and request changes
+  citing the failed check. An issue with no open PR is not gated.
+- Rollout stage 1c, A (no issue; branch `fix/rollout-stage1c`) -- `wake` now honours
+  `status:agents-paused` like `tick` does, through the same `_agents_paused` check. A worker started
+  by hand ends through `check` -> `wake`, and with the epic paused it used to wake the planner, which
+  launched the validator. Under the pause the events are still written and stay on disk; the first
+  wake after the label is removed reads them.
 - Rollout stage 1b (no issue; branch `fix/rollout-stage1b`) -- `context` and the ticket's Context now
   carry the findings of each ancestor's experiments (`kind: question -- finding`; `experiments` in
   `--json`), so the owner's answers and the decided stack reach the tickets. Also `compile`: a use case inherits the
