@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 1 (no issue; branch `fix/rollout-stage1f`) -- a GitHub App that cannot read CI
+  checks is found before the first pull request and said in one line. At the first host the validator
+  failed `issues.py move N review` with GraphQL's "Resource not accessible by integration": its App
+  had no Checks (read) nor Commit statuses (read). `agent-os-doctor` has a new check, "GitHub Apps
+  read CI checks", that mints the installation token of the planner's and the validator's Apps and
+  asks for the check runs and the commit statuses of the default branch's head
+  (`agent_os/product/tracker/app_check_access.py`), failing with the App, the permissions it lacks and
+  the remedy (grant them, then accept them on the installation); `move N review` now exits with that
+  same sentence instead of the GraphQL error; `docs/ADOPTION.md` step 14 lists the permissions each
+  App needs. `linked_boards` moved out of `doctor.py` to `agent_os/product/tracker/linked_boards.py`
+  and the `prompt_extras` doctor tests to `tests/product/doctor/`, so neither file grew.
 - Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
   read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
   those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture

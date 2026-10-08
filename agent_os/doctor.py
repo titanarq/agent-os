@@ -40,10 +40,13 @@ from agent_os.lib import (
     config_load_failure,
     load_project,
     load_task_classes,
+    role_app_slug,
     worker_slot_key,
     worker_slot_worktree,
     worker_slots,
 )
+from agent_os.product.tracker.app_check_access import describe_check_access_of_apps
+from agent_os.product.tracker.linked_boards import linked_boards
 
 REQUIRED_GH_SCOPES = ("repo", "project")
 BOARD_STATUS_FIELD = "Status"
@@ -118,44 +121,9 @@ def check_labels(project: ProjectConfig, repo: str) -> Check:
     return Check("labels that do not autocreate", True, f"{required} all exist")
 
 
-# The Projects linked to one repository, each with its owner's login: `repository.projectsV2`
-# answers exactly "which boards does this repo show", which `gh project list --owner` cannot.
-LINKED_PROJECTS_QUERY = """
-query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
-    projectsV2(first: 100) {
-      nodes { number owner { ... on Organization { login } ... on User { login } } }
-    }
-  }
-}
-"""
-
-
-def linked_boards(repo: str) -> set[tuple[int, str]]:
-    """`(number, lowercased owner login)` for every Project v2 linked to `repo`."""
-    owner, name = repo.split("/", 1)
-    response = gh_json(
-        "api",
-        "graphql",
-        "-f",
-        f"query={LINKED_PROJECTS_QUERY}",
-        "-F",
-        f"owner={owner}",
-        "-F",
-        f"name={name}",
-    )
-    repository = ((response or {}).get("data") or {}).get("repository") or {}
-    nodes = (repository.get("projectsV2") or {}).get("nodes") or []
-    return {
-        (node["number"], ((node.get("owner") or {}).get("login") or "").lower())
-        for node in nodes
-        if node and "number" in node
-    }
-
-
 def check_board(project: ProjectConfig, repo: str) -> Check:
     owner = board_owner(repo)
-    linked = linked_boards(repo)
+    linked = linked_boards(repo, gh_json)
     response = gh_json(
         "project", "field-list", str(project.board_number), "--owner", owner, "--format", "json"
     )
@@ -217,6 +185,24 @@ def check_app_secrets(project: ProjectConfig, root: pathlib.Path) -> Check:
             f"missing <slug>.json/<slug>.pem under {secrets_dir} for {missing}",
         )
     return Check("GitHub App secrets", True, f"{sorted(slugs)} present under {secrets_dir}")
+
+
+APPS_READ_CHECKS_CHECK = "GitHub Apps read CI checks"
+
+
+def check_apps_read_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> Check:
+    """The Apps whose identity reads a pull request's checks -- the planner's, for the merge
+    conditions, and the validator's, for `move N review` (#138) -- are probed with their own
+    installation tokens: a missing permission fails the first real pull request otherwise, with
+    GitHub's bare "Resource not accessible by integration"."""
+    roles_by_app: dict[str, list[str]] = {}
+    for role, slug in (
+        ("planner", project.planner_app),
+        ("validator", role_app_slug("validator", project)),
+    ):
+        roles_by_app.setdefault(slug, []).append(role)
+    ok, detail = describe_check_access_of_apps(repo, root, roles_by_app)
+    return Check(APPS_READ_CHECKS_CHECK, ok, detail)
 
 
 def check_executables(project: ProjectConfig) -> Check:
@@ -413,6 +399,7 @@ def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Ch
         _guarded("labels that do not autocreate", check_labels, project, repo),
         _guarded("Project v2 Status field", check_board, project, repo),
         check_app_secrets(project, root),
+        _guarded(APPS_READ_CHECKS_CHECK, check_apps_read_checks, project, root, repo),
         check_executables(project),
         check_worktrees(project, root),
         check_notify_topic(project, root),

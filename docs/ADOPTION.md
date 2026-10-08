@@ -117,7 +117,15 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     role calls — workers need Issues (read/write), Contents (push), Pull requests (create); the
     planner needs Issues, Pull requests (read), Projects; the validator additionally needs "Pull
     request reviews" (for a GitHub App that is part of "Pull requests: write", not a separate
-    permission) — install it on the repo, and download its private key. A role with no App of
+    permission). **The planner's and the validator's Apps also need Checks (read) and Commit
+    statuses (read)**: `gh pr checks` (the validator before it approves, the control plane before
+    it merges) and `issues.py move N review` (which refuses while a check is red or unfinished)
+    read a pull request's CI, and an App without them is answered "Resource not accessible by
+    integration" — the validator then cannot approve anything. Changing an App's permissions is
+    not enough: the installation must **accept** the new ones (an organization owner approves the
+    request that GitHub raises under the installation's settings). `agent-os-doctor` (step 21)
+    probes both permissions with each of those Apps' own installation tokens and says which one
+    is missing. Install it on the repo, and download its private key. A role with no App of
     its own signs as `planner_app`, and the **expert** pushes a branch and opens a pull request,
     so whichever App it signs as needs Contents (read/write): a planner App with Contents
     read-only fails the expert with `403 Write access to repository not granted`. Point
@@ -199,7 +207,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `project.merge_method`: `merge`, `squash` or `rebase`, default `merge`).
 21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: `gh auth status`
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
-    each App's secrets, each `project.executables` entry, each worktree, the notify topic file, the
+    each App's secrets, whether the planner's and the validator's Apps may read CI checks (they are
+    probed with their own installation tokens, which mints or reuses the cached one), each
+    `project.executables` entry, each worktree, the notify topic file, the
     guard timer's `is-active`, and a workflow that reports a check on a host-only PR — one line per
     check, exit 1 on any failure. The guard-timer check is expected red until step 22 arms the
     timer. It never calls `agent_guard.py check` or any other trigger a
