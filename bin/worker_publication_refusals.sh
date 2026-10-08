@@ -69,8 +69,9 @@ minute):
 $report
 \`\`\`
 
-This is \`agent-os-tree trailers --base $base_ref\` run in the worktree. Every commit that touches
-the product tree ends with exactly one \`Node-Change: usage | rework | owner\` line in the LAST
+This is \`agent-os-tree trailers --base $base_ref --agent-authored\` run in the worktree. Every
+commit that touches the product tree ends with exactly one \`Node-Change: usage\` or
+\`Node-Change: rework\` line (\`owner\` is the owner's own word and never a worker's) in the LAST
 paragraph of its message, together with any \`Co-Authored-By:\` line and with no blank line between
 them: git reads only that paragraph as trailers (\`git interpret-trailers --parse\` shows what it
 sees).

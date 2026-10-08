@@ -17,6 +17,7 @@ from agent_os.product.tree.trailers import (
     MISPLACED_TRAILER,
     MISSING_TRAILER,
     MULTIPLE_TRAILERS,
+    OWNER_WORD_BY_AGENT,
     UNKNOWN_VALUE,
     TrailerError,
     check_node_change_trailers,
@@ -116,6 +117,31 @@ def test_a_trailer_in_the_same_block_as_the_co_author_line_passes(repository):
         "tree: edit\n\nNode-Change: usage\nCo-Authored-By: Someone <noreply@example.invalid>",
     )
     assert defect_codes(repository) == []
+
+
+def test_the_owner_word_is_a_defect_in_a_range_an_agent_wrote(repository):
+    commit_file(repository, "product/goal-a.md", "tree: edit\n\nNode-Change: owner")
+    assert defect_codes(repository) == []
+    defects = check_node_change_trailers(
+        repository / "product", "base", "HEAD", written_by_an_agent=True
+    )
+    assert [defect.code for defect in defects] == [OWNER_WORD_BY_AGENT]
+
+
+@pytest.mark.parametrize("value", ["usage", "rework"])
+def test_the_other_values_pass_in_a_range_an_agent_wrote(repository, value):
+    commit_file(repository, "product/goal-a.md", f"tree: edit\n\nNode-Change: {value}")
+    assert not check_node_change_trailers(
+        repository / "product", "base", "HEAD", written_by_an_agent=True
+    )
+
+
+def test_the_subcommand_flags_the_owner_word_when_told_an_agent_wrote_the_range(repository, capsys):
+    commit_file(repository, "product/goal-a.md", "tree: edit\n\nNode-Change: owner")
+    arguments = ["trailers", "--base", "base", "--root", str(repository / "product")]
+    assert main(arguments, config_path=EXAMPLE_CONFIG) == 0
+    assert main([*arguments, "--agent-authored"], config_path=EXAMPLE_CONFIG) == 1
+    assert f"{OWNER_WORD_BY_AGENT}: " in capsys.readouterr().out
 
 
 def test_only_the_range_is_checked(repository):

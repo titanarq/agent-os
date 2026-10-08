@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1d, B (no issue; branch `fix/rollout-stage1d`) -- a worker no longer records `Node-Change:
+  owner`. The worker touched its own node at the end of a ticket and wrote `owner`, which is only the
+  owner's own word. `prompts/worker.md` now gives the worker `usage` (what it writes while building
+  its node) and `rework` (when it corrects a rejection) and says it never writes `owner`;
+  `prompts/validator.md` makes a worker's commit with `owner` a request for changes and has the
+  validator run the new deterministic check, `agent-os-tree trailers --agent-authored` (an agent
+  wrote the range, so `owner` is `owner-word-by-agent`), which `open-pr` also runs over every
+  worker branch before it opens the pull request (the 1d, A gate). Goldens `worker.md` and
+  `validator.md` changed by exactly those paragraphs.
 - Rollout stage 1d, A (no issue; branch `fix/rollout-stage1d`) -- a worker's branch with a malformed
   `Node-Change` trailer no longer becomes a pull request announced as ready. A worker had written
   `Node-Change: owner`, a blank line and `Co-Authored-By:`: git reads only the last paragraph as

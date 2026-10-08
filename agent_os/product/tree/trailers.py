@@ -21,11 +21,13 @@ from dataclasses import dataclass
 
 TRAILER_KEY = "Node-Change"
 NODE_CHANGE_VALUES = ("usage", "rework", "owner")
+OWNER_VALUE = "owner"
 
 MISSING_TRAILER = "missing-node-change"
 UNKNOWN_VALUE = "unknown-node-change"
 MULTIPLE_TRAILERS = "multiple-node-change"
 MISPLACED_TRAILER = "misplaced-node-change"
+OWNER_WORD_BY_AGENT = "owner-word-by-agent"
 
 # A `Node-Change:` line anywhere in the message body, trailer or not.
 _NODE_CHANGE_LINE = re.compile(rf"^{TRAILER_KEY}:[ \t]*\S", re.MULTILINE)
@@ -33,6 +35,11 @@ _MISPLACED_MESSAGE = (
     f"has a `{TRAILER_KEY}:` line that git does not read as a trailer: only the last paragraph of "
     "the message counts, and it must hold nothing but trailers "
     "(`Co-Authored-By:` goes in the same block, with no blank line between them)"
+)
+
+_OWNER_WORD_BY_AGENT_MESSAGE = (
+    f"`{TRAILER_KEY}: {OWNER_VALUE}` is the owner's own word and an agent wrote this commit: "
+    "use `usage`, or `rework` when it corrects a rejection"
 )
 
 _FIELD_SEPARATOR = "\x1f"
@@ -120,10 +127,15 @@ def _commits_touching(tree_root: pathlib.Path, base: str, head: str) -> list[_Tr
 
 
 def check_node_change_trailers(
-    tree_root: pathlib.Path | str, base: str, head: str = "HEAD"
+    tree_root: pathlib.Path | str,
+    base: str,
+    head: str = "HEAD",
+    *,
+    written_by_an_agent: bool = False,
 ) -> list[TrailerDefect]:
     """One defect per commit of `base..head` touching `tree_root` whose trailer is absent, repeated
-    or not one of `NODE_CHANGE_VALUES`."""
+    or not one of `NODE_CHANGE_VALUES`. `written_by_an_agent` says every commit of the range is an
+    agent's -- a worker's branch -- and then `owner`, the owner's own word, is a defect as well."""
     defects = []
     for commit in _commits_touching(pathlib.Path(tree_root), base, head):
         sha, subject, values = commit.sha, commit.subject, commit.values
@@ -139,6 +151,8 @@ def check_node_change_trailers(
         elif values[0] not in NODE_CHANGE_VALUES:
             allowed = " | ".join(NODE_CHANGE_VALUES)
             code, message = UNKNOWN_VALUE, f"`{TRAILER_KEY}: {values[0]}` is not one of {allowed}"
+        elif written_by_an_agent and values[0] == OWNER_VALUE:
+            code, message = OWNER_WORD_BY_AGENT, _OWNER_WORD_BY_AGENT_MESSAGE
         else:
             continue
         defects.append(TrailerDefect(sha, subject, code, message))

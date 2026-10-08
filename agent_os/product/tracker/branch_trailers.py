@@ -31,11 +31,12 @@ def branch_trailer_defects(
     worktree: pathlib.Path, tree_root: str, base_ref: str
 ) -> list[TrailerDefect]:
     """The defects of `base_ref..HEAD` in `worktree`, whose tree directory is `tree_root` under it.
-    A worktree without that directory has no tree commit to judge."""
+    Every commit of a worker's branch is an agent's, so the owner's word is a defect there. A
+    worktree without that directory has no tree commit to judge."""
     root = worktree / tree_root
     if not root.is_dir():
         return []
-    return check_node_change_trailers(root, base_ref, "HEAD")
+    return check_node_change_trailers(root, base_ref, "HEAD", written_by_an_agent=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

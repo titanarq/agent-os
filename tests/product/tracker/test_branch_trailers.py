@@ -179,3 +179,22 @@ def test_open_pr_judges_the_freeze_it_makes_before_merging_too(worker_at_its_end
 def test_a_worktree_with_no_tree_directory_has_nothing_to_judge(tmp_path):
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     assert branch_trailer_defects(tmp_path, "product", "HEAD") == []
+
+
+def test_open_pr_refuses_the_owners_word_in_a_commit_the_worker_wrote(worker_at_its_end):  # noqa: F811
+    """`owner` is the owner's own word. A worker wrote it when it touched its node at the end of a
+    ticket, and a well-formed trailer is not enough: the commit is an agent's."""
+    environment, worktree, remote, cache, calls = worker_at_its_end
+    commit_to_the_tree(
+        worktree, "stage 1/1: write the node back", f"Node-Change: owner\n{CO_AUTHOR_LINE}"
+    )
+
+    result = _open_pr(environment)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "owner-word-by-agent" in result.stdout, result.stdout
+    assert (cache / "worker_claude.state").read_text().splitlines()[0] == BLOCKED_STATE
+    recorded = calls.read_text()
+    assert "pr\tcreate" not in recorded, recorded
+    assert "labels[]=status:blocked-on-human" in recorded, recorded
+    assert not was_pushed(remote)
