@@ -8,6 +8,20 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, A (no issue; branch `fix/rollout-stage1e`) -- a compiled ticket builds and no
+  longer asks for tests. `compile` wrote "verified by ... the project's tests" and "Tests and
+  documentation as the project's AGENTS.md asks" into every ticket, which `dec-tests-harden-they-do-not-build`
+  rules out for an implementation or a foundation (it passes the essential top-down acceptance and then
+  the owner's use; its tests come when it hardens). The implementation stage is now verified by the
+  acceptance criteria and then by the owner's use, and the definition of done carries one line: no test
+  is written for the node, the tests the project already has keep passing, documentation as the
+  project's `AGENTS.md` asks (the blocked-hardening line no longer says "do not write hardening tests"
+  next to an order to write tests). A node with no `verification` is no longer accepted by one generic
+  sentence: its criteria are derived from its description (the validator's rule for such a node) and
+  from the acceptance each ancestor carries, one `judged by an agent: with <node> built, <ancestor>
+  still holds: <criterion>` line each, the goal's evaluators included. It is not refused: dispatch does
+  not wait for a verification (`dec-tests-harden-they-do-not-build`,
+  `fr-a-usable-product-exists-early`). `docs/AGENT_OS.md` §4.6.
 - Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
   read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
   those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture

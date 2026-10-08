@@ -767,9 +767,15 @@ case with no children, `pending`, and its mechanism can be resolved (written, or
 experiment having found it `infeasible`). **No verification is needed to dispatch**: tests harden,
 they do not build (`docs/tree/dec-tests-harden-they-do-not-build.md`), and the essential top-down
 acceptance holds even when an agent judges it (`docs/tree/dec-top-down-acceptance-is-essential-even-when-judged.md`),
-so a leaf with a command, with a judged criterion or with nothing gets a ticket; one with nothing
-is accepted by "judged by an agent: the node does what its description says and breaks no
-acceptance criterion of its ancestors". The one **escalation** left is `mechanism-unresolvable`: a
+so a leaf with a command, with a judged criterion or with nothing gets a ticket. One with nothing is
+accepted by criteria **derived** from what it is: `judged by an agent: <node> does what its
+description says (the Objective above)` -- the validator's rule for such a node -- and then one line
+per acceptance criterion each ancestor carries, the nearest first and the goal's evaluators last
+(a goal always has at least one): `judged by an agent: with <node> built, <ancestor> still holds:
+<criterion>`. It is not refused: a refusal would make the node wait for a specification that use
+has not validated yet, which is what the decision removed (`docs/tree/fr-a-usable-product-exists-early.md`:
+nothing waits for a complete specification), and the criterion is never empty because the goal
+above it has evaluators. The one **escalation** left is `mechanism-unresolvable`: a
 pending mechanism an experiment found infeasible is reported and never a ticket. A goal, a node
 past `pending`, and a container (any node with children, whether or not it has a verification: its
 use cases are the work, and its own verification is the acceptance of its subtree) are skipped.
@@ -781,7 +787,12 @@ carries the verification of every ancestor, judged criteria included, as accepta
 `## Not included`, `## Dependencies` (`none`, or the nodes it waits for), `## Definition of done`
 (the node file written back with `implementation` and `state: implemented`, **never `hardened`**,
 and, when `hardening_blockers` says the node cannot be hardened yet, why), then the markers, one
-comment line each:
+comment line each. **A ticket builds and asks for no test of the node**: tests harden what use has
+accepted, they do not build, and foundations follow the same rule
+(`docs/tree/dec-tests-harden-they-do-not-build.md`). The implementation stage is verified by the
+acceptance criteria and then by the owner's use; the definition of done says in one line that no
+test is written for the node, that the project's existing tests must keep passing, and that
+documentation is as the project's `AGENTS.md` asks. Its tests are written when the node hardens.
 
 | Marker | Says |
 |---|---|
