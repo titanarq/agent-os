@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1f, 5 (no issue; branch `fix/rollout-stage1f`) -- the planner prompt says what to do with
+  `open-pr`'s own endings. `BLOCKED reason=<reason>` (`malformed_node_change_trailer`, `push_rejected`,
+  `workflows_permission`, `merge_failed`) reaches the planner as a `worker_cut` event, and nothing in its
+  prompt described it, so it read as a cut stage to relaunch. The paragraph on a worker that asked a
+  question (`status:blocked-on-human` set by the planner) now also covers it: the work is committed and no
+  pull request exists; never `resume` the issue nor re-run `open-pr` blindly; make sure the issue is
+  `status:blocked-on-human` and mention the human with the reason. A new test reads the reasons from
+  `bin/worker_task.sh` and `bin/worker_publication_refusals.sh` and fails when the prompt does not name
+  one. `prompts/planner.md` stays at 300 lines, its ratchet limit (it was 298): the addition went into an
+  existing paragraph and one bullet was re-wrapped without losing a word. Golden `planner.md` changed by
+  exactly those lines (read diff by diff: the heading, the new sentences, the re-wrapped bullet).
 - Rollout stage 1f, 4 (no issue; branch `fix/rollout-stage1f`) -- the freeze commit carries the `Node-Change`
   trailer, so `open-pr` is no longer blocked by its own pre-merge freeze. `WIP: cut by guard (before_merge)`
   committed a run's leftover tree edits with no trailer, and since 1d, A `open-pr` refused the branch for a

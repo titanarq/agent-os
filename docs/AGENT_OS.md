@@ -106,7 +106,13 @@ stage runs next, and whether a clean exit counts as a completed stage or a cut, 
 mechanically from `stage N/M:` commits on the branch (`agent_lib.stages_completed`) rather than
 from the planner or the worker declaring progress themselves — the planner only sees the two
 ends, `worker_finished` (every stage done) and `worker_cut` (one stage's process ended without its
-own commit).
+own commit). `worker_cut` also carries `open-pr`'s own endings, `BLOCKED reason=<reason>`
+(`malformed_node_change_trailer`, `push_rejected`, `workflows_permission`, `merge_failed`): the work is
+committed and no pull request exists. The planner prompt says what to do with them: never `resume` the issue and never run `open-pr`
+again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it for the first three;
+`merge_failed` leaves the issue `doing`, with no comment) and mention the human with the reason.
+`tests/product/worker/test_planner_knows_open_pr_endings.py` reads
+the reasons from the drivers so a new one cannot go unnamed there.
 
 Transitions nobody performs:
 - Issue creation → `status:refine` (a human has to remember to label it; 40/49 open issues carry no `status:*` today).
