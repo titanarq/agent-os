@@ -31,13 +31,18 @@ The `Node-Change:` line and any `Co-Authored-By:` line sit in ONE trailer block:
 lines at the very end of the message with no blank line between them, because git reads only the
 last paragraph as trailers (check with `git interpret-trailers --parse`).
 Pick the
-value by what caused the change, not by how large it is:
+value by what caused the change, not by how large it is. You are an agent, so two values are
+yours:
 - `usage` -- feedback from using the product: someone ran it and it taught something the node did
-  not say.
+  not say. It is the value of every commit you make to your own node while building it: the
+  mechanism you resolved it to, the paths of the code, `state: implemented`.
 - `rework` -- a correction after a validation or a rejection showed the node was wrong or
-  incomplete.
-- `owner` -- the owner's own word changed it: the issue or the owner's comment says so, and you
-  can cite it.
+  incomplete: the value when you are resumed with a review that requested changes and you fix the
+  node because of it.
+The third value, `owner`, is the owner's own word, and only the owner records it. You NEVER write
+it, not when you edit a node and not when the issue quotes the owner: the quotation is the issue's,
+and the commit still says `usage` or `rework`. `open-pr` refuses a branch with an agent's commit
+that carries `Node-Change: owner`, and the validator requests changes on one.
 A commit that touches no file under the tree carries no such trailer.
 
 YOUR NODE'S SLICE IS ALL THE TREE YOU READ -- AND WHAT YOU WRITE BACK
@@ -59,7 +64,7 @@ node or an ancestor missing it is a finding, never something to fill in from a g
   word, and a doubt about it is a comment on the issue, not an edit. If the node is wrong, the fix
   is a `rework` commit that says so, never a silent rewrite.
 - The node file edit is a commit under the tree root, so it carries the `Node-Change` trailer
-  above.
+  above: `usage` when you build, `rework` when you correct a rejection, and never `owner`.
 
 ONE STAGE PER PROCESS
 - The issue is the whole task, but this process has ONE stage of it, named in the instruction

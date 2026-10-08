@@ -13,9 +13,10 @@
     agent-os-tree board sync [--dry-run] | order [--out FILE]
         # the progress board (`agent_os.product.board`): the tree into a GitHub Project through `gh`,
         # and the owner's order of the backlog read back. The one subcommand that uses the network.
-    agent-os-tree trailers --base REF [--head REF] [--root DIR] [--json]
+    agent-os-tree trailers --base REF [--head REF] [--root DIR] [--agent-authored] [--json]
         # every commit of REF..HEAD that touches the tree must carry one `Node-Change: usage|rework|owner`
-        # trailer; one line per commit that does not, exit 1. Reads git only.
+        # trailer; one line per commit that does not, exit 1. Reads git only. --agent-authored says an
+        # agent wrote the range (a worker's branch): `owner`, the owner's own word, is a defect there.
 
 Exit status: 0 on success, 1 on a red tree or a refusal (one line on stderr saying why), 2 on a
 usage error. The root is `--root`, else `tree.root` of `config/agents.yaml` under the host's root;
@@ -181,7 +182,9 @@ def _board(args: argparse.Namespace, config_path) -> int:
 def _trailers(args: argparse.Namespace, config_path) -> int:
     root = _resolve_root(args.root, config_path)
     try:
-        defects = check_node_change_trailers(root, args.base, args.head)
+        defects = check_node_change_trailers(
+            root, args.base, args.head, written_by_an_agent=args.agent_authored
+        )
     except TrailerError as error:
         print(f"{PROGRAM}: {error}", file=sys.stderr)
         return 1
@@ -190,7 +193,7 @@ def _trailers(args: argparse.Namespace, config_path) -> int:
         print(json.dumps({"ok": not defects, "defects": listed}, indent=2, ensure_ascii=False))
         return 1 if defects else 0
     for defect in defects:
-        print(f"{defect.commit[:10]} {defect.subject}: {defect.code}: {defect.message}")
+        print(defect.describe())
     return 1 if defects else 0
 
 
@@ -230,6 +233,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--base", required=True, help="the range starts after this ref")
     p.add_argument("--head", default="HEAD", help="the range ends at this ref (default: HEAD)")
+    p.add_argument(
+        "--agent-authored",
+        action="store_true",
+        help="an agent wrote every commit of the range: `Node-Change: owner` is a defect",
+    )
     p.set_defaults(handler=_trailers)
     return parser
 

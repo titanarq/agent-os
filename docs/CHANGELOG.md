@@ -8,6 +8,31 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
+  read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
+  those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture
+  that answers 'not paused' for `agent_os.guard._agents_paused` by default; the tests of the pause
+  keep setting their own answer (it wins), and the two tests of `_agents_paused` itself carry the
+  new `real_agents_paused` marker (registered in `pyproject.toml`) and get the real function.
+- Rollout stage 1d, B (no issue; branch `fix/rollout-stage1d`) -- a worker no longer records `Node-Change:
+  owner`. The worker touched its own node at the end of a ticket and wrote `owner`, which is only the
+  owner's own word. `prompts/worker.md` now gives the worker `usage` (what it writes while building
+  its node) and `rework` (when it corrects a rejection) and says it never writes `owner`;
+  `prompts/validator.md` makes a worker's commit with `owner` a request for changes and has the
+  validator run the new deterministic check, `agent-os-tree trailers --agent-authored` (an agent
+  wrote the range, so `owner` is `owner-word-by-agent`), which `open-pr` also runs over every
+  worker branch before it opens the pull request (the 1d, A gate). Goldens `worker.md` and
+  `validator.md` changed by exactly those paragraphs.
+- Rollout stage 1d, A (no issue; branch `fix/rollout-stage1d`) -- a worker's branch with a malformed
+  `Node-Change` trailer no longer becomes a pull request announced as ready. A worker had written
+  `Node-Change: owner`, a blank line and `Co-Authored-By:`: git reads only the last paragraph as
+  trailers, so the host's CI and `agent-os-tree trailers` found it absent. `open-pr` now runs the
+  same check over the branch (`agent_os.product.tracker.branch_trailers`, after the pre-merge freeze,
+  before the merge and the push); on a defect it opens no pull request, pushes nothing, rewrites no
+  commit, ends `BLOCKED reason=malformed_node_change_trailer`, comments the output on the issue and
+  moves it to `status:blocked-on-human`. The command now reports a `Node-Change:` line outside the
+  last paragraph as `misplaced-node-change` instead of `missing-node-change`. The diary refusal moved
+  with it into `bin/worker_publication_refusals.sh`, so `worker_task.sh` shrank.
 - Rollout stage 1c, C (branch `fix/rollout-stage1c`) -- `worker_task.sh <backend> status` no longer
   says "no events yet" right after a stage ended: `stage-exit` archives the stage's events under
   `.cache/spend/<issue>/` and empties the live log, and `status` (token/cost report and last

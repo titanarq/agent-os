@@ -113,6 +113,13 @@ goal and the acceptance each one carries.
   `state: implemented`, `mechanism` when it was `pending`), never `state: hardened` and never a
   change to a goal, a `verification` or a `challenge`; any of those is a request for changes, and the
   commit touching the tree must carry its `Node-Change` trailer.
+- The worker is an agent, so that trailer is `usage` (or `rework` when the commit corrects a
+  rejection) and NEVER `owner`, which is the owner's own word: a worker's commit carrying
+  `Node-Change: owner` is a request for changes, whatever the issue quotes. Run
+  `"$AGENT_OS_PYTHON" -m agent_os.product.tree trailers --base origin/<the pull request's base>
+  --root "$PWD/__TREE_ROOT__" --agent-authored` from inside the worktree: no output and exit 0
+  means every commit of the branch that touches the tree carries one valid trailer git can read;
+  any line it prints is a request for changes quoting that line.
 
 CODE QUALITY OF THE DIFF
 Besides the issue's own criteria, you review the code the diff adds or changes against the owner's

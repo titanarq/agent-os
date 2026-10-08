@@ -337,6 +337,9 @@ alive() { alive_pidfile "$pidfile"; }
 # The status report's readers (`readable_events_file`, `usage_report`, `issue_token_line`).
 # shellcheck source=agent_os/bin/worker_status_report.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
+# What `open-pr` refuses to publish: the diary, and a malformed `Node-Change` trailer.
+# shellcheck source=agent_os/bin/worker_publication_refusals.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
 
 # ----------------------------------------------------------------------------------------------
 # STAGES (#375). What the issue plans and what the branch has actually done, resolved together
@@ -1650,30 +1653,9 @@ open-pr)
   ahead=$(git -C "$worktree" rev-list --count "$base_ref..HEAD" 2>/dev/null || echo 0)
   [ "${ahead:-0}" -gt 0 ] || { echo "open-pr: $branch has no commits ahead of $base_ref -- no pull request"; exit 0; }
 
-  # NO COMMIT MAY CARRY THE DIARY (#407). `scratchpad/progress.log` is the monitor's input, not the
-  # task's output, and a branch that adds or modifies it publishes it: it reached `main` that way
-  # once, and from then on every worker pull request conflicted with `main` on it -- a conflicting
-  # pull request, which is the no-CI case #389 exists to prevent. Refused rather than repaired,
-  # because taking a file out of a commit already made is a rewrite and this step rewrites nothing:
-  # it names the commits so whoever picks the branch up knows what to take out. Above the freeze
-  # and the merge below on purpose -- a refused branch is left exactly as the worker left it, with
-  # nothing written to the worktree, to `.state` or to GitHub. Exit 0 with the other refusals:
-  # there is nothing to publish, which is not a failure of the run, and the exit hook still records
-  # its end. A branch whose diff DELETES the diary passes, which is how a branch forked before
-  # `main` stopped tracking it gets clean.
-  diary_in_diff=$(git -C "$worktree" diff --name-only --diff-filter=AM "$base_ref" HEAD -- "$DIARY")
-  if [ -n "$diary_in_diff" ]; then
-    diary_commits=$(git -C "$worktree" log --format='  %h %s' --diff-filter=AM "$base_ref..HEAD" -- "$DIARY")
-    echo "open-pr: $branch adds or modifies $DIARY against $base_ref -- no pull request."
-    echo "  The diary is the monitor's input and no commit may carry it; these do:"
-    if [ -n "$diary_commits" ]; then
-      printf '%s\n' "$diary_commits"
-    else
-      echo "  (no single commit of the branch adds it: it came in through a merge)"
-    fi
-    echo "  Nothing was written: take $DIARY out of the branch and run open-pr again."
-    exit 0
-  fi
+  # NO COMMIT MAY CARRY THE DIARY (#407), refused before anything is written -- exit 0, like the
+  # other refusals that have nothing to publish (`bin/worker_publication_refusals.sh`).
+  branch_carries_the_diary "$base_ref" "$branch" && exit 0
 
   # A PULL REQUEST BORN IN CONFLICT GETS NO CI AT ALL (#389). GitHub creates `refs/pull/N/merge`
   # only for a pull request it can merge, and an `on: pull_request` workflow checks out exactly
@@ -1701,6 +1683,11 @@ open-pr)
   if [ -n "$(git -C "$worktree" status --porcelain --untracked-files=no)" ]; then
     freeze_uncommitted_work "$PRE_MERGE_FREEZE_REASON" \
       && echo "open-pr: froze uncommitted work in a WIP commit before merging $base"
+  fi
+  # A branch whose trailers the host's CI would fail never becomes a pull request (see the helper).
+  if ! trailer_report=$(node_change_trailer_report "$base_ref"); then
+    block_on_malformed_node_change_trailers "$issue" "$branch" "$base_ref" "$trailer_report"
+    exit 1
   fi
   if git -C "$worktree" fetch -q origin "$base" 2>/dev/null; then
     merge_ref=FETCH_HEAD
