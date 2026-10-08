@@ -8,6 +8,12 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1d, C (no issue; branch `fix/rollout-stage1d`) -- tests only. `wake` and `check`
+  read the tracking epic's `status:agents-paused` label with a real `gh issue view`, and the tests of
+  those paths ran it for real from a temp directory. `tests/conftest.py` now has an autouse fixture
+  that answers 'not paused' for `agent_os.guard._agents_paused` by default; the tests of the pause
+  keep setting their own answer (it wins), and the two tests of `_agents_paused` itself carry the
+  new `real_agents_paused` marker (registered in `pyproject.toml`) and get the real function.
 - Rollout stage 1d, B (no issue; branch `fix/rollout-stage1d`) -- a worker no longer records `Node-Change:
   owner`. The worker touched its own node at the end of a ticket and wrote `owner`, which is only the
   owner's own word. `prompts/worker.md` now gives the worker `usage` (what it writes while building

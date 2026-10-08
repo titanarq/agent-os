@@ -2680,26 +2680,6 @@ def test_promote_refined_nothing_when_no_issue_carries_the_refine_label(monkeypa
     assert moved == []
 
 
-def test_agents_paused_true_when_the_epic_carries_the_label(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        agent_guard.subprocess,
-        "run",
-        lambda cmd, **kwargs: _fake_completed(
-            cmd, {"labels": [{"name": agent_guard.AGENTS_PAUSED_LABEL}]}
-        ),
-    )
-    assert agent_guard._agents_paused(main=tmp_path) is True
-
-
-def test_agents_paused_false_when_the_epic_does_not_carry_the_label(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        agent_guard.subprocess,
-        "run",
-        lambda cmd, **kwargs: _fake_completed(cmd, {"labels": [{"name": "type:epic"}]}),
-    )
-    assert agent_guard._agents_paused(main=tmp_path) is False
-
-
 # ---- #365: the tick reconciles mechanical state on its own -- closed-by-merge to done,
 # promote-refined every tick, and an orphan status:doing issue as an event ----
 

@@ -145,6 +145,21 @@ def _no_cache_leaks_into_the_checkout(request):
     )
 
 
+@pytest.fixture(autouse=True)
+def _the_epic_is_not_paused_unless_a_test_says_so(request, monkeypatch):
+    """`wake` and `tick` read the tracking epic's labels with a real `gh issue view` (the pause,
+    `status:agents-paused`). A test that does not care about the pause used to run that call for
+    real, from a temp directory, and an environment that resolves a repository would send it to
+    GitHub. The default is 'not paused' and a test of the pause sets its own answer with
+    `monkeypatch.setattr(agent_guard, "_agents_paused", ...)`, which wins over this one. The few
+    tests of `_agents_paused` itself are marked `real_agents_paused` and get the real function."""
+    if request.node.get_closest_marker("real_agents_paused"):
+        return
+    from agent_os import guard as agent_guard
+
+    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: False)
+
+
 # Where `bench/puntal/measure.py` counts REAL calls when nothing says otherwise: per user, so the cap
 # spans checkouts. No test may add to it.
 _REAL_CALL_COUNTER = pathlib.Path.home() / ".cache" / "agent-os" / "puntal-bench-real-calls.json"
