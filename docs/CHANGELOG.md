@@ -8,6 +8,14 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, B (no issue; branch `fix/rollout-stage1e`) -- a ticket depends only on nodes
+  that have a ticket. `compile` left in `depends-on` every node the ticket depended on, including
+  those that never get a ticket (`improvised`, `implemented`, `hardened`, escalated), and dispatch
+  waits only for an open ticket: a ticket could start before the foundations under such a node. A
+  dependency without a ticket is now replaced, in its place, by that node's own dependencies (its
+  requirements' included), through as many such nodes as there are, each ticket named once. The
+  dependency helpers moved out of `compile.py` into `agent_os/product/dispatch/ticket_dependencies.py`.
+  `docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`; `docs/AGENT_OS.md` §4.6.
 - Rollout stage 1e, A (no issue; branch `fix/rollout-stage1e`) -- a compiled ticket builds and no
   longer asks for tests. `compile` wrote "verified by ... the project's tests" and "Tests and
   documentation as the project's AGENTS.md asks" into every ticket, which `dec-tests-harden-they-do-not-build`

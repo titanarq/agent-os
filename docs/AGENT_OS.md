@@ -810,8 +810,12 @@ free ones). A ticket's dependencies are its node's `depends_on` **plus those of 
 (a use case is part of its requirement, so it cannot start before the requirement can), and a
 dependency on a container stands for the work under it; a use case under a `foundation`
 requirement is ordered with the foundations. Those effective dependencies are what the ticket's
-`depends-on` marker and Dependencies section carry, and dependencies that only loop once inherited
-make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
+`depends-on` marker and Dependencies section carry, **as tickets**: dispatch only waits for an open
+ticket, so a dependency on a node that never gets one (already `improvised`, `implemented` or
+`hardened`, or escalated) is replaced, in its place, by what that node waits for, as many levels down
+as there are such nodes (`agent_os.product.dispatch.ticket_dependencies`); left standing it would
+let the ticket start before the foundations under that node. Dependencies that only loop once
+inherited make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
 returned, and `compile` refuses a tree the doctor finds anything in. The code is
 `agent_os.product.tree.compile` (what is a ticket) over `agent_os.product.dispatch` (the body, the

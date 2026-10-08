@@ -12,7 +12,9 @@ asked about every body before it is returned, so a ticket the dispatcher would r
 rendered. Three more marker lines say what the ticket is (`agent_os.product.dispatch.markers`): its
 node address, the nodes it depends on and the code it touches. Phase 2 finds the node a ticket came
 from, and a v2 host's planner decides from them what may start. Tickets come ordered by their
-dependencies, a dependency before whatever depends on it.
+dependencies, a dependency before whatever depends on it, and a ticket depends only on nodes that
+have a ticket: a dependency that never gets one is replaced by what it waits for
+(`agent_os.product.dispatch.ticket_dependencies`).
 
 Which nodes become tickets (the rule is one place, `_classify`):
 
@@ -48,6 +50,11 @@ from agent_os.product.dispatch.compile_output import (
 from agent_os.product.dispatch.markers import parse_node_marker
 from agent_os.product.dispatch.results import CompileResult, Escalation, Ticket
 from agent_os.product.dispatch.ticket_body import render_ticket_body
+from agent_os.product.dispatch.ticket_dependencies import (
+    effective_dependencies,
+    is_foundation_work,
+    ticket_dependencies,
+)
 from agent_os.product.dispatch.touched_code import touched_paths_of
 from agent_os.product.tree.checks import check_tree
 from agent_os.product.tree.hardening import hardening_blockers
@@ -129,50 +136,9 @@ def _labels(config: AgentsConfig, extra_labels: Sequence[str]) -> tuple[str, ...
     return tuple(dict.fromkeys([available[TASK_TYPE], *config.tree.ticket_labels, *extra_labels]))
 
 
-def _ancestor_ids(tree: Tree, node_id: str) -> list[str]:
-    """The parent chain of a node, parent first. The doctor has refused a parent cycle by now."""
-    chain: list[str] = []
-    parent = tree.nodes[node_id].parent
-    while parent is not None and parent in tree.nodes and parent not in chain:
-        chain.append(parent)
-        parent = tree.nodes[parent].parent
-    return chain
-
-
-def _leaves_under(tree: Tree, node_id: str) -> list[str]:
-    """`node_id` itself when it has no children, else the childless nodes below it."""
-    children = [node.id for node in tree.nodes.values() if node.parent == node_id]
-    if not children:
-        return [node_id]
-    return [leaf for child in sorted(children) for leaf in _leaves_under(tree, child)]
-
-
-def _effective_dependencies(tree: Tree, node_id: str) -> tuple[str, ...]:
-    """What a node waits for: its own `depends_on` and those of every ancestor, because a use case
-    is part of its requirement and cannot start before the requirement can. A dependency on a
-    container is a dependency on the work under it, which is where the tickets are. Own
-    dependencies come first, then the ancestors' from the nearest, each once; the node itself and
-    its own ancestors are never among them."""
-    chain = _ancestor_ids(tree, node_id)
-    declared = [*tree.nodes[node_id].depends_on]
-    for ancestor_id in chain:
-        declared += tree.nodes[ancestor_id].depends_on
-    effective: list[str] = []
-    for target in declared:
-        for leaf in _leaves_under(tree, target):
-            if leaf != node_id and leaf not in chain and leaf not in effective:
-                effective.append(leaf)
-    return tuple(effective)
-
-
-def _is_foundation(tree: Tree, node_id: str) -> bool:
-    """A foundation, or work under a foundation requirement: it goes out with the foundations."""
-    return any(tree.nodes[member].foundation for member in (node_id, *_ancestor_ids(tree, node_id)))
-
-
 def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
     """`node_ids` with every node after the nodes it depends on, directly, through others or
-    through its ancestors (`_effective_dependencies`); foundations first and then by id among the
+    through its ancestors (`effective_dependencies`); foundations first and then by id among the
     nodes that are free to go. Dependencies that loop only once inherited are refused."""
     wanted = set(node_ids)
     waiting_for: dict[str, set[str]] = {}
@@ -182,7 +148,7 @@ def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
         reached: set[str] = set()
         pending = [node_id]
         while pending:
-            for dependency in _effective_dependencies(tree, pending.pop()):
+            for dependency in effective_dependencies(tree, pending.pop()):
                 if dependency not in reached:
                     reached.add(dependency)
                     pending.append(dependency)
@@ -194,7 +160,7 @@ def _in_dependency_order(tree: Tree, node_ids: Sequence[str]) -> list[str]:
     ordered: list[str] = []
     while waiting_for:
         free = [node_id for node_id, blockers in waiting_for.items() if not blockers]
-        chosen = min(free, key=lambda node_id: (not _is_foundation(tree, node_id), node_id))
+        chosen = min(free, key=lambda node_id: (not is_foundation_work(tree, node_id), node_id))
         ordered.append(chosen)
         del waiting_for[chosen]
         for blockers in waiting_for.values():
@@ -256,11 +222,12 @@ def compile_tree(
             escalations += [Escalation(node.id, path, code, message) for code, message in verdict]
         else:
             dispatchable.append(node.id)
+    nodes_with_a_ticket = set(dispatchable)
     tickets: list[Ticket] = []
     for node_id in _in_dependency_order(tree, dispatchable):
         node = tree.nodes[node_id]
         path = f"{tree_root}/{tree.paths[node_id].relative_to(tree.root).as_posix()}"
-        depends_on = _effective_dependencies(tree, node_id)
+        depends_on = ticket_dependencies(tree, node_id, nodes_with_a_ticket)
         body, touched_paths = _render_ticket(
             tree,
             node,
