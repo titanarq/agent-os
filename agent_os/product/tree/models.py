@@ -195,8 +195,12 @@ class Node(Strict):
     # -> hardened (tests written from the accepted interactions)
     # (`docs/tree/dec-tests-harden-they-do-not-build.md`).
     state: Literal["pending", "improvised", "implemented", "hardened"] = "pending"
-    # A foundation node (persistence, identity, UI skeleton) must be hardened before the shell goes
-    # live and is built as a normal issue, never improvised.
+    # A foundation node (persistence, identity, UI skeleton) is built as a normal ticket and never
+    # improvised (`foundation-improvised`): it is implemented and accepted -- the essential top-down
+    # acceptance, then the owner's in the first test session -- before the shell goes live, and its
+    # tests come later, when it hardens: foundations follow the same rule as every node
+    # (`docs/tree/dec-tests-harden-they-do-not-build.md`). The flag is per node: the doctor reads
+    # the node's own, and `compile` only orders the work under a foundation requirement with them.
     foundation: bool = False
     # Open doubts and what was found out about them; the one place difficulty is measured.
     experiments: list[Experiment] = Field(default_factory=list)

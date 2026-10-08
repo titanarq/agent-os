@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, C (no issue; branch `fix/rollout-stage1e`) -- the foundation rule is said the
+  way the decision says it. The comment of `Node.foundation`, `docs/AGENT_OS.md` §4.6 (the field and
+  the `foundation-improvised` row) and the check's own text said a foundation is HARDENED before the
+  shell goes live; `dec-tests-harden-they-do-not-build` ("foundations follow the same rule") and
+  `fr-a-usable-product-exists-early` say implemented and accepted -- the essential top-down acceptance,
+  then the owner's in the first test session -- with the tests later. All now say that. The check
+  itself is unchanged and is documented as what it is: it reads the node's own `foundation` flag and
+  does not inherit it, so a use case under a foundation requirement that is not itself flagged may be
+  improvised (`compile` only orders it with the foundations). Also the plan's Phase 1 node model lists
+  the state `implemented`.
 - Rollout stage 1e, B (no issue; branch `fix/rollout-stage1e`) -- a ticket depends only on nodes
   that have a ticket. `compile` left in `depends-on` every node the ticket depended on, including
   those that never get a ticket (`improvised`, `implemented`, `hardened`, escalated), and dispatch

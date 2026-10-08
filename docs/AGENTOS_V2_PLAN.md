@@ -88,7 +88,7 @@ A new module of the package, fully testable without network or real backend.
   / `use-case`), description, sources, solution mechanism (`pending` allowed), implementation
   pointer, **executable verification — mandatory for dispatch: a node without one escalates
   instead of dispatching** (replaced on 2026-10-06 by `docs/tree/dec-tests-harden-they-do-not-build.md`:
-  tests harden, they are not a requirement to build), state (`pending → improvised → hardened`), `foundation` flag, spike
+  tests harden, they are not a requirement to build), state (`pending → improvised → implemented → hardened`), `foundation` flag, spike
   results, pointers to the decisions in force on it.
 - **Decision**: premises, rejected alternatives, review trigger, state
   (`in-force → under-review → superseded-by`), accumulated friction.
