@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1e, F (no issue; branch `fix/rollout-stage1e`) -- a node can declare the code it
+  touches. Dispatch compared the paths it guessed from the prose of `implementation` and `mechanism`,
+  and the guess takes any word with a slash or an extension for a file (`http.client`, `p.ej`,
+  `docs/VECTOR.md` in passing), so a ticket could be held back, or let collide, by something that is
+  not the node's code. The tree format gains an optional `touches:` list. When present it decides:
+  the ticket's `touches` marker is exactly that and the prose is not read; `touches: []` says "no known
+  code". When absent the derivation is unchanged. An entry is one word (no whitespace, comma or `-->`,
+  which the marker could not carry) naming something under the root, not the root; a bad one is a
+  `schema` defect. `docs/AGENT_OS.md` §4.6 (the field table and the Tickets paragraph).
 - Rollout stage 1e, E (no issue; branch `fix/rollout-stage1e`) -- the puntal's interface says who
   acts. The executor, the pre-helper's reads and the slow path's `./state` did not know who clicked,
   and the only way to tell them was to export an environment variable the mechanism never defined

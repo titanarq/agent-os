@@ -189,3 +189,8 @@ def test_the_foundation_flag_is_per_node_and_the_docs_say_so(tmp_path):
     write_node(tmp_path, "uc-store-note", "use-case", parent="fr-store", state="improvised")
     assert check_tree(load_tree(tmp_path)) == []
     assert "per node" in table_row(section_of_the_tree_doc(), "foundation")
+
+
+def test_the_field_table_has_a_row_for_touches_and_says_a_present_one_decides():
+    row = table_row(section_of_the_tree_doc(), "touches")
+    assert "decides" in row and "`touches: []`" in row and "derived" in row

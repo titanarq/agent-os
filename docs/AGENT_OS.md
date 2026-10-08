@@ -657,6 +657,7 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
+| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a leaf is dispatched with a command, a judged criterion or none (the ticket's acceptance is then judged by an agent); a `command` is **mandatory for a `hardened` node** | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |
@@ -801,9 +802,10 @@ documentation is as the project's `AGENTS.md` asks. Its tests are written when t
 | `<!-- depends-on: <id>, ... -->` | the node's `depends_on`, present only when it has any |
 | `<!-- touches: <path>, ... -->` | the code the node is known to touch, present only when known |
 
-The touched code is the paths named in the node's `implementation` and, once written, its
-`mechanism` (a path has a `/` or a file extension; a directory covers what is under it). A node that
-names no path touches nothing known, and a component's paths join once the tree has components
+The touched code is the node's `touches` when it declares one (it decides, and no prose is read);
+otherwise the paths named in its `implementation` and, once written, its `mechanism` (a path has a
+`/` or a file extension; a directory covers what is under it). A node that names no path touches
+nothing known, and a component's paths join once the tree has components
 (`docs/tree/dec-a-component-has-a-core-and-extensions.md`). Tickets come **ordered by their
 dependencies**, a dependency before whatever depends on it (foundations and then id among the
 free ones). A ticket's dependencies are its node's `depends_on` **plus those of every ancestor**
