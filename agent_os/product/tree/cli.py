@@ -190,7 +190,7 @@ def _trailers(args: argparse.Namespace, config_path) -> int:
         print(json.dumps({"ok": not defects, "defects": listed}, indent=2, ensure_ascii=False))
         return 1 if defects else 0
     for defect in defects:
-        print(f"{defect.commit[:10]} {defect.subject}: {defect.code}: {defect.message}")
+        print(defect.describe())
     return 1 if defects else 0
 
 

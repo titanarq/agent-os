@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1d, A (no issue; branch `fix/rollout-stage1d`) -- a worker's branch with a malformed
+  `Node-Change` trailer no longer becomes a pull request announced as ready. A worker had written
+  `Node-Change: owner`, a blank line and `Co-Authored-By:`: git reads only the last paragraph as
+  trailers, so the host's CI and `agent-os-tree trailers` found it absent. `open-pr` now runs the
+  same check over the branch (`agent_os.product.tracker.branch_trailers`, after the pre-merge freeze,
+  before the merge and the push); on a defect it opens no pull request, pushes nothing, rewrites no
+  commit, ends `BLOCKED reason=malformed_node_change_trailer`, comments the output on the issue and
+  moves it to `status:blocked-on-human`. The command now reports a `Node-Change:` line outside the
+  last paragraph as `misplaced-node-change` instead of `missing-node-change`. The diary refusal moved
+  with it into `bin/worker_publication_refusals.sh`, so `worker_task.sh` shrank.
 - Rollout stage 1c, C (branch `fix/rollout-stage1c`) -- `worker_task.sh <backend> status` no longer
   says "no events yet" right after a stage ended: `stage-exit` archives the stage's events under
   `.cache/spend/<issue>/` and empties the live log, and `status` (token/cost report and last

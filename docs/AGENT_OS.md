@@ -72,6 +72,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | **fixed** (#374): `start` refuses past `planner.max_parallel_issues` alive workers, or when an alive worker's issue shares a `module:` label with the one starting | Driver (`worker_task.sh start`), not the planner | `start` invocation | counts alive workers across every slot of every backend in `project.backends` that has a worktree (`agent_lib.py worker-slots`; a backend's own other slots count too, #90); compares `module:` labels via `gh issue view --json labels`; refuses, writing nothing, at or above the cap or on overlap | `agent_os/bin/worker_task.sh` `start`; `planner.max_parallel_issues` in `config/agents.yaml`, `PlannerConfig` in `agent_os.lib`; agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md |
 | `status:doing`, stage N/M committed → stage N+1 starts in a fresh process | Driver, from its exit hook | a stage process exits cleanly with a new `stage N/M:` commit landed and the guard's checks pass (agents-paused, quota, and the issue's cumulative cost AND cumulative tokens both under their class caps — either one passed ends the chain, #387) | fresh backend process (new session, never `--resume`), archives the finished stage's `.jsonl` under `.cache/spend/<issue>/` | `agent_os/bin/worker_task.sh` (chaining, `issue_cost_usd`/`issue_total_tokens`/`ceiling_passed`), `agent_os.guard` `check`, `agent_os.lib` `stages_completed`/`cumulative_cost_usd`/`cumulative_total_tokens`; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:doing` → `status:ai-completed` | Driver (`worker_task.sh open-pr`), called by the worker's own subshell | backend CLI exits on its own | branch push, `gh pr create` (`Closes #N`), `issues.py move N ai-completed` | `agent_os/bin/worker_task.sh:464-543` |
+| `status:doing` → `status:blocked-on-human` (no pull request): the branch's `Node-Change` trailers are not what the host's CI requires | Driver (`worker_task.sh open-pr`), before the merge and the push | a commit of the branch that touches the tree root has no trailer git reads (`missing-node-change`, `misplaced-node-change`: the line sits in a paragraph that is not the last one, as when a `Co-Authored-By:` follows a blank line), has two, or a value outside the three | `.state=BLOCKED reason=malformed_node_change_trailer branch=...`, the command's own output as a comment on the issue, `issues.py move N blocked-on-human`; nothing pushed, no commit rewritten. A human rewords the commits and runs `open-pr` again, which rewrites `BLOCKED` to `DONE` | `bin/worker_publication_refusals.sh`, `agent_os.product.tracker.branch_trailers` |
 | `status:doing`, a stage's process exits without its `stage N/M:` commit → cut, not a completed stage | Driver's exit hook, or the guard's `tick` | clean exit with no new stage commit since the last one, or the mechanical cut reasons in the row below | `worker_cut` event; `WIP: cut by guard` commit if there is uncommitted work to freeze | same as the row below; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:doing` → frozen (`CUT_BY_GUARD`), label unchanged | Guard (`tick`) | budget exceeded, stall (turns without commit / 3 identical calls), quota exhausted, or silence past the declared cutoff | `worker_task.sh stop`; `WIP: cut by guard (<reason>)` commit; `.state=CUT_BY_GUARD reason=...` | `agent_os.guard:585-602` (`cut_run`), `652-744` (`_tick_backend`) |
 | `CUT_BY_GUARD` → `status:doing` (relaunched from the last completed stage) | Planner, via `worker_task.sh resume` | `worker_cut` event | fresh process (never `--resume` of the cut session) starting at the first stage with no `stage N/M:` commit yet, `.state=RESUMED after=guard_cut` | `agent_os/bin/worker_task.sh` `resume` (cap check inline, now counting cut commits across stages); prompt says what a refusal means, `agent_os/bin/planner_task.sh`; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
@@ -840,8 +841,23 @@ changed. The command reads git only: it lists the commits of `REF..HEAD` that to
 prints one line per commit with no trailer (`missing-node-change`), more than one
 (`multiple-node-change`) or a value outside the three (`unknown-node-change`), exit 1; a range git
 cannot resolve, or a root outside a git repository, is an error (exit 1, one line on stderr), never
-a pass. The host CI template (`templates/ci-host.yml`) runs it on every pull request against the
-base branch; the worker's and the refiner's prompts say when each value applies.
+a pass. A commit whose `Node-Change:` line is present but not in the last paragraph (a blank line
+before a `Co-Authored-By:` line) is reported as `misplaced-node-change`, not as missing: git reads
+only the last paragraph as trailers, so the line is there and still invisible. The host CI template
+(`templates/ci-host.yml`) runs it on every pull request against the base branch; the worker's and the
+refiner's prompts say when each value applies.
+
+The worker's own branch is judged by the same question before its pull request exists:
+`worker_task.sh open-pr` runs `agent_os.product.tracker.branch_trailers` (the check above over
+`tree.root` of the worktree and the ref the branch is measured against, after the pre-merge freeze)
+and, when it reports a commit, opens no pull request and pushes nothing. The run ends `BLOCKED
+reason=malformed_node_change_trailer`, the issue gets the command's output as a comment and
+`status:blocked-on-human`, and the commits stay as the worker wrote them: the driver warns and does
+not repair, because rewording a commit already made is a rewrite and `open-pr` rewrites nothing, and
+because it is not handed back to the worker either (a stage is a commit the issue's checklist names,
+`launch_stage` refuses an issue with every stage committed, and a worker may not rewrite an earlier
+commit). A human rewords the commits and runs `open-pr` again. A worktree with no directory at
+`tree.root` has nothing to judge.
 
 Agentos's own tree is `docs/tree/`: its goals and functional requirements (the what, with every
 `mechanism: pending` until the how is decided), the plan's founding decisions as the ledger's first

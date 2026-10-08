@@ -15,6 +15,7 @@ network and no backend.
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -24,6 +25,15 @@ NODE_CHANGE_VALUES = ("usage", "rework", "owner")
 MISSING_TRAILER = "missing-node-change"
 UNKNOWN_VALUE = "unknown-node-change"
 MULTIPLE_TRAILERS = "multiple-node-change"
+MISPLACED_TRAILER = "misplaced-node-change"
+
+# A `Node-Change:` line anywhere in the message body, trailer or not.
+_NODE_CHANGE_LINE = re.compile(rf"^{TRAILER_KEY}:[ \t]*\S", re.MULTILINE)
+_MISPLACED_MESSAGE = (
+    f"has a `{TRAILER_KEY}:` line that git does not read as a trailer: only the last paragraph of "
+    "the message counts, and it must hold nothing but trailers "
+    "(`Co-Authored-By:` goes in the same block, with no blank line between them)"
+)
 
 _FIELD_SEPARATOR = "\x1f"
 _RECORD_SEPARATOR = "\x1e"
@@ -41,6 +51,9 @@ class TrailerDefect:
     subject: str
     code: str
     message: str
+
+    def describe(self) -> str:
+        return f"{self.commit[:10]} {self.subject}: {self.code}: {self.message}"
 
 
 def _run_git(directory: pathlib.Path, *arguments: str) -> str:
@@ -66,18 +79,24 @@ def _nearest_existing_directory(path: pathlib.Path) -> pathlib.Path:
     return candidate
 
 
-def _commits_touching(
-    tree_root: pathlib.Path, base: str, head: str
-) -> list[tuple[str, str, list[str]]]:
-    """(sha, subject, every `Node-Change` value) of each non-merge commit of `base..head` that
-    changes a path under `tree_root`; git itself narrows the log to that pathspec."""
+@dataclass(frozen=True)
+class _TreeCommit:
+    sha: str
+    subject: str
+    values: list[str]
+    body: str
+
+
+def _commits_touching(tree_root: pathlib.Path, base: str, head: str) -> list[_TreeCommit]:
+    """Each non-merge commit of `base..head` that changes a path under `tree_root`, with every
+    `Node-Change` value git reads as a trailer; git itself narrows the log to that pathspec."""
     resolved = tree_root.resolve()
     working_directory = _nearest_existing_directory(resolved)
     toplevel = pathlib.Path(_run_git(working_directory, "rev-parse", "--show-toplevel").strip())
     pathspec = resolved.relative_to(toplevel.resolve()).as_posix() or "."
     log_format = (
         f"{_RECORD_SEPARATOR}%H{_FIELD_SEPARATOR}%s{_FIELD_SEPARATOR}"
-        f"%(trailers:key={TRAILER_KEY},valueonly=true,unfold=true,separator=%x1d)"
+        f"%(trailers:key={TRAILER_KEY},valueonly=true,unfold=true,separator=%x1d){_FIELD_SEPARATOR}%b"
     )
     output = _run_git(
         toplevel,
@@ -90,13 +109,13 @@ def _commits_touching(
     )
     commits = []
     for record in output.split(_RECORD_SEPARATOR)[1:]:
-        sha, subject, joined_values = record.split(_FIELD_SEPARATOR, 2)
+        sha, subject, joined_values, body = record.split(_FIELD_SEPARATOR, 3)
         values = [
             value.strip()
             for value in joined_values.strip().split(_VALUE_SEPARATOR)
             if value.strip()
         ]
-        commits.append((sha, subject, values))
+        commits.append(_TreeCommit(sha, subject, values, body))
     return commits
 
 
@@ -106,8 +125,11 @@ def check_node_change_trailers(
     """One defect per commit of `base..head` touching `tree_root` whose trailer is absent, repeated
     or not one of `NODE_CHANGE_VALUES`."""
     defects = []
-    for sha, subject, values in _commits_touching(pathlib.Path(tree_root), base, head):
-        if not values:
+    for commit in _commits_touching(pathlib.Path(tree_root), base, head):
+        sha, subject, values = commit.sha, commit.subject, commit.values
+        if not values and _NODE_CHANGE_LINE.search(commit.body):
+            code, message = MISPLACED_TRAILER, _MISPLACED_MESSAGE
+        elif not values:
             code, message = MISSING_TRAILER, f"touches the tree without a `{TRAILER_KEY}:` trailer"
         elif len(values) > 1:
             code, message = (

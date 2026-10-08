@@ -14,6 +14,7 @@ from conftest import EXAMPLE_CONFIG
 
 from agent_os.product.tree.cli import main
 from agent_os.product.tree.trailers import (
+    MISPLACED_TRAILER,
     MISSING_TRAILER,
     MULTIPLE_TRAILERS,
     UNKNOWN_VALUE,
@@ -94,6 +95,27 @@ def test_a_commit_mixing_tree_and_code_files_still_needs_the_trailer(repository)
     git(repository, "add", "src/code.py")
     git(repository, "commit", "-q", "-m", "tree and code")
     assert defect_codes(repository) == [MISSING_TRAILER]
+
+
+def test_a_trailer_cut_off_from_the_last_paragraph_is_named_as_misplaced_not_as_missing(repository):
+    """git reads only the LAST paragraph as trailers, so a `Node-Change:` line followed by a blank
+    line and a `Co-Authored-By:` line is invisible to it -- and 'missing' would send whoever reads
+    the report looking for a line that is right there."""
+    commit_file(
+        repository,
+        "product/goal-a.md",
+        "tree: edit\n\nNode-Change: usage\n\nCo-Authored-By: Someone <noreply@example.invalid>",
+    )
+    assert defect_codes(repository) == [MISPLACED_TRAILER]
+
+
+def test_a_trailer_in_the_same_block_as_the_co_author_line_passes(repository):
+    commit_file(
+        repository,
+        "product/goal-a.md",
+        "tree: edit\n\nNode-Change: usage\nCo-Authored-By: Someone <noreply@example.invalid>",
+    )
+    assert defect_codes(repository) == []
 
 
 def test_only_the_range_is_checked(repository):
