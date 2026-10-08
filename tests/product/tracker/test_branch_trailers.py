@@ -159,23 +159,6 @@ def test_open_pr_goes_through_once_the_commit_is_repaired_and_clears_the_blocked
     ]
 
 
-def test_open_pr_judges_the_freeze_it_makes_before_merging_too(worker_at_its_end):  # noqa: F811
-    """A worker that left a node edit uncommitted gets it frozen in a `WIP: cut by guard` commit so
-    the base can be merged, and that commit touches the tree without a trailer: the pull request it
-    would travel in is red, so the branch is refused with the commit named."""
-    environment, worktree, _remote, _cache, calls = worker_at_its_end
-    commit_to_the_tree(
-        worktree, "stage 1/1: write the node back", f"Node-Change: usage\n{CO_AUTHOR_LINE}"
-    )
-    (worktree / "product" / "fr-write-it-back.md").write_text("an edit nobody committed\n")
-
-    result = _open_pr(environment)
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "WIP: cut by guard (before_merge)" in result.stdout, result.stdout
-    assert "pr\tcreate" not in calls.read_text()
-
-
 def test_a_worktree_with_no_tree_directory_has_nothing_to_judge(tmp_path):
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     assert branch_trailer_defects(tmp_path, "product", "HEAD") == []

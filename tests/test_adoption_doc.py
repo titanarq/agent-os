@@ -67,3 +67,13 @@ def test_step_12_names_every_label_the_doctor_requires():
     step = _adoption_step(12)
     missing = [label for label in required if f"`{label}`" not in step]
     assert not missing, f"ADOPTION.md step 12 never names {missing}, which agent-os-doctor requires"
+
+
+def test_step_16_says_the_drivers_link_the_mechanisms_venv_into_every_worktree():
+    # `agent_os_link_mechanism_venv` makes `agent_os/.venv/bin/pytest` resolve in a worktree; a host
+    # that was not told so links it by hand, or reads the missing link as a broken install.
+    function = "agent_os_link_mechanism_venv"
+    assert f"{function}() {{" in (AGENT_OS_DIR / "bin" / "_python.sh").read_text()
+    step = _adoption_step(16)
+    assert f"`{function}`" in step
+    assert "agent_os/.venv" in step and "worktree" in step

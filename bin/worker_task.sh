@@ -340,6 +340,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
 # What `open-pr` refuses to publish: the diary, and a malformed `Node-Change` trailer.
 # shellcheck source=agent_os/bin/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
+# shellcheck source=agent_os/bin/worker_init_worktree.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker_init_worktree.sh"
 
 # ----------------------------------------------------------------------------------------------
 # STAGES (#375). What the issue plans and what the branch has actually done, resolved together
@@ -610,13 +612,11 @@ freeze_uncommitted_work() {
     swept_note+=$'\n'"$(printf '  %s\n' "${swept[@]}")"
   fi
   git -C "$worktree" diff --cached --quiet && return 1
-  if [ -n "$swept_note" ]; then
-    # Named in the body, not only taken: a reader of the branch has to be able to tell work the
-    # agent committed from work a freeze swept in.
-    git -C "$worktree" commit -q -m "$WIP_SUBJECT ($reason)" -m "$swept_note"
-  else
-    git -C "$worktree" commit -q -m "$WIP_SUBJECT ($reason)"
-  fi
+  # The note is the commit's body: a reader of the branch has to be able to tell work the agent
+  # committed from work a freeze swept in. The commit carries the `Node-Change` trailer the host's
+  # CI asks of every commit that touches the product tree (`tracker/freeze_commit.py`).
+  "$agent_python" -m agent_os.product.tracker.freeze_commit --worktree "$worktree" \
+    --subject "$WIP_SUBJECT ($reason)" --body "$swept_note"
 }
 
 # SCRATCH IS INVISIBLE TO GIT IN EVERY WORKER WORKTREE (#86). `scratchpad/` is where the RULES send
@@ -1201,26 +1201,7 @@ init)
     echo "$worktree already initialized (on $(git -C "$worktree" branch --show-current 2>/dev/null || echo '?'))"
     exit 0
   fi
-  # Same base resolution as `branch`'s own no-`<from>` case: the remote's tip, fetched from the
-  # MAIN checkout (there is no worktree yet to fetch from). A fresh branch, never `main` itself --
-  # a worktree cannot check out a branch another worktree (this one) already has checked out.
-  git -C "$main" fetch -q origin main \
-    || { echo "could not fetch origin/main -- refusing to init a worktree from a base nobody can name"; exit 1; }
-  init_branch="agent-os/init-$slot_key"
-  git -C "$main" worktree add -q -b "$init_branch" "$worktree" origin/main \
-    || { echo "git worktree add failed for $worktree"; exit 1; }
-  echo "created $worktree on $init_branch @ $(git -C "$worktree" rev-parse --short HEAD) (from origin/main)"
-  # `git worktree add` brings tracked files only: the host's `project.worktree_links` and
-  # `project.worktree_setup_command` make it runnable, through the same helper the one-shot roles'
-  # throwaway worktree uses (agent-os#41). A tree whose provisioning failed is removed along with
-  # its branch, so the next `init` starts from nothing instead of calling it initialized.
-  if ! agent_provision_worktree "$main" "$worktree"; then
-    git -C "$main" worktree remove --force "$worktree" >/dev/null 2>&1
-    git -C "$main" branch -q -D "$init_branch" >/dev/null 2>&1
-    echo "removed $worktree and $init_branch -- fix the provisioning and run init again"
-    exit 1
-  fi
-  agent_os_link_mechanism_venv "$worktree" "$main" only-if-ignored
+  agent_os_init_worktree "$main" "$worktree" "agent-os/init-$slot_key" || exit 1
   ;;
 
 branch)

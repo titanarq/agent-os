@@ -117,7 +117,15 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     role calls — workers need Issues (read/write), Contents (push), Pull requests (create); the
     planner needs Issues, Pull requests (read), Projects; the validator additionally needs "Pull
     request reviews" (for a GitHub App that is part of "Pull requests: write", not a separate
-    permission) — install it on the repo, and download its private key. A role with no App of
+    permission). **The planner's and the validator's Apps also need Checks (read) and Commit
+    statuses (read)**: `gh pr checks` (the validator before it approves, the control plane before
+    it merges) and `issues.py move N review` (which refuses while a check is red or unfinished)
+    read a pull request's CI, and an App without them is answered "Resource not accessible by
+    integration" — the validator then cannot approve anything. Changing an App's permissions is
+    not enough: the installation must **accept** the new ones (an organization owner approves the
+    request that GitHub raises under the installation's settings). `agent-os-doctor` (step 21)
+    probes both permissions with each of those Apps' own installation tokens and says which one
+    is missing. Install it on the repo, and download its private key. A role with no App of
     its own signs as `planner_app`, and the **expert** pushes a branch and opens a pull request,
     so whichever App it signs as needs Contents (read/write): a planner App with Contents
     read-only fails the expert with `403 Write access to repository not granted`. Point
@@ -140,7 +148,14 @@ The mechanism reads a project's own knowledge layer at several points (the worke
 
 16. **The mechanism's own interpreter** — `bash agent_os/bootstrap.sh` builds `agent_os/.venv` and
     installs the package into it, editable, with `pytest` and `ruff`. Idempotent; run it again
-    after every `git subtree pull` (step 25).
+    after every `git subtree pull` (step 25). Run it in the main checkout once: the drivers link
+    that `agent_os/.venv` into every worktree they make or start a run in (`agent_os_link_mechanism_venv`
+    in `agent_os/bin/_python.sh`: a worker's worktree at `init`, `start` and `resume`, and the
+    throwaway worktree of a one-shot role), at the same relative path, so `agent_os/.venv/bin/pytest`
+    and the interpreter the rendered agent definitions name resolve there. A link, never a copy, and
+    only where git ignores it (the mechanism's `.gitignore` names `.venv`), so it never shows up as
+    an untracked file that refuses the next `start`. There is nothing to link by hand or to commit;
+    a worktree is linked only to a `.venv` that already exists, so build it before `init`.
 17. **Binaries** — `gh` (authenticated with `repo`+`project` scopes), `git`, `python3.12`, the
     backend CLI(s) a role runs (`claude`, `qwen`, or whichever the host configures), `curl`
     (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
@@ -155,7 +170,10 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     either is missing. A backend that should run more than one worker at once sets
     `project.backends.<name>.slots: N` (agent-os#90, ADR
     `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`): slot 1 is `worktree`,
-    slot N is `<worktree>-N`, and the same `init` creates every missing one. Raise
+    slot N is `<worktree>-N`, and the same `init` creates every missing one. A worktree that was
+    lost (the directory deleted, a clone moved) is recreated by running `init` again: it reuses the
+    `agent-os/init-<backend>` branch when that holds nothing `origin/main` lacks, and otherwise
+    stops and prints the `git` commands to keep or drop the branch. Raise
     `planner.max_parallel_issues` with it -- that stays the cap across every slot of every
     backend -- and give the issues `module:` labels, which keep two slots off the same area.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App
@@ -167,7 +185,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, with
     `ExecStart=` on the interpreter from step 16 (never a `.venv` at the host root; install refuses
     when step 16 has not been run and `AGENT_OS_PYTHON` is unset); copies
-    `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from `agent_os/agents/*.md`),
+    `.claude/agents/{control-plane,task-writer,worker-runner}.md` (rendered from `agent_os/agents/*.md`;
+    they name the mechanism's own `agent_os/bin/*.sh` and `agent_os/.venv/bin/python -m agent_os.<module>`,
+    so a host needs no `scripts/` wrapper for them),
     `.github/ISSUE_TEMPLATE/{task,bug}.md` and `.github/workflows/ci-agent-os.yml`, each only if
     absent — and `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
     on every pull request with no path filter. Keep it unless your own CI already reports a check
@@ -199,7 +219,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `project.merge_method`: `merge`, `squash` or `rebase`, default `merge`).
 21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: `gh auth status`
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
-    each App's secrets, each `project.executables` entry, each worktree, the notify topic file, the
+    each App's secrets, whether the planner's and the validator's Apps may read CI checks (they are
+    probed with their own installation tokens, which mints or reuses the cached one), each
+    `project.executables` entry, each worktree, the notify topic file, the
     guard timer's `is-active`, and a workflow that reports a check on a host-only PR — one line per
     check, exit 1 on any failure. The guard-timer check is expected red until step 22 arms the
     timer. It never calls `agent_guard.py check` or any other trigger a

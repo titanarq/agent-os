@@ -96,6 +96,7 @@ from agent_os.lib import (
     validate_issue_body,
 )
 from agent_os.product.dispatch.brief_slice import brief_slice_section
+from agent_os.product.tracker.app_check_access import read_open_pull_requests_with_checks
 from agent_os.product.tracker.github_quotas import exhausted_quotas
 from agent_os.product.tracker.pull_request_checks import refusal_for_issue
 
@@ -1111,13 +1112,9 @@ def issue_for_move(repo: str, number: int) -> dict:
 def refuse_review_while_checks_are_not_green(repo: str, number: int) -> None:
     """`move N review` is what the validator runs after approving: it must not announce "ready to
     merge" for a pull request whose CI is red or still running."""
-    open_pull_requests = (
-        gh_json(
-            "pr", "list", "--repo", repo, "--state", "open", "--limit", "200",
-            "--json", "number,body,statusCheckRollup",
-        )
-        or []
-    )  # fmt: skip
+    open_pull_requests = read_open_pull_requests_with_checks(
+        repo, gh_json, refused_action=f"move #{number} review refused"
+    )
     refusal = refusal_for_issue(number, open_pull_requests)
     if refusal:
         sys.exit(f"move #{number} review refused: {refusal}")
