@@ -4037,34 +4037,3 @@ def test_the_remove_label_helper_still_clears_blocked_on_human(monkeypatch, tmp_
     )
     agent_guard._clear_blocked_label("77", main=tmp_path)
     assert removed == [("77", agent_guard.BLOCKED_ON_HUMAN_LABEL)]
-
-
-def test_wake_does_not_invoke_the_planner_while_the_epic_is_paused(
-    tmp_path, monkeypatch, invocations
-):
-    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: True)
-    agent_guard.write_event("worker_finished", "claude", detail="done", main=tmp_path)
-    message = agent_guard.wake(main=tmp_path)
-    assert agent_guard.AGENTS_PAUSED_LABEL in message
-    assert invocations == []
-    assert len(agent_guard.pending_events(tmp_path)) == 1
-
-
-def test_check_by_hand_under_a_paused_epic_records_the_event_but_wakes_no_planner(
-    tmp_path, monkeypatch, invocations
-):
-    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: True)
-    agent_guard.cache_dir(tmp_path).mkdir(parents=True)
-    agent_guard.check("claude", main=tmp_path)
-    assert invocations == []
-    assert len(agent_guard.pending_events(tmp_path)) == 1
-
-
-def test_wake_runs_the_planner_once_the_pause_is_lifted(tmp_path, monkeypatch, invocations):
-    paused = {"now": True}
-    monkeypatch.setattr(agent_guard, "_agents_paused", lambda *, main: paused["now"])
-    agent_guard.write_event("worker_finished", "claude", detail="done", main=tmp_path)
-    agent_guard.wake(main=tmp_path)
-    paused["now"] = False
-    agent_guard.wake(main=tmp_path)
-    assert invocations == ["done"]

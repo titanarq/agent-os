@@ -965,10 +965,10 @@ def test_cmd_validate_prints_ok_and_returns_on_a_clean_issue(capsys):
 
 @pytest.fixture(autouse=True)
 def review_pages_in_a_temporary_directory(tmp_path, monkeypatch):
-    """`move N review` pages once per issue and records that in `.cache/paged-review/<N>`. Every
-    test in this file gets its own, so no run of the suite can page for real or inherit a marker
-    written by another test."""
+    """`move N review` pages once per issue and records that in `.cache/paged-review/<N>`; every
+    test gets its own, so none pages for real or inherits a marker. The CI gate has its own tests."""
     monkeypatch.setattr(issues, "REVIEW_PAGES_DIR", tmp_path / "paged-review")
+    monkeypatch.setattr(issues, "refuse_review_while_checks_are_not_green", lambda *_: None)
 
 
 @pytest.fixture(autouse=True)
@@ -995,7 +995,6 @@ def _move(state, held_labels, *, issue_state="OPEN", pages=None, title="A title"
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels") as ensure,
         patch.object(issues, "update_issue") as update,
@@ -1094,7 +1093,6 @@ def test_a_page_that_fails_neither_fails_the_move_nor_burns_the_once_per_issue_m
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,
@@ -1116,7 +1114,6 @@ def test_a_template_move_cannot_render_is_reported_and_leaves_the_move_standing(
     with (
         patch.object(issues, "repo_name", return_value="owner/name"),
         patch.object(issues, "gh_json_dict", return_value=current),
-        patch.object(issues, "gh_json", return_value=[]),
         patch.object(issues, "label_exists", return_value=False),
         patch.object(issues, "ensure_labels"),
         patch.object(issues, "update_issue") as update,

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from agent_os import issues
-from agent_os.review.pull_request_checks import refusal_for_issue
+from agent_os.product.tracker.pull_request_checks import refusal_for_issue
 
 GREEN = {"name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"}
 RED = {"name": "tests", "status": "COMPLETED", "conclusion": "FAILURE"}

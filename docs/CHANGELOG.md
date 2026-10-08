@@ -17,7 +17,7 @@ that closed several small issues at once name them all. This file starts on 2026
   check can no longer be announced as ready. The validator approved a PR whose `tests` check was in
   FAILURE and the planner then said "the human merges". `issues.py move N review` (what the
   validator runs after approving) now reads the checks of the open PR whose body says `Closes #N`
-  (`agent_os/review/pull_request_checks.py`) and refuses, naming the check, while any is failing or
+  (`agent_os/product/tracker/pull_request_checks.py`) and refuses, naming the check, while any is failing or
   still running; the validator prompt now tells it to read `gh pr checks` first and request changes
   citing the failed check. An issue with no open PR is not gated.
 - Rollout stage 1c, A (no issue; branch `fix/rollout-stage1c`) -- `wake` now honours

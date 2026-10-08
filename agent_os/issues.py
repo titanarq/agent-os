@@ -68,7 +68,6 @@ tag from the YAML becomes a label too, created on first use.
 from __future__ import annotations
 
 import argparse
-import datetime
 import functools
 import json
 import os
@@ -97,7 +96,8 @@ from agent_os.lib import (
     validate_issue_body,
 )
 from agent_os.product.dispatch.brief_slice import brief_slice_section
-from agent_os.review.pull_request_checks import refusal_for_issue
+from agent_os.product.tracker.github_quotas import exhausted_quotas
+from agent_os.product.tracker.pull_request_checks import refusal_for_issue
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
 # checkout the call is made from. Everything a project owns hangs off it -- `config/agents.yaml`,
@@ -217,35 +217,6 @@ def _retry_after(message: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def exhausted_quotas() -> list[str] | None:
-    """One line per quota of this `gh` login that is at zero right now -- `graphql: 0 of 5000
-    left, resets at ...` -- or None when the quotas could not be read. `gh api rate_limit` is
-    free: it counts against none of them.
-
-    Every API has its own bucket: `core` (REST), `graphql`, `search`... The top-level `.rate`
-    that `gh api rate_limit` prints first is `core` alone, so it can read `remaining: 5000` while
-    `graphql` is at zero, and every GraphQL-backed `gh` subcommand answers "API rate limit already
-    exceeded" (#70). Naming the empty bucket is what tells that apart from a transient refusal."""
-    result = _gh("api", "rate_limit", "--jq", ".resources")
-    if result.returncode != 0:
-        return None
-    try:
-        resources = json.loads(result.stdout)
-    except ValueError:
-        return None
-    if not isinstance(resources, dict):
-        return None
-    lines = []
-    for name, bucket in sorted(resources.items()):
-        if not isinstance(bucket, dict) or bucket.get("remaining") != 0:
-            continue
-        reset = datetime.datetime.fromtimestamp(int(bucket.get("reset") or 0), datetime.UTC)
-        lines.append(
-            f"{name}: 0 of {bucket.get('limit')} left, resets at {reset:%Y-%m-%dT%H:%M:%SZ}"
-        )
-    return lines
-
-
 def gh_text(*args: str, input_text: str | None = None) -> str:
     """Runs `gh <args>` and returns its stripped stdout, and exits on any failure it cannot wait
     out. A rate limit is retried up to 5 times (`Retry-After` if present; at least a minute for a
@@ -260,7 +231,7 @@ def gh_text(*args: str, input_text: str | None = None) -> str:
         if not _is_rate_limited(result.stderr):
             break
         secondary = _is_secondary_rate_limit(result.stderr)
-        empty = None if secondary else exhausted_quotas()
+        empty = None if secondary else exhausted_quotas(_gh)
         if empty:
             sys.exit(
                 f"gh {' '.join(args)} failed: this gh login's GitHub quota is exhausted, and "

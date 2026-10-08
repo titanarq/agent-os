@@ -112,6 +112,7 @@ from agent_os.lib import (
     worker_slot_worktree_path,
     worker_slots,
 )
+from agent_os.product.dispatch.rate_limit_marker import marker_timestamp
 from agent_os.product.dispatch.rules import rows_the_tree_rules_allow_here
 from agent_os.streams.interface import event_message
 
@@ -1759,17 +1760,6 @@ def missing_worktree_lines(scan: DispatchableScan) -> list[str]:
     ]
 
 
-def _marker_timestamp(path: Path) -> datetime | None:
-    """The instant a rate-limit marker file records, or None when there is none to read. Same
-    shape `latest_event_at` has for events, for a page that writes no event at all."""
-    if not path.is_file():
-        return None
-    try:
-        return datetime.fromisoformat(path.read_text().strip())
-    except ValueError:
-        return None
-
-
 def _page_missing_worktree_if_due(
     scan: DispatchableScan, *, main: Path = HOST_ROOT, now: datetime
 ) -> str | None:
@@ -1794,7 +1784,7 @@ def _page_missing_worktree_if_due(
     due = []
     for backend in sorted(scan.without_worktree):
         marker = cache_dir(main) / "guard" / f"paged-missing-worktree-{backend}"
-        last = _marker_timestamp(marker)
+        last = marker_timestamp(marker)
         if last is None or now - last >= timedelta(minutes=minutes):
             due.append((backend, marker))
     if not due:
@@ -2096,7 +2086,7 @@ def closed_reconcile_since(*, main: Path = HOST_ROOT, now: datetime) -> datetime
     marker, because the search is day-granular and a pass whose `gh` call failed still moves the
     marker -- re-asking for the previous day costs a handful of rows and closes the only window
     where a close could slip past unreconciled."""
-    last = _marker_timestamp(reconcile_marker_path(main))
+    last = marker_timestamp(reconcile_marker_path(main))
     if last is None:
         return now - timedelta(days=load_planner_config().reconcile_closed_lookback_days)
     return last - timedelta(days=1)
@@ -2467,7 +2457,7 @@ def _page_unreviewed_completions_if_due(
     due = []
     for item in found:
         marker = cache_dir(main) / "guard" / f"paged-unreviewed-{item.pull_request}"
-        last = _marker_timestamp(marker)
+        last = marker_timestamp(marker)
         if last is None or now - last >= timedelta(minutes=minutes):
             due.append((item, marker))
     if not due:
