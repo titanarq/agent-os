@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-from agent_os.product.dispatch.results import CompileResult
+from agent_os.product.dispatch.tickets.results import CompileResult
 
 
 def _summary(result: CompileResult) -> dict[str, int]:
