@@ -53,7 +53,7 @@ class SlotLedger:
         """Why one more worker on `row` cannot start now for lack of room; `None` when it can."""
         if self.running_total >= self.max_parallel_issues:
             return (
-                f"{self.running_total} worker(s) already running "
+                f"{self.running_total} worker(s) running or about to start in this pass "
                 f"(>= planner.max_parallel_issues={self.max_parallel_issues})"
             )
         backend = backend_of(row, self.task_classes)
