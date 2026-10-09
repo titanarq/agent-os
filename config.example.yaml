@@ -321,6 +321,10 @@ tree:
   # repository paths. A pull request touching one of them, or a goal node, is never merged
   # automatically (`agent-os-sessions guard-what`, docs/AGENT_OS.md §4.10). Default: none.
   owner_only_paths: []
+  # Where the product writes a test session's file (`<id>.json`) when the owner closes the session,
+  # relative to the host's root unless absolute (docs/AGENT_OS.md §4.11). `agent-os-sessions
+  # test-ingest` reads it. A host sets this to where its product writes; the default is a name.
+  test_sessions_dir: var/test-sessions
 
 # The progress board (`agent-os-tree board sync|order`, docs/AGENT_OS.md §4.6): a GitHub Project
 # generated from the tree, one item per functional requirement, as a view -- the files stay the
