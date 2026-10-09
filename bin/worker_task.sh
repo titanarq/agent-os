@@ -1447,7 +1447,13 @@ stage-exit)
   # `CUT_BY_GUARD reason=no_stage_commit` with `stages: 0/5` -- mechanically true, and the wrong
   # cause.
   backend_status=${WORKER_BACKEND_STATUS:-0}
-  if [ "$backend_status" != 0 ] && [ ! -s "$events" ]; then
+  # Read before anything else decides what this process's end was, and before the archive below
+  # empties the live log: quota is a property of the stream the process that just ended produced
+  # -- and, for a run that died before its first event, of the words it printed instead.
+  quota=$("$agent_python" -m agent_os.lib quota-status "$events" --log "$logfile" --backend "$backend" \
+    2>/dev/null || echo allowed)
+  # A backend the account's quota refused DID start: it is a quota cut below, never this.
+  if [ "$backend_status" != 0 ] && [ ! -s "$events" ] && [ "$quota" != exhausted ]; then
     # ANY non-zero status, not only 127. The EVENT STREAM is what carries the weight here: a
     # backend that got as far as its first turn writes a line to it, so an empty one proves
     # nothing was tried, whatever the status says. 126 (the path is a directory, or the +x bit is
@@ -1507,9 +1513,6 @@ stage-exit)
     exit 1
   fi
 
-  # Read before the archive below empties the live log: quota is a property of the stream the
-  # process that just ended produced.
-  quota=$("$agent_python" -m agent_os.lib quota-status "$events" 2>/dev/null || echo allowed)
   archive_stage_events "$issue" "$stages_done"
   printf '%s/%s\n' "$stages_done" "$stages_total" > "$stagefile"
 
@@ -1519,11 +1522,22 @@ stage-exit)
   # Frozen the same way the guard freezes a run it cuts, so the next process starts from a
   # committed tree (agent_os/docs/adr/2026-09-14-a-cut-run-is-frozen-in-a-commit-and-only-the-planner-
   # relaunches.md).
+  #
+  # A STAGE THE BACKEND REFUSED ON QUOTA IS A QUOTA CUT, not a worker that failed its stage: the
+  # planner waits for the window (or redispatches on the class's fallback) after the one, and may
+  # escalate the model after the other (`previous_ending`). A run relaunched into an exhausted
+  # window dies before its first event, in no time to have committed anything.
   if [ "$stages_done" -le "$stage_before" ]; then
+    cut_reason=no_stage_commit
+    cut_note="no new stage commit"
+    if [ "$quota" = exhausted ]; then
+      cut_reason=quota
+      cut_note="the backend refused the run on quota, no new stage commit"
+    fi
     frozen="tree clean"
-    freeze_uncommitted_work no_stage_commit && frozen="uncommitted work frozen in a WIP commit"
-    write_state "CUT_BY_GUARD reason=no_stage_commit"
-    echo "stage-exit: no new stage commit (still $stages_done/$stages_total) -- cut, $frozen"
+    freeze_uncommitted_work "$cut_reason" && frozen="uncommitted work frozen in a WIP commit"
+    write_state "CUT_BY_GUARD reason=$cut_reason"
+    echo "stage-exit: $cut_note (still $stages_done/$stages_total) -- cut, $frozen"
     post_stage_progress_comment "$issue" "$frozen"
     exit 1
   fi

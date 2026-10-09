@@ -108,7 +108,7 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # the same sum in tokens, as a plain integer the shell can compare arithmetically: what
         # `max_total_tokens` is checked against for the whole issue, and the only one of the two
         # ceilings a Qwen class can cross, because its `result` event reports no cost (#387).
-    python -m agent_os.lib quota-status <events.jsonl>
+    python -m agent_os.lib quota-status <events.jsonl> [--log <run.log>] [--backend <name>]
         # `allowed` or `exhausted` for that run's own stream -- the gate `worker_task.sh` checks
         # before chaining the next stage, the same verdict the guard's tick compares (#375).
 
@@ -156,6 +156,7 @@ from agent_os.streams import (
 )
 from agent_os.streams.claude_jsonl import (  # noqa: F401 -- re-exported: guard and tests import them here
     result_total_tokens,
+    silent_run_quota_refusal,
     turn_context_tokens,
 )
 
@@ -2144,6 +2145,36 @@ def quota_status(
     return (parser or backend_stream_parser()).quota_verdict(events).status
 
 
+def stage_quota_status(
+    events_path: pathlib.Path | str,
+    *,
+    log_path: pathlib.Path | str | None = None,
+    backend: str | None = None,
+) -> Literal["allowed", "exhausted"]:
+    """`quota_status` of one finished stage, plus the case its event stream cannot speak for: a
+    run the backend refused on quota BEFORE one event, which leaves `allowed` behind because there
+    is nothing to read. Its refusal is text -- on stdout, which is the event file, or on stderr,
+    which is the run's log -- and is looked for only when no event parsed and the backend declares
+    a quota detector (`project.backends.<name>.quota`). Without it a worker relaunched into an
+    exhausted window was recorded as `CUT_BY_GUARD reason=no_stage_commit` and, if nothing was
+    written to stdout either, as a failed launch."""
+    events = read_events(events_path)
+    status = quota_status(events, parser=backend_stream_parser(backend))
+    if status == "exhausted" or events:
+        return status
+    if backend is not None and not backend_quota_cuts(backend):
+        return status
+    output = ""
+    for path in (events_path, log_path):
+        if path is None:
+            continue
+        try:
+            output += pathlib.Path(path).read_text(errors="replace") + "\n"
+        except OSError:
+            continue
+    return "exhausted" if silent_run_quota_refusal(output) else "allowed"
+
+
 # -------------------------------------------------------------------------------------------------
 # Which backend a role's launch gets (#425). The verdict is the guard's own persisted one, read off
 # disk, and never an agent's claim about its own quota
@@ -2834,6 +2865,8 @@ def main() -> None:
     cumulative_tokens.add_argument("paths", nargs="+")
     quota = sub.add_parser("quota-status")
     quota.add_argument("events")
+    quota.add_argument("--log", help="the run's own log: where a refusal before any event is read")
+    quota.add_argument("--backend", help="a key of project.backends; its stream and quota apply")
     args = parser.parse_args()
     if args.command == "usage-report":
         body_path = pathlib.Path(args.body_file) if args.body_file else None
@@ -2945,7 +2978,7 @@ def main() -> None:
         # `max_total_tokens` with bash arithmetic, which reads neither.
         print(cumulative_total_tokens([pathlib.Path(p) for p in args.paths]))
     elif args.command == "quota-status":
-        print(quota_status(read_events(args.events)))
+        print(stage_quota_status(args.events, log_path=args.log, backend=args.backend))
 
 
 if __name__ == "__main__":
