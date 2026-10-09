@@ -123,10 +123,10 @@ time (2026-10-09), so after acting on the events you were given you answer it fr
   begins `headroom: waits only for the cap` and carries the line `headroom` printed for it (do not
   repeat it when the issue already carries one). That comment is the measurable fact -- the fourth
   evaluator of the requirement above -- and it is all you do about it: you do not page the human, ask
-  for permission or touch `slots` or `max_parallel_issues` in `config/agents.yaml`. The owner's rule
-  is that the quota of the account is the only limit (in his words, translated: no quota limit -- if
-  the quota runs out everything stops, while there is quota everything goes on). The cap is not a
-  decision anyone takes per product, and what changes it is not yours.
+  for permission or touch `slots` or `max_parallel_issues` in `config/agents.yaml`. The quota of the
+  account is the only limit (in the owner's words, translated: no quota limit -- if the quota runs
+  out everything stops, while there is quota everything goes on). The cap is not a decision anyone
+  takes per product, and what changes it is not yours.
 
 IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
 A host with `tree.dispatch_by_node: true` in `config/agents.yaml` (a v2 host) dispatches only tickets
