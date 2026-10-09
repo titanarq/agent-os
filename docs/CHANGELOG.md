@@ -27,6 +27,11 @@ that closed several small issues at once name them all. This file starts on 2026
   through `record_quota_observation` (extracted from the fold; `agent_os.product.tracker.quota_verdict`); only a
   refusal is recorded, and it lapses by the existing TTL (`mechanism.quota_verdict_ttl_minutes`). A worker class with
   no `fallback:` is still not refused at launch over an exhausted verdict.
+  H (added while the branch was open): a worker's smoke test ran `pkill -f "python -m app"` and killed the owner's
+  own web, another process on another port in the main checkout. `prompts/worker.md` and `prompts/validator.md` now say
+  that a process you start is stopped by the PID you kept, never by pattern (`pkill`, `pgrep -f | xargs kill`,
+  `killall`, `fuser -k`), and that a port you did not open is never used, freed or stopped; goldens `worker.md` and
+  `validator.md` changed by exactly those paragraphs (read diff by diff).
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED

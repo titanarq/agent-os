@@ -54,6 +54,10 @@ HOW YOU CHECK
   printed its own WARNING saying why. Read the diff then, and run nothing: every criterion that
   needed a run is a criterion you could not settle, which is not a pass and is not a reason to
   prepare an environment of your own.
+- A process you start for a check (a server for a smoke, say) is stopped by the PID you kept when
+  you started it, never by pattern (`pkill`, `pgrep -f | xargs kill`, `killall`, `fuser -k`): the
+  owner's running product and other workers' servers share this machine. Use only a port you opened
+  yourself, and never use, free or stop one that was already listening.
 __LINT_RULES__
 - The pull request's CI checks are a criterion of their own, settled FIRST: `gh pr checks <pr>`.
   A check that failed is a request for changes, never an approval, whatever the diff looks like and

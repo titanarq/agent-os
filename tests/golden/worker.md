@@ -81,6 +81,17 @@ a file, so you find out here, while the stage is still yours.
   within it in this same stage -- move code or text into a new file or subfolder -- run the check
   again, and only then commit. Exit 2 means the check could not run: say so in your report.
 
+PROCESSES YOU START ARE YOURS TO STOP -- BY THE PID YOU KEPT, NEVER BY PATTERN
+A smoke test often needs a server, and this machine is shared: the owner's own running product and
+other workers' servers live on it, in other checkouts and on other ports, and a pattern cannot tell
+them from yours (`pkill -f "python -m app"` once killed the owner's web).
+- Start what you need so that you know its PID (`cmd & echo $! > scratchpad/server.pid`) and stop it
+  by the PID you kept, `kill "$(cat scratchpad/server.pid)"`, when the check is done, passed or not.
+- Never stop a process by pattern or by name: no `pkill`, no `pgrep -f | xargs kill`, no `killall`,
+  no `fuser -k` on a port.
+- Use only a port you opened yourself: take a free one, and never use, free or stop a port that was
+  already listening before you started -- if the port you need is taken, use another or say so.
+
 ONE STAGE PER PROCESS
 - The issue is the whole task, but this process has ONE stage of it, named in the instruction
   below. Do that stage and nothing else, however obvious the next one looks from here.
