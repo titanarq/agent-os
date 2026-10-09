@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Feedback interpreter (no issue; branch `fix/feedback-interpreter`) -- the agent behind a test session's comment
+  box, which is a chat: `bin/interpreter_task.sh interpret` (`python -m agent_os.product.interpreter`) reads the
+  thread, the owner's message and the case, and answers one JSON envelope with a short `reply` (or ONE question,
+  `needs_answer`) and the items it adds or corrects (`change` / `decision` / `question_of_what`, tied to a node),
+  one per thing a message holds. One no-tool model turn through the puntal's own turn runner, observer and
+  telemetry; one retry on an invalid answer, then a clean `not_run`/`invalid_output` envelope. New: class
+  `interpreter` (`role: interpreter`), `interpreter:` config section (`reply_language`, `timeout_seconds`,
+  `effort`, `max_thread_messages`), `prompts/interpreter.md` with golden, `docs/FEEDBACK_INTERPRETER.md` (contract,
+  session-file schema 2 `items[]`) and an ADR. `PuntalConfig` moved to `agent_os/product/config.py` (lib.py shrinks).
+
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED

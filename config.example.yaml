@@ -275,6 +275,21 @@ puntal:
   # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
   effort: ""
 
+# The feedback interpreter (Agentos v2): the agent behind a test session's comment box, a chat in
+# which the owner's messages are interpreted into items (`bin/interpreter_task.sh`, docs/FEEDBACK_INTERPRETER.md).
+# One model turn with no tool per message; its model and per-invocation ceilings are `classes.interpreter`.
+# Every key is optional and these are the defaults.
+interpreter:
+  # The language of its `reply`. Empty: the language the owner's latest message is written in. A
+  # name such as `Spanish` fixes it whatever the owner writes.
+  reply_language: ""
+  # Kills the run's process group after this many seconds (a safety for an owner waiting in a chat).
+  timeout_seconds: 60
+  # `claude --effort`. Empty leaves the CLI's own default.
+  effort: ""
+  # The most recent thread messages the brief carries; the new message and the items always go whole.
+  max_thread_messages: 40
+
 # The product tree and the decision ledger (`agent-os-tree`, docs/AGENT_OS.md §4.6). Every key is
 # optional; the values below are the defaults except `ticket_budget_class`, which has none.
 tree:
@@ -448,6 +463,19 @@ classes:
   # as for the planner. Its logs and `runs.tsv` are `.cache/puntal/`.
   puntal:
     role: puntal
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 30000
+    max_cost_usd: 0.25
+    max_total_tokens: 300000
+    commit_warn_turns: 6
+    commit_cut_turns: 12
+
+  # The feedback interpreter's class: one chat message per invocation, so a small context and a low
+  # ceiling, like the puntal's. No `fallback:` (refused at load). Its logs and `runs.tsv` are
+  # `.cache/interpreter/`.
+  interpreter:
+    role: interpreter
     backend: claude
     model: claude-sonnet-5-5
     max_context: 30000
