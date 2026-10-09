@@ -346,7 +346,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_status_report.sh"
 # The freeze, the scratchpad git never sees, and the dirt a refusal reports.
 # shellcheck source=agent_os/bin/worker/worker_worktree_dirt.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_worktree_dirt.sh"
-# What `open-pr` refuses to publish: the diary, and a malformed `Node-Change` trailer.
+# What `open-pr` refuses to publish (the diary, a malformed trailer, a failing quality ratchet), and
+# the body it publishes the rest with.
 # shellcheck source=agent_os/bin/worker/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_publication_refusals.sh"
 # shellcheck source=agent_os/bin/worker/worker_init_worktree.sh
@@ -1531,6 +1532,7 @@ open-pr)
     block_on_malformed_node_change_trailers "$issue" "$branch" "$base_ref" "$trailer_report"
     exit 1
   fi
+  branch_fails_the_quality_ratchet "$issue" "$branch" "$base_ref" && exit 1
   if git -C "$worktree" fetch -q origin "$base" 2>/dev/null; then
     merge_ref=FETCH_HEAD
   elif git -C "$worktree" rev-parse --verify -q "origin/$base^{commit}" >/dev/null 2>&1; then
@@ -1673,11 +1675,7 @@ A human decides how the two tips are reconciled; then run \`open-pr\` again."
     title=$(gh issue view "$issue" --json title -q .title) || title="issue #$issue"
     gh pr create --base "$base" --head "$branch" \
       --title "$title (#$issue)" \
-      --body "Closes #$issue
-
-Opened by the $backend worker at the end of its run, from $worktree. The acceptance criteria and
-the definition of done are in the issue; a validator agent reviews this pull request against them,
-and merging stays a human act." \
+      --body "$(pull_request_body "$issue" "$base_ref")" \
       || { echo "open-pr: gh pr create failed -- the branch is pushed, the pull request is not"; exit 0; }
   fi
 

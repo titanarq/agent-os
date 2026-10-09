@@ -43,6 +43,7 @@ from agent_os.product.tree.compile import (
     write_compile_files,
 )
 from agent_os.product.tree.loader import Defect, TreeRootError, load_tree, require_tree_root
+from agent_os.product.tree.reference_checks import repository_root_of
 from agent_os.product.tree.slicing import (
     SliceError,
     build_slice,
@@ -95,7 +96,7 @@ def _resolve_root(root_option: str | None, config_path: pathlib.Path | str | Non
 def _validate(args: argparse.Namespace, config_path) -> int:
     root = _resolve_root(args.root, config_path)
     tree = load_tree(root)
-    defects = check_tree(tree)
+    defects = check_tree(tree, repository_root_of(root))
     if args.json:
         print(
             json.dumps(
