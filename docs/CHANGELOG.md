@@ -14,6 +14,28 @@ that closed several small issues at once name them all. This file starts on 2026
   writes each answer into its node, opens one rework issue per rejected case (keyed, so a second run opens none) and
   records the owner's acceptance on the node (new optional `acceptances` field); the verdicts of `feedback.jsonl`
   inside the session are summarised in the plan; the reader is versioned by the file's `schema` (1 today). ADR 2026-10-09.
+
+- Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
+  2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
+  run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
+  had "nothing to launch", and three times that day the fix was an extra stage added by hand to the issue's
+  `## Stages` plus `resume --after manual --context`; the driver now appends the stage (`Address the changes
+  requested on PR #<n>`) from the newest settling review of the branch's open pull request and launches it
+  with the review as context (`bin/worker/worker_rework.sh`, `agent_os/product/tracker/rework.py`; `prompts/planner.md` still names
+  the manual route and is left to the branch that edits it). (2) A worker relaunched into an exhausted quota
+  window died before its first event and was recorded as `CUT_BY_GUARD reason=no_stage_commit` -- the planner
+  may escalate the model after that, and may not after `reason=quota`; `stage-exit` now reads the stream's
+  verdict and, for a run with no parseable event, the refusal text on stdout or stderr
+  (`agent_os.lib quota-status --log --backend`). (3) The `.venv` link `init` makes in a new worktree showed as
+  `?? .venv` under a `.venv/` gitignore (a symlink is a file to git) and refused `branch` and `start`; the
+  exemption `.env` had since #404 now covers every `project.worktree_links` entry that is a symlink, in the
+  dirty check and in the freeze. (4) `collect`, `open-pr`, `stop` and `watch` take `--issue N` to find their
+  slot on a backend with `slots: 2+`, as `resume` already did. (5) Reported by the host while this branch was
+  open: a stage whose commit is a merge (#39's rework was `git merge origin/main` with its conflicts resolved,
+  subject `stage 2/2: ...`) was not counted -- `resolve_stage_context` and `has_wip_after_last_stage_commit`
+  read the branch with `--first-parent --no-merges` -- so the driver counted 1/2 and cut the run as
+  `no_stage_commit`; both now use `--first-parent` alone, which is what keeps the base's stage commits
+  (a merge's second parent) out of the count.
 - Rollout stage 1j (no issue; branch `fix/rollout-stage1j`) -- three edges of the first v2 host. A: `open-pr`
   runs the code-quality ratchet on the worktree before the pull request exists and refuses a branch that fails
   it (`BLOCKED reason=quality_ratchet_failed`, issue to `blocked-on-human`; a ratchet that could not run does not

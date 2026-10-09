@@ -108,7 +108,7 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # the same sum in tokens, as a plain integer the shell can compare arithmetically: what
         # `max_total_tokens` is checked against for the whole issue, and the only one of the two
         # ceilings a Qwen class can cross, because its `result` event reports no cost (#387).
-    python -m agent_os.lib quota-status <events.jsonl>
+    python -m agent_os.lib quota-status <events.jsonl> [--log <run.log>] [--backend <name>]
         # `allowed` or `exhausted` for that run's own stream -- the gate `worker_task.sh` checks
         # before chaining the next stage, the same verdict the guard's tick compares (#375).
 
@@ -156,7 +156,17 @@ from agent_os.streams import (
 )
 from agent_os.streams.claude_jsonl import (  # noqa: F401 -- re-exported: guard and tests import them here
     result_total_tokens,
+    silent_run_quota_refusal,
     turn_context_tokens,
+)
+from agent_os.streams.role_run_log import (  # noqa: F401 -- re-exported: guard, puntal and tests import them here
+    ROLE_RUN_EXIT_MARKER_SUFFIX,
+    RUNS_TSV_HEADER,
+    last_result_event,
+    planner_run_row,
+    read_role_run_exit_marker,
+    role_run_exit_marker,
+    write_role_run_exit_marker,
 )
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
@@ -2144,6 +2154,36 @@ def quota_status(
     return (parser or backend_stream_parser()).quota_verdict(events).status
 
 
+def stage_quota_status(
+    events_path: pathlib.Path | str,
+    *,
+    log_path: pathlib.Path | str | None = None,
+    backend: str | None = None,
+) -> Literal["allowed", "exhausted"]:
+    """`quota_status` of one finished stage, plus the case its event stream cannot speak for: a
+    run the backend refused on quota BEFORE one event, which leaves `allowed` behind because there
+    is nothing to read. Its refusal is text -- on stdout, which is the event file, or on stderr,
+    which is the run's log -- and is looked for only when no event parsed and the backend declares
+    a quota detector (`project.backends.<name>.quota`). Without it a worker relaunched into an
+    exhausted window was recorded as `CUT_BY_GUARD reason=no_stage_commit` and, if nothing was
+    written to stdout either, as a failed launch."""
+    events = read_events(events_path)
+    status = quota_status(events, parser=backend_stream_parser(backend))
+    if status == "exhausted" or events:
+        return status
+    if backend is not None and not backend_quota_cuts(backend):
+        return status
+    output = ""
+    for path in (events_path, log_path):
+        if path is None:
+            continue
+        try:
+            output += pathlib.Path(path).read_text(errors="replace") + "\n"
+        except OSError:
+            continue
+    return "exhausted" if silent_run_quota_refusal(output) else "allowed"
+
+
 # -------------------------------------------------------------------------------------------------
 # Which backend a role's launch gets (#425). The verdict is the guard's own persisted one, read off
 # disk, and never an agent's claim about its own quota
@@ -2429,82 +2469,6 @@ def worker_launch_for(
         verdict.status,
         verdict.age_seconds,
         verdict_ttl_seconds=ttl_seconds,
-    )
-
-
-RUNS_TSV_HEADER = "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
-
-# A role run's exit marker (#429): `<stamp>.log.exited`, one ISO-8601 UTC timestamp, written by the
-# driver the moment the backend process returns. The log itself is no clock for that moment: the
-# detached half keeps appending to it after the backend's `result` -- the exit hook's `wake`, which
-# runs a whole planner synchronously, and the worktree's removal -- so its mtime can be minutes
-# later than the refusal it records, and later than the planner run it started.
-ROLE_RUN_EXIT_MARKER_SUFFIX = ".exited"
-
-
-def role_run_exit_marker(log_path: pathlib.Path | str) -> pathlib.Path:
-    log_path = pathlib.Path(log_path)
-    return log_path.with_name(log_path.name + ROLE_RUN_EXIT_MARKER_SUFFIX)
-
-
-def write_role_run_exit_marker(
-    log_path: pathlib.Path | str, *, now: datetime | None = None
-) -> pathlib.Path:
-    """Written once per run and never again: a second call for the same log is a driver bug, and
-    it would move the observation's time, so it is refused rather than overwritten."""
-    marker = role_run_exit_marker(log_path)
-    with marker.open("x") as handle:
-        handle.write((now or datetime.now(UTC)).isoformat() + "\n")
-    return marker
-
-
-def read_role_run_exit_marker(log_path: pathlib.Path | str) -> datetime | None:
-    """When the run's backend exited, or None: no marker (the run is still going, it died before
-    its backend returned, or it predates the marker), or one that does not read as an aware
-    timestamp -- which dates nothing, and so observes nothing."""
-    try:
-        text = role_run_exit_marker(log_path).read_text().strip()
-        exited_at = datetime.fromisoformat(text)
-    except (OSError, ValueError):
-        return None
-    return exited_at if exited_at.tzinfo is not None else None
-
-
-def last_result_event(log_text: str) -> dict | None:
-    """The last `{"type":"result",...}` line of a `claude -p --output-format stream-json` log.
-    The log also carries the driver's own plain-text lines (identity, model, context), so it is
-    scanned line by line and anything that is not JSON is skipped rather than failing the parse."""
-    result = None
-    for line in log_text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict) and event.get("type") == "result":
-            result = event
-    return result
-
-
-def planner_run_row(log_text: str, *, ts: str, context: str, model: str) -> str:
-    """One `.cache/planner/runs.tsv` line per planner run: what it was woken for and what it cost
-    (agent_os/docs/adr/2026-09-14-the-planner-wakes-on-disk-events-and-an-idle-wake-is-rate-limited.md).
-    A run whose log has no terminal `result` (killed, crashed, a stub backend) still gets its
-    line, with empty cost fields -- a missing row would read as "the run never happened"."""
-    result = last_result_event(log_text) or {}
-    turns = result.get("num_turns")
-    cost = result.get("total_cost_usd")
-    flat = " ".join((context or "").split())[:120]
-    return "\t".join(
-        [
-            ts,
-            flat,
-            model,
-            "" if turns is None else str(turns),
-            "" if cost is None else f"{float(cost):.4f}",
-        ]
     )
 
 
@@ -2834,6 +2798,8 @@ def main() -> None:
     cumulative_tokens.add_argument("paths", nargs="+")
     quota = sub.add_parser("quota-status")
     quota.add_argument("events")
+    quota.add_argument("--log", help="the run's own log: where a refusal before any event is read")
+    quota.add_argument("--backend", help="a key of project.backends; its stream and quota apply")
     args = parser.parse_args()
     if args.command == "usage-report":
         body_path = pathlib.Path(args.body_file) if args.body_file else None
@@ -2945,7 +2911,7 @@ def main() -> None:
         # `max_total_tokens` with bash arithmetic, which reads neither.
         print(cumulative_total_tokens([pathlib.Path(p) for p in args.paths]))
     elif args.command == "quota-status":
-        print(quota_status(read_events(args.events)))
+        print(stage_quota_status(args.events, log_path=args.log, backend=args.backend))
 
 
 if __name__ == "__main__":
