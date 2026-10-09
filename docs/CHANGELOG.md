@@ -8,6 +8,14 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1h (no issue; branch `fix/rollout-stage1h`) -- the planner asks every run whether more work can
+  run at once. New read-only `python -m agent_os.product.dispatch headroom [--json]` (what starts now, what waits
+  and why, what waits only for the cap; the rules are `tree_dispatch_refusals`, not a copy); the planner prompt
+  (`THE DISPATCH RULE`, golden `planner.md` read diff by diff) starts every issue that could start and comments
+  what waits only for the cap, never pages for it; `fr-independent-work-runs-in-parallel` records the rule, that
+  quota is the only limit and that puntales and workers never limit each other (owner, 2026-10-09). The
+  ticket-writing modules of `agent_os/product/dispatch/` moved to its `tickets/` subpackage (and their tests) to
+  keep both folders under twelve entries.
 - Rollout stage 1g, 2 (no issue; branch `fix/rollout-stage1g`) -- parallelising is a requirement of
   Agentos's own tree: `docs/tree/fr-independent-work-runs-in-parallel.md`, under
   `goal-product-early-grown-by-use` (the owner's choice: a requirement under that goal, not a fifth goal).

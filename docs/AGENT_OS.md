@@ -855,6 +855,13 @@ its `config/agents.yaml` sets `tree.dispatch_by_node: true`. In one, and only th
   collides with nothing: the check cannot know what it does not say.
 - the worker's **brief** (`agent_os.issues brief`) ends with the slice of its node
   (`agent-os-tree context <node>`, cut from the tree as it is at dispatch), never the tree.
+- `python -m agent_os.product.dispatch headroom [--json]` is the read-only question *can more work
+  run at once right now*: for each ready issue it says whether the start gate and the cap would let it
+  start (the issues in the doing state are what runs) or why it waits (an open dependency, code shared
+  with a running ticket or one ahead of it, or only `planner.max_parallel_issues` / the backend's
+  `slots`), then `N could start now; M wait only for the cap`. The planner asks it every run, starts
+  every issue it says could start, and comments `headroom: waits only for the cap` on the rest, with no
+  page: quota is the only limit (`docs/tree/fr-independent-work-runs-in-parallel.md`).
 
 Roles: the worker writes back to its own node file (`mechanism`, `implementation`,
 `state: implemented`, never `hardened`, never a goal, a `verification` or a `challenge`) and reads
