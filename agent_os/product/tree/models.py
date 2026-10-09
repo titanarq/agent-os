@@ -4,12 +4,11 @@ These models say what SHAPE a record has: which fields exist, which are required
 is, and that an unknown field is an error (`Strict`, the same closed-partition discipline
 `config/agents.yaml` has). The RULES a record or a whole tree must also satisfy -- an id that
 matches its filename, a parent of the right type, a hardened node that carries an implementation
-pointer -- are not here but in `agent_os.product.tree.checks`, one named code each, so every red check a
-host can see has a name to grep for and a row in `docs/AGENT_OS.md`.
+pointer -- are in `agent_os.product.tree.checks`, one named code each, so every red check has a
+name to grep for and a row in `docs/AGENT_OS.md`.
 
 A record is one Markdown file. Its YAML frontmatter holds every field below except the one that is
-prose by nature: a node's `description` and a decision's `statement` are the Markdown body, so a
-file reads as a document and a diff of it reads as one.
+prose by nature: a node's `description` and a decision's `statement` are the Markdown body.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from agent_os.lib import Strict
+from agent_os.product.records.acceptance import Acceptance
 
 NODE_TYPES = ("goal", "functional-requirement", "use-case")
 DECISION_TYPE = "decision"
@@ -168,14 +168,14 @@ class Node(Strict):
     # The tree edge. A goal has none; a functional requirement's is a goal; a use case's is a
     # functional requirement (`parent-missing`, `goal-has-parent`, `parent-type-mismatch`).
     parent: Identifier | None = None
-    # Where the node's content comes from -- who asked for it, which document, which spike. Free
-    # text, at least one: a node nobody can trace back to anything is an unfounded claim.
+    # Where the content comes from (who asked, which document, which spike), at least one: a node
+    # nobody can trace back to anything is an unfounded claim.
     sources: list[NonBlank] = Field(min_length=1)
     # The decisions in force on this node, by id. They bind its whole subtree as well: a decision
     # on a requirement binds its use cases, so a slice collects them along the chain of ancestors.
     decisions: list[Identifier] = Field(default_factory=list)
-    # Text, or `pending`. Required on a functional requirement and a use case (`missing-work-field`),
-    # so that deferring it is a visible choice and not an omission.
+    # Text, or `pending`: required on a requirement and a use case (`missing-work-field`), so that
+    # deferring it is a visible choice.
     mechanism: NonBlank | None = None
     # Where the built thing lives (a path, a symbol, a pull request). Free text; required once the
     # node is hardened (`hardened-needs-implementation`).
@@ -185,11 +185,10 @@ class Node(Strict):
     # from the prose of `implementation` and `mechanism` (`dispatch.touched_code`), which takes
     # `http.client` or `p.ej` for files. Present -- `[]` too: "no known code" -- it decides alone.
     touches: list[str] | None = None
-    # The state this node's action reads, as the read commands of the app's persistence API that
-    # the puntal's pre-helper runs and loads into its brief before the model turn
-    # (`agent_os.product.puntal.fast.pre_helper`): `list tickets`, `get tickets {payload.id}`.
-    # Declared by the expert who writes the node; empty means the action reads nothing the click
-    # does not carry, and an action that needs more pays the slow path's extra turn.
+    # The state this node's action reads, as read commands of the app's persistence API that the
+    # puntal's pre-helper (`agent_os.product.puntal.fast.pre_helper`) runs into its brief before the
+    # model turn: `list tickets`, `get tickets {payload.id}`. Empty means the click carries all it
+    # needs; an action that needs more pays the slow path's extra turn.
     reads: list[NonBlank] = Field(default_factory=list)
     # Commands and criteria an agent judges. None is needed to dispatch a leaf
     # (`agent_os.product.tree.compile`); a hardened node needs a `command` (`hardened-needs-verification`). On a
@@ -215,6 +214,7 @@ class Node(Strict):
     # (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`).
     depends_on: list[Identifier] = Field(default_factory=list)
     challenge: Challenge | None = None
+    acceptances: list[Acceptance] = Field(default_factory=list)
 
     @field_validator("touches")
     @classmethod

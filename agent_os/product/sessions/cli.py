@@ -1,24 +1,15 @@
-"""`agent-os-sessions`: the judgments log, the question session and the guard on the what.
+"""`agent-os-sessions`: the judgments log, the question session, the guard on the what and the
+ingestion of the owner's test sessions (`docs/AGENT_OS.md` §4.10, §4.11).
 
     agent-os-sessions judgment --role R --kind K --decision D --scope what|how [--node N]
         [--model M] [--cli-version V] [--prompt-file F]      # appends to .cache/judgments/
     agent-os-sessions outcome JUDGMENT_ID confirmed|reversed|reclaimed --source S [--detail D]
-    agent-os-sessions open [--root DIR] [--dry-run]
-        # the owner asked: ONE issue freezing the open questions of what, the challenges and the
-        # digest of what was decided without the owner. Opens nothing when nothing is waiting.
-        # The issue carries `status:blocked-on-human`, so the owner's reply wakes the planner the
-        # way every reply of the owner does.
-    agent-os-sessions answers SESSION [--json]
-        # the owner's replies on the session issue, parsed against what it froze
-    agent-os-sessions apply SESSION [--root DIR]
-        # writes each answer into its node file and each reclaim into a new question of what, in
-        # the working tree (a pull request, never main, carries the result); records an outcome
-        # `reclaimed` against the judgment of every reclaim
-    agent-os-sessions guard-what PR
-        # exit 1 and one line per file when the pull request touches the owner's what: it is never
-        # merged automatically
-    agent-os-sessions verify-answer PR --session SESSION
-        # exit 0 only when the pull request is exactly a transcription of the session's answers
+    agent-os-sessions open [--root DIR] [--dry-run]    # ONE issue freezing what waits for the owner
+    agent-os-sessions answers SESSION [--json]         # the owner's replies, parsed
+    agent-os-sessions apply SESSION [--root DIR]       # answers and reclaims into the working tree
+    agent-os-sessions guard-what PR                    # exit 1: the PR touches the owner's what
+    agent-os-sessions verify-answer PR --session SESSION   # exit 0: the PR is exactly the answers
+    agent-os-sessions test-ingest [--apply]            # closed test sessions into tree and backlog
 
 Exit status: 0 on success, 1 on a refusal (one line on stderr, or the lines the command prints),
 2 on a usage error.
@@ -38,6 +29,7 @@ from agent_os import lib
 from agent_os.cli import host_root
 from agent_os.issues import repo_name
 from agent_os.product.records import record_versions
+from agent_os.product.session_ingest import cli as test_ingest_cli
 from agent_os.product.sessions import github, judgments, session_log
 from agent_os.product.sessions.batch import build_batch
 from agent_os.product.sessions.render import (
@@ -77,10 +69,6 @@ def _config(config_path) -> lib.AgentsConfig:
         ) from error
 
 
-def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
-
-
 def _record_judgment(args: argparse.Namespace, config_path) -> int:
     prompt_text = pathlib.Path(args.prompt_file).read_text() if args.prompt_file else ""
     versions = record_versions(
@@ -118,7 +106,7 @@ def _open(args: argparse.Namespace, config_path) -> int:
     config = _config(config_path)
     tree = load_tree(resolve_tree_root(args.root, config_path))
     cache = cache_directory()
-    moment = _now()
+    moment = datetime.datetime.now(datetime.UTC)
     batch = build_batch(
         tree, judgments.judgments_since(cache, session_log.last_session_opened_at(cache))
     )
@@ -180,7 +168,7 @@ def _answers(args: argparse.Namespace, config_path) -> int:
 def _apply(args: argparse.Namespace, config_path) -> int:
     reply = _resolved_replies(_config(config_path), args.session)
     tree = load_tree(resolve_tree_root(args.root, config_path))
-    today = _now().date()
+    today = datetime.datetime.now(datetime.UTC).date()
     changed: list[pathlib.Path] = []
     try:
         for answer in reply.answers:
@@ -207,6 +195,15 @@ def _apply(args: argparse.Namespace, config_path) -> int:
     for problem in reply.problems:
         print(f"problem: {problem}", file=sys.stderr)
     return 0
+
+
+def _test_ingest(args: argparse.Namespace, config_path) -> int:
+    return test_ingest_cli.run_test_ingest(
+        args,
+        _config(config_path),
+        cache=cache_directory(),
+        tree_root=resolve_tree_root(args.root, config_path),
+    )
 
 
 def _guard_what(args: argparse.Namespace, config_path) -> int:
@@ -284,6 +281,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("pull_request", type=int)
     p.add_argument("--session", type=int, required=True)
     p.set_defaults(handler=_verify_answer)
+
+    test_ingest_cli.add_parser(sub, handler=_test_ingest)
     return parser
 
 
@@ -293,6 +292,6 @@ def main(
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args, config_path)
-    except (RefusedError, judgments.JudgmentError) as error:
+    except (RefusedError, judgments.JudgmentError, test_ingest_cli.IngestRefused) as error:
         print(f"{PROGRAM}: {error}", file=sys.stderr)
         return 1
