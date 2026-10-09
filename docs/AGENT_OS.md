@@ -831,7 +831,7 @@ itself (the expert decides it node by node). Those effective dependencies are wh
 `depends-on` marker and Dependencies section carry, **as tickets**: dispatch only waits for an open
 ticket, so a dependency on a node that never gets one (already `improvised`, `implemented` or
 `hardened`, or escalated) is replaced, in its place, by what that node waits for, as many levels down
-as there are such nodes (`agent_os.product.dispatch.ticket_dependencies`); left standing it would
+as there are such nodes (`agent_os.product.dispatch.tickets.ticket_dependencies`); left standing it would
 let the ticket start before the foundations under that node. Dependencies that only loop once
 inherited make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is

@@ -14,7 +14,7 @@ node address, the nodes it depends on and the code it touches. Phase 2 finds the
 from, and a v2 host's planner decides from them what may start. Tickets come ordered by their
 dependencies, a dependency before whatever depends on it, and a ticket depends only on nodes that
 have a ticket: a dependency that never gets one is replaced by what it waits for
-(`agent_os.product.dispatch.ticket_dependencies`).
+(`agent_os.product.dispatch.tickets.ticket_dependencies`).
 
 Which nodes become tickets (the rule is one place, `_classify`):
 
@@ -41,16 +41,16 @@ from collections.abc import Sequence
 
 from agent_os.issues import prefixed_title, type_labels
 from agent_os.lib import AgentsConfig, validate_issue_body
-from agent_os.product.dispatch.compile_output import (
+from agent_os.product.dispatch.markers import parse_node_marker
+from agent_os.product.dispatch.tickets.compile_output import (
     compile_as_data,
     render_compile_json,
     render_compile_text,
     write_compile_files,
 )
-from agent_os.product.dispatch.markers import parse_node_marker
-from agent_os.product.dispatch.results import CompileResult, Escalation, Ticket
-from agent_os.product.dispatch.ticket_body import render_ticket_body
-from agent_os.product.dispatch.ticket_dependencies import (
+from agent_os.product.dispatch.tickets.results import CompileResult, Escalation, Ticket
+from agent_os.product.dispatch.tickets.ticket_body import render_ticket_body
+from agent_os.product.dispatch.tickets.ticket_dependencies import (
     effective_dependencies,
     is_foundation_work,
     ticket_dependencies,
