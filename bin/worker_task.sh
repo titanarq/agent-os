@@ -390,10 +390,13 @@ resolve_stage_context() {
   [ -n "$stage_base_ref" ] || return 0
   stage_fork_point=$(git -C "$worktree" merge-base "$stage_base_ref" HEAD 2>/dev/null || true)
   [ -n "$stage_fork_point" ] || return 0
-  # `--first-parent --no-merges`: THIS BRANCH'S OWN commits and nothing else. A base merged into
-  # the branch arrives as a merge commit's second parent, so without this the base's history --
-  # every other issue's stage commits included -- counts as this issue's progress.
-  stages_done=$(git -C "$worktree" log --first-parent --no-merges --format=%s "$stage_fork_point..HEAD" \
+  # `--first-parent`: THIS BRANCH'S OWN commits and nothing else. A base merged into the branch
+  # arrives as a merge commit's second parent, so without this the base's history -- every other
+  # issue's stage commits included -- counts as this issue's progress. NOT `--no-merges`: a stage
+  # whose commit is itself a merge (the rework of the vector host's #39 was `git merge origin/main`
+  # with its conflicts resolved, subject `stage 2/2: ...`) is this branch's own stage, and
+  # dropping it counted 1/2, cut the run as `no_stage_commit` and left `open-pr` refusing to publish.
+  stages_done=$(git -C "$worktree" log --first-parent --format=%s "$stage_fork_point..HEAD" \
     | "$agent_python" -m agent_os.lib stages-completed)
 }
 
@@ -449,7 +452,7 @@ has_wip_after_last_stage_commit() {
       "stage "[0-9]*) return 1 ;;
     esac
     subject_is_a_guard_cut "$subject" && return 0
-  done <<< "$(git -C "$worktree" log --first-parent --no-merges --format=%s "$stage_fork_point..HEAD")"
+  done <<< "$(git -C "$worktree" log --first-parent --format=%s "$stage_fork_point..HEAD")"
   return 1
 }
 

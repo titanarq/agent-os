@@ -8,7 +8,7 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
-- Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- four defects observed on the vector host on
+- Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
   had "nothing to launch", and three times that day the fix was an extra stage added by hand to the issue's
@@ -23,7 +23,12 @@ that closed several small issues at once name them all. This file starts on 2026
   `?? .venv` under a `.venv/` gitignore (a symlink is a file to git) and refused `branch` and `start`; the
   exemption `.env` had since #404 now covers every `project.worktree_links` entry that is a symlink, in the
   dirty check and in the freeze. (4) `collect`, `open-pr`, `stop` and `watch` take `--issue N` to find their
-  slot on a backend with `slots: 2+`, as `resume` already did.
+  slot on a backend with `slots: 2+`, as `resume` already did. (5) Reported by the host while this branch was
+  open: a stage whose commit is a merge (#39's rework was `git merge origin/main` with its conflicts resolved,
+  subject `stage 2/2: ...`) was not counted -- `resolve_stage_context` and `has_wip_after_last_stage_commit`
+  read the branch with `--first-parent --no-merges` -- so the driver counted 1/2 and cut the run as
+  `no_stage_commit`; both now use `--first-parent` alone, which is what keeps the base's stage commits
+  (a merge's second parent) out of the count.
 - Rollout stage 1g, 2 (no issue; branch `fix/rollout-stage1g`) -- parallelising is a requirement of
   Agentos's own tree: `docs/tree/fr-independent-work-runs-in-parallel.md`, under
   `goal-product-early-grown-by-use` (the owner's choice: a requirement under that goal, not a fifth goal).
