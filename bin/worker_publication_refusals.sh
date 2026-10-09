@@ -3,8 +3,8 @@
 # read here (`worktree`, `backend`, `agent_python`, `DIARY`) and `write_state`, `write_state_marker`
 # and `project_value`; defining the functions runs nothing.
 #
-# Both refusals are for a branch whose work is finished and whose pull request would be wrong the
-# moment it existed. Neither repairs anything: taking a file out of a commit already made, or
+# Every refusal is for a branch whose work is finished and whose pull request would be wrong the
+# moment it existed. None repairs anything: taking a file out of a commit already made, or
 # rewording its message, is a rewrite, and `open-pr` rewrites nothing.
 
 # NO COMMIT MAY CARRY THE DIARY (#407). `scratchpad/progress.log` is the monitor's input, not the
@@ -81,6 +81,63 @@ What unblocks it: reword each commit named above (\`git commit --amend\` for the
 again. The driver rewrites no commit."
   "$agent_python" -m agent_os.issues update "$issue" --comment "$note" \
     || echo "WARNING: could not comment the malformed trailers on #$issue"
+  if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
+    write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
+  else
+    echo "WARNING: could not move #$issue to blocked-on-human"
+  fi
+}
+
+# THE CODE-QUALITY RATCHET IS RUN BEFORE THE PULL REQUEST EXISTS. The host's CI runs
+# `agent_os.quality` on every pull request, and a worker that never ran it opened pull requests
+# that failed it: a file passed the line limit, the review came back `CHANGES_REQUESTED`, and the
+# round it cost a full worker run. The same question is asked here, of the worktree about to be
+# published: `--root` is not optional, because without it the ratchet measures the host's MAIN
+# checkout, which is clean, and reports a branch that is over the limit as sound.
+# Prints the ratchet's own words; returns its status: 0 sound, 1 violations, 2 it could not run.
+quality_ratchet_report() {
+  "$agent_python" -m agent_os.quality --base "$1" --root "$worktree" 2>&1
+}
+
+# Returns 0, after the ending below, when the branch fails the ratchet -- a branch it could not
+# judge is not refused: that is a failure of the tool and not a verdict on the work, the host's CI
+# runs the same check on the pull request, and finished work with no pull request costs more than
+# a red one. The ending is the malformed-trailer one, for the same reason: the fix is a commit and
+# not a stage, `launch_stage` refuses an issue with every stage committed, and the driver edits no
+# file of the branch. Called after the pre-merge freeze, so what a `WIP: cut by guard` commit
+# carried counts too. TODO(#366): render the comment from project.messages.
+branch_fails_the_quality_ratchet() {
+  local issue=$1 branch=$2 base_ref=$3 report ratchet_status=0 note
+  report=$(quality_ratchet_report "$base_ref") || ratchet_status=$?
+  case "$ratchet_status" in
+    0) return 1 ;;
+    1) ;;
+    *)
+      echo "open-pr: the quality ratchet could not run (exit $ratchet_status) -- not refusing over it:"
+      printf '%s\n' "$report" | sed 's/^/  /'
+      return 1 ;;
+  esac
+  write_state "BLOCKED reason=quality_ratchet_failed branch=$branch"
+  echo "open-pr: $branch fails the code-quality ratchet the host's CI runs -- no pull request:"
+  printf '%s\n' "$report" | sed 's/^/  /'
+  echo "  Nothing was changed: bring the paths named above within the limits and run open-pr again."
+  note="The work of this issue is committed on \`$branch\`, but it fails the code-quality ratchet
+the host's CI runs on every pull request, so no pull request was opened (it would have been
+\`CHANGES_REQUESTED\` from its first minute, and each such round costs a full worker run):
+
+\`\`\`
+$report
+\`\`\`
+
+This is \`python -m agent_os.quality --base $base_ref --root <worktree>\` run on the worktree. A
+file or folder over a limit of \`quality:\` (\`config/agents.yaml\`) that was not already over it on
+the merge-base fails, and so does one that was over it and got worse.
+
+What unblocks it: on this branch, split each file named above or move code out of each folder named
+above into a new file or subfolder, commit, and run \`worker_task.sh $backend open-pr\` again. The
+driver changes no file of the branch."
+  "$agent_python" -m agent_os.issues update "$issue" --comment "$note" \
+    || echo "WARNING: could not comment the quality ratchet on #$issue"
   if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
     write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
   else

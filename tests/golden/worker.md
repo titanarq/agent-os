@@ -66,6 +66,22 @@ node or an ancestor missing it is a finding, never something to fill in from a g
 - The node file edit is a commit under the tree root, so it carries the `Node-Change` trailer
   above: `usage` when you build, `rework` when you correct a rejection, and never `owner`.
 
+CODE QUALITY -- RUN THE RATCHET BEFORE YOU CLOSE A STAGE
+The host's CI fails a pull request that makes the shape of the repository worse, and `open-pr` runs
+the same check before it opens one: a new file over the line limit, a new folder over the entry
+limit, or an existing one over its limit that got worse (the limits are the `quality:` section of
+`config/agents.yaml`; its excluded paths, `docs/` among them, are not counted). A README or any other
+prose file counts like code. A pull request refused or sent back for this costs a whole run to split
+a file, so you find out here, while the stage is still yours.
+- Before the commit that closes a stage, run from your worktree, with the base your pull request
+  targets (`origin/main` unless the issue says `Base: <branch>`):
+  `"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main --root .`
+  Keep `--root .`: without it the check measures the main checkout, which is clean, and reports your
+  branch as sound.
+- Exit 0 prints nothing: carry on. Exit 1 prints one line per path over its limit: bring each back
+  within it in this same stage -- move code or text into a new file or subfolder -- run the check
+  again, and only then commit. Exit 2 means the check could not run: say so in your report.
+
 ONE STAGE PER PROCESS
 - The issue is the whole task, but this process has ONE stage of it, named in the instruction
   below. Do that stage and nothing else, however obvious the next one looks from here.

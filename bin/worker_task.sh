@@ -337,7 +337,8 @@ alive() { alive_pidfile "$pidfile"; }
 # The status report's readers (`readable_events_file`, `usage_report`, `issue_token_line`).
 # shellcheck source=agent_os/bin/worker_status_report.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
-# What `open-pr` refuses to publish: the diary, and a malformed `Node-Change` trailer.
+# What `open-pr` refuses to publish: the diary, a malformed `Node-Change` trailer, and a branch that
+# fails the code-quality ratchet.
 # shellcheck source=agent_os/bin/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
 # shellcheck source=agent_os/bin/worker_init_worktree.sh
@@ -1670,6 +1671,8 @@ open-pr)
     block_on_malformed_node_change_trailers "$issue" "$branch" "$base_ref" "$trailer_report"
     exit 1
   fi
+  # Nor one that would fail the host's code-quality ratchet: the same check, run before the PR.
+  branch_fails_the_quality_ratchet "$issue" "$branch" "$base_ref" && exit 1
   if git -C "$worktree" fetch -q origin "$base" 2>/dev/null; then
     merge_ref=FETCH_HEAD
   elif git -C "$worktree" rev-parse --verify -q "origin/$base^{commit}" >/dev/null 2>&1; then
