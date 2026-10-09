@@ -17,6 +17,7 @@ that closed several small issues at once name them all. This file starts on 2026
   `interpreter` (`role: interpreter`), `interpreter:` config section (`reply_language`, `timeout_seconds`,
   `effort`, `max_thread_messages`), `prompts/interpreter.md` with golden, `docs/FEEDBACK_INTERPRETER.md` (contract,
   session-file schema 2 `items[]`) and an ADR. `PuntalConfig` moved to `agent_os/product/config.py` (lib.py shrinks).
+- Onboarding rung 6 (no issue; branch `docs/onboarding-rung6`) -- `docs/adoption/v2-build-the-product.md` rung 6 now describes the test session the first v2 host really ran on 2026-10-09 (the header button and side panel of `dec-a-test-session-happens-inside-the-app`, the order given by `depends_on`, the owner's web kept apart from the workers', `agent-os-sessions test-ingest`) with its first-time findings and cost; the interpreter chat and the schema 2 reader are named as not built.
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
   after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
   and `dec-a-test-session-happens-inside-the-app` say the session opens from a "Test session" header button
