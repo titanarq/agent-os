@@ -4,6 +4,8 @@ terminal `result` with `total_cost_usd`, `usage` and, on a refused run, `api_err
 
 from __future__ import annotations
 
+import re
+
 from agent_os.streams.interface import (
     ResultUsage,
     StreamQuotaVerdict,
@@ -36,6 +38,26 @@ def result_total_tokens(result: dict) -> int:
     return usage.get("total_tokens") or (
         turn_context_tokens(usage) + (usage.get("output_tokens") or 0)
     )
+
+
+# What Claude Code writes when the account has no quota left and the run never got as far as one
+# event -- `You've hit your session limit · resets 5:20pm`, `Claude usage limit reached`, an
+# `API Error: 429` -- on stdout or on stderr, as text and never as an event. Searched only in the
+# output of a run that produced no event at all: anywhere else the stream's own
+# `rate_limit_event` is the authority (the 2026-09-14 quota ADR).
+QUOTA_REFUSAL_TEXT = re.compile(
+    r"session limit|usage limit|hit your [\w ]{0,20}limit"
+    r"|(?:status|error|http)\D{0,12}\b429\b|\b429\b\D{0,12}(?:rate|too many|limit)",
+    re.IGNORECASE,
+)
+
+
+def silent_run_quota_refusal(output_text: str) -> str | None:
+    """The line of `output_text` that says the backend refused the run on quota, or None."""
+    for line in output_text.splitlines():
+        if QUOTA_REFUSAL_TEXT.search(line):
+            return line.strip()
+    return None
 
 
 class ClaudeJsonlStreamParser:
