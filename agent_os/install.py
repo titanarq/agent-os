@@ -6,7 +6,7 @@ and a host CI workflow running `project.test_command` on every pull request if t
 but manual regardless" (`agent_os/docs/AGENT_OS.md` §7 row (h)). It never enables, restarts or reloads a
 systemd unit: arming the timer stays a human decision
 (`agent_os/docs/adr/2026-09-14-the-monitor-and-planner-run-on-triggers-never-as-a-standing-process.md`,
-`agent_os/docs/ADOPTION.md` step 22).
+`agent_os/docs/adoption/substrate.md` step 22).
 
     agent-os-install --dry-run     # print every path this would touch and its diff, write nothing
     agent-os-install               # write what does not already exist

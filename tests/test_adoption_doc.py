@@ -1,4 +1,4 @@
-"""`docs/ADOPTION.md` agrees with the code it tells a second host to satisfy (agent-os#7).
+"""`docs/adoption/substrate.md` agrees with the code it tells a second host to satisfy (agent-os#7).
 
 The checklist is prose a host follows verbatim, so a name it leaves out is a first-run failure
 nobody sees until `agent-os-doctor` reports it. The expected values come from the code itself --
@@ -20,7 +20,7 @@ from agent_os import doctor
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.lib import LabelVocabulary
 
-ADOPTION = AGENT_OS_DIR / "docs" / "ADOPTION.md"
+ADOPTION = AGENT_OS_DIR / "docs" / "adoption" / "substrate.md"
 
 
 def _adoption_step(number: int) -> str:
@@ -66,7 +66,9 @@ def test_step_12_names_every_label_the_doctor_requires():
     assert required, "check_labels requires no label at all -- this test checks nothing"
     step = _adoption_step(12)
     missing = [label for label in required if f"`{label}`" not in step]
-    assert not missing, f"ADOPTION.md step 12 never names {missing}, which agent-os-doctor requires"
+    assert not missing, (
+        f"substrate.md step 12 never names {missing}, which agent-os-doctor requires"
+    )
 
 
 def test_step_16_says_the_drivers_link_the_mechanisms_venv_into_every_worktree():

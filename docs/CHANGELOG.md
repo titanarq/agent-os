@@ -29,6 +29,13 @@ that closed several small issues at once name them all. This file starts on 2026
   read the branch with `--first-parent --no-merges` -- so the driver counted 1/2 and cut the run as
   `no_stage_commit`; both now use `--first-parent` alone, which is what keeps the base's stage commits
   (a merge's second parent) out of the count.
+- Onboarding v2 (no issue; branch `fix/onboarding-v2`) -- `docs/ADOPTION.md` is now the index of the
+  ladder that starts a product with Agentos v2, written from the first host's real start (installing,
+  the owner's goals and evaluators, the expert, `compile` in waves, foundations with a worker and a
+  validator by hand, parallel slots, the test session), with per-rung baselines (time, USD, rounds), what
+  failed the first time and which edges are still open. The 26-step v1 checklist moved unchanged to
+  `docs/adoption/substrate.md`; the messages, comments, ADR and tests that named `docs/ADOPTION.md` step N
+  now name that file, and the live-config-key test reads every adoption document.
 - Rollout stage 1g, 2 (no issue; branch `fix/rollout-stage1g`) -- parallelising is a requirement of
   Agentos's own tree: `docs/tree/fr-independent-work-runs-in-parallel.md`, under
   `goal-product-early-grown-by-use` (the owner's choice: a requirement under that goal, not a fifth goal).
