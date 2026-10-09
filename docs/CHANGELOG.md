@@ -20,6 +20,15 @@ that closed several small issues at once name them all. This file starts on 2026
   repository found from the tree root; `compile` and `slice` leave it out); on the host's five checkouts it names
   exactly the two nodes that pointed at the deleted `entry.html`. Goldens changed by exactly the sentences added
   to the worker, validator and planner prompts (read diff by diff). D and E were not done.
+- Rollout stage 1h (no issue; branch `fix/rollout-stage1h`) -- the planner asks every run whether more work can
+  run at once. New read-only `python -m agent_os.product.dispatch headroom [--json]` (what starts now, what waits
+  and why, what waits only for the cap; the rules are `tree_dispatch_refusals`, not a copy); the planner prompt
+  (`THE DISPATCH RULE`, golden `planner.md` read diff by diff) starts every issue that could start and comments
+  what waits only for the cap, never pages for it (that section and the v2 one were tightened, same rules, so the
+  prompt stays at the 300-line ratchet); `fr-independent-work-runs-in-parallel` records the rule, that
+  quota is the only limit and that puntales and workers never limit each other (owner, 2026-10-09). The
+  ticket-writing modules of `agent_os/product/dispatch/` moved to its `tickets/` subpackage (and their tests) to
+  keep both folders under twelve entries.
 - Onboarding v2 (no issue; branch `fix/onboarding-v2`) -- `docs/ADOPTION.md` is now the index of the
   ladder that starts a product with Agentos v2, written from the first host's real start (installing,
   the owner's goals and evaluators, the expert, `compile` in waves, foundations with a worker and a

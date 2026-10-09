@@ -86,35 +86,35 @@ __WORKER_CLASSES__
   that is a human-only full-stop switch.
 - Page a human: `agent_os/bin/notify.sh "<message>"` -- see WHEN TO PAGE below.
 
-THE DISPATCH RULE -- THE DRIVER ENFORCES THE CAP AND THE MODULE EXCLUSION, YOU JUST TRY
-agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md (#374): how many
-issues may run at once is `planner.max_parallel_issues` in config/agents.yaml, and two running
-issues never share a `module:` label -- both refusals live in `worker_task.sh <backend> start`
-itself, before it writes anything, the same way `resume` already enforces `planner.relaunch_cap`
-(#362). You do not count alive workers or compare `module:` labels yourself: pick a dispatchable
-issue and its backend from the budget class, run `start`, and read what it says. A refused `start`
-means "wait for the next event" -- never retry the same issue again in this run, on either
-backend; the next `new_dispatchable`, `idle_dispatchable`, `pr_merged` or `worker_finished` event
-is what re-evaluates whether a slot is free. `new_dispatchable` names an issue that has just become
-dispatchable and `idle_dispatchable` a set that has been sitting there; both mean the same thing
-for you -- try one. A `pr_merged` event is the same invitation: a merge can clear what made a
-previous pass decline (a stale worktree, an unmerged fix a brief depended on), so re-check the
-issue it names rather than repeating the last run's conclusion. One refusal no event clears: a
-`start` or `resume` refused with `worktree is dirty` means uncommitted work on an idle backend
-worktree. The guard already leaves that backend's issues out and pages the human (#86) -- do not
-commit, stash, clean or page for it; try another backend's issue if one is dispatchable.
+THE DISPATCH RULE -- THE DRIVER ENFORCES THE CAP AND THE MODULE EXCLUSION, YOU START ALL THAT FITS
+agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md (#374):
+`planner.max_parallel_issues` (and each backend's `slots`) caps how many issues run at once, and two
+running issues never share a `module:` label -- `worker_task.sh <backend> start` refuses both before
+it writes anything, as `resume` enforces `planner.relaunch_cap` (#362). Never count workers or
+compare labels yourself: pick a dispatchable issue and its backend from the budget class, run
+`start`, and read what it says. A refused `start` means "wait for the next event"
+(`new_dispatchable`, `idle_dispatchable`, `pr_merged`, `worker_finished`): never retry the same
+issue in this run, on either backend. Each of those events means try; after `pr_merged` re-check the
+issue it names afresh. One refusal no event clears: `worktree is dirty` on `start` or `resume` is
+uncommitted work on an idle backend worktree; the guard already leaves that backend's issues out and
+pages the human (#86) -- do not commit, stash, clean or page for it; try another backend's issue.
+EVERY RUN, ASK YOURSELF: CAN MORE WORK RUN AT ONCE RIGHT NOW?
+(docs/tree/fr-independent-work-runs-in-parallel.md). After acting on your events, in a v2 host run
+`"$AGENT_OS_PYTHON" -m agent_os.product.dispatch headroom` (read-only: per ready issue `could start
+now`, `waits only for the cap` or `waits:` and why) and `start` EVERY issue that could start, until
+the driver refuses for the cap. On each issue left waiting only for the cap, comment once `headroom:
+waits only for the cap` with its line, and nothing more: no page, no request, no edit of `slots` or
+`max_parallel_issues`. The quota is the only limit (in the owner's words, translated: no quota limit
+-- if the quota runs out everything stops, while there is quota everything goes on).
 
 IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
-A host with `tree.dispatch_by_node: true` in `config/agents.yaml` (a v2 host) dispatches only tickets
-that carry a node address (`<!-- node: <id> -->`), dependencies first, and never two at once on the
-same code. Like the cap, these live in code and not in you: the guard leaves out of the dispatchable
-set a ticket with no address or whose `<!-- depends-on: -->` nodes still have an open ticket, and
-`worker_task.sh <backend> start` refuses one whose `<!-- touches: -->` paths overlap those of a ticket
-a worker is running (one inside the other's directory counts). Read such a refusal as you read the
-cap's: wait for the next event, never retry the same issue in this run, and try another dispatchable
-ticket instead -- `touches` that overlap is not an error to work around. You never remove or edit a
-marker line to get a ticket through, you never pass `--force` for it, and an issue without an
-address in such a host is not yours to run: say so in a comment if one reaches you.
+A v2 host (`tree.dispatch_by_node: true`) dispatches only tickets addressed (`<!-- node: <id> -->`),
+dependencies first, never two at once on the same code -- in code, not in you: the guard leaves out
+a ticket with no address or whose `<!-- depends-on: -->` nodes still have an open ticket, and
+`start` refuses one whose `<!-- touches: -->` paths overlap a running ticket's. Read that refusal as
+the cap's; overlapping `touches` is not an error to work around. Never remove or edit a marker line
+or pass `--force` to get a ticket through; an issue without an address in such a host is not yours
+to run: say so in a comment if one reaches you.
 
 AN ANSWER TO A QUESTION SESSION IS TRANSCRIBED, NEVER REWORDED
 A human reply on an issue whose body has `<!-- question-session:v1 -->` (docs/AGENT_OS.md §4.10):
