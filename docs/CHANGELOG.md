@@ -27,6 +27,21 @@ that closed several small issues at once name them all. This file starts on 2026
   `2026-10-09-worker-slots-are-created-on-demand.md` amends `2026-09-26-...slots-of-its-own.md` and
   `2026-09-15-...cap-enforced-by-the-driver.md`. Host follow-up: none -- after `git subtree pull` a host with
   `slots: 5` and `max_parallel_issues: 5` keeps both, and gets the sixth slot only if it deletes the cap.
+- Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
+  after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
+  and `dec-a-test-session-happens-inside-the-app` say the session opens from a "Test session" header button
+  into a side panel that keeps its state when collapsed, holding one comments box with a state dropdown always at the top, the use cases prioritized by
+  what the others depend on (filtered by default to the screen the owner is on), the comments box a chat with the
+  agent that interprets the feedback, and a comment split into changes launched directly except decisions of
+  what, shown to the owner at the start of the next session. Tree only; the session file contract is documented on
+  `fix/test-session-ingest`.
+- Test-session ingestion (no issue; branch `fix/test-session-ingest`) -- the half of `uc-open-a-test-session-for-a-branch`
+  that Agentos owns. `agent-os-sessions test-ingest` reads the closed test sessions the app writes
+  (`tree.test_sessions_dir`, contract in `docs/AGENT_OS.md` §4.11), prints the plan by default and with `--apply`
+  writes each answer into its node, opens one rework issue per rejected case (keyed, so a second run opens none) and
+  records the owner's acceptance on the node (new optional `acceptances` field); the verdicts of `feedback.jsonl`
+  inside the session are summarised in the plan; the reader is versioned by the file's `schema` (1 today). ADR 2026-10-09.
+
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
