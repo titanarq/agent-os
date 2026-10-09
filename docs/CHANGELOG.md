@@ -8,6 +8,17 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1g, 2 (no issue; branch `fix/rollout-stage1g`) -- parallelising is a requirement of
+  Agentos's own tree: `docs/tree/fr-independent-work-runs-in-parallel.md`, under
+  `goal-product-early-grown-by-use` (the owner's choice: a requirement under that goal, not a fifth goal).
+  The owner's word of 2026-10-09: "Para agentos paralelizar debería ser un objetivo", with four evaluators
+  approved as trends ("ya iremos mejorando con el uso"): work items running at once when there is
+  independent work grows; a wave's wall-clock time approaches that of its longest ticket; merge conflicts
+  between parallel work are few; no dispatchable work waits for another run without a reason. Its
+  mechanism is what the substrate already has (slots per backend, `planner.max_parallel_issues`, the start
+  gate that refuses overlapping `touches`), its decision `dec-dispatch-never-runs-two-tickets-on-the-same-code`,
+  its state `implemented` (so `compile` makes no ticket of it); nothing measures the evaluators yet. The
+  plan counts twenty requirements now. A test holds the node, its parent and its four evaluators.
 - Rollout stage 1g, 1 (no issue; branch `fix/rollout-stage1g`) -- a use case under a foundation requirement is
   no longer a foundation by inheritance. `compile` ordered with the foundations every node that had a
   `foundation: true` ancestor (`is_foundation_work`); it now counts only the flag the node carries itself,
