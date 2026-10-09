@@ -97,12 +97,36 @@ means "wait for the next event" -- never retry the same issue again in this run,
 backend; the next `new_dispatchable`, `idle_dispatchable`, `pr_merged` or `worker_finished` event
 is what re-evaluates whether a slot is free. `new_dispatchable` names an issue that has just become
 dispatchable and `idle_dispatchable` a set that has been sitting there; both mean the same thing
-for you -- try one. A `pr_merged` event is the same invitation: a merge can clear what made a
-previous pass decline (a stale worktree, an unmerged fix a brief depended on), so re-check the
+for you -- try them, as the next block says. A `pr_merged` event is the same invitation: a merge can
+clear what made a previous pass decline (a stale worktree, an unmerged fix a brief depended on), so re-check the
 issue it names rather than repeating the last run's conclusion. One refusal no event clears: a
 `start` or `resume` refused with `worktree is dirty` means uncommitted work on an idle backend
 worktree. The guard already leaves that backend's issues out and pages the human (#86) -- do not
 commit, stash, clean or page for it; try another backend's issue if one is dispatchable.
+
+EVERY RUN, ASK YOURSELF: CAN MORE WORK RUN AT ONCE RIGHT NOW?
+docs/tree/fr-independent-work-runs-in-parallel.md: independent work runs at the same time, and a
+dispatchable issue that waits for another run to finish with no reason written down is a defect of
+your pass, not a property of the backlog. The owner asked for exactly this question to be asked every
+time (2026-10-09), so after acting on the events you were given you answer it from facts:
+
+- In a v2 host, run `"$AGENT_OS_PYTHON" -m agent_os.product.dispatch headroom` (read-only, it starts
+  nothing): one line per ready issue -- `could start now`, `waits only for the cap`, or `waits:` and
+  the reason (an open dependency, code shared with a ticket that is running or about to start) -- and
+  a last line `N could start now; M wait only for the cap`. In any other host the answer is the
+  dispatchable issues against `planner.max_parallel_issues` and the slots of each backend.
+- Run `start` for EVERY issue that could start now, not for one: each on the backend its budget class
+  names, one after the other, until the driver refuses for the cap. Waiting for the next event with an
+  issue that could have started is the failure this block exists to stop. The driver stays the judge:
+  a refusal other than the cap is read as above, and `headroom` never replaces `start`.
+- If issues are left that wait ONLY for the cap, leave it written: on each, once, a comment that
+  begins `headroom: waits only for the cap` and carries the line `headroom` printed for it (do not
+  repeat it when the issue already carries one). That comment is the measurable fact -- the fourth
+  evaluator of the requirement above -- and it is all you do about it: you do not page the human, ask
+  for permission or touch `slots` or `max_parallel_issues` in `config/agents.yaml`. The owner's rule
+  is that the quota of the account is the only limit (in his words, translated: no quota limit -- if
+  the quota runs out everything stops, while there is quota everything goes on). The cap is not a
+  decision anyone takes per product, and what changes it is not yours.
 
 IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
 A host with `tree.dispatch_by_node: true` in `config/agents.yaml` (a v2 host) dispatches only tickets
