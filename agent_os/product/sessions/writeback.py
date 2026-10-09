@@ -1,6 +1,7 @@
-"""Writing a session's result into the tree: an answer into its node, a reclaim into a new question.
+"""Writing a session's result into the tree: an answer into its node, a reclaim into a new question,
+an owner's acceptance into the node it accepted.
 
-Both edit the node file's frontmatter and nothing else (the Markdown body is kept byte for byte),
+All three edit the node file's frontmatter and nothing else (the Markdown body is kept byte for byte),
 then check that the result is still a valid node: a write-back that corrupted a node must fail
 here, not in the next doctor run. The frontmatter is re-dumped, so YAML comments and quoting style
 inside it are not preserved.
@@ -82,5 +83,20 @@ def raise_reclaimed_question(
             "default_answer": decision,
         }
     )
+    _write_node_file(path, frontmatter, body)
+    return path
+
+
+def record_acceptance(
+    tree: Tree, node_id: str, session_id: str, *, accepted_on: datetime.date
+) -> pathlib.Path | None:
+    """The owner accepted this node in a test session: the node says so, once per session (a second
+    ingestion of the same session writes nothing and returns None). Evidence, not a change of the
+    what: the node's own words stay as they were."""
+    path, frontmatter, body = _load_node_file(tree, node_id)
+    acceptances = frontmatter.setdefault("acceptances", [])
+    if any(entry.get("session") == session_id for entry in acceptances):
+        return None
+    acceptances.append({"session": session_id, "date": accepted_on})
     _write_node_file(path, frontmatter, body)
     return path
