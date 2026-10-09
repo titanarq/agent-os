@@ -13,17 +13,13 @@ the tree. It checks that a record is well-formed and consistent with the others;
 that a state TRANSITION was legal (a hardened node going back to pending), which needs two
 snapshots and so a git base, and it does not run a verification command. It resolves an
 implementation pointer only when it is given the repository, and only the paths written from the
-repository root of a built node (`implementation_paths.py`).
+repository root of a built node (`reference_checks.py`).
 """
 
 from __future__ import annotations
 
 import pathlib
 
-from agent_os.product.tree.implementation_paths import (
-    IMPLEMENTATION_PATH_MISSING,
-    check_implementation_paths,
-)
 from agent_os.product.tree.loader import (
     BAD_FRONTMATTER,
     DUPLICATE_ID,
@@ -44,6 +40,7 @@ from agent_os.product.tree.reference_checks import (
     REFERENCE_CHECKS,
     SUCCESSOR_WITHOUT_SUPERSESSION,
     SUPERSEDED_WITHOUT_SUCCESSOR,
+    check_implementation_paths,
     check_references,
     cycle_defects,
     describe_kind,
@@ -104,11 +101,6 @@ CHECKS: dict[str, str] = {
     HARDENED_NEEDS_VERIFICATION: (
         "a hardened node has no `verification` with a `command`: tests harden, and a judged "
         "criterion alone is acceptance, not hardening"
-    ),
-    IMPLEMENTATION_PATH_MISSING: (
-        "an implemented or hardened node's `implementation` names a path written from the "
-        "repository root (`web/app/x.py`, its first folder there) that does not exist: the code "
-        "moved or was deleted. Checked only when the doctor is given the repository"
     ),
     **REFERENCE_CHECKS,
 }

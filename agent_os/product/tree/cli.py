@@ -42,8 +42,8 @@ from agent_os.product.tree.compile import (
     render_compile_text,
     write_compile_files,
 )
-from agent_os.product.tree.implementation_paths import repository_root_of
 from agent_os.product.tree.loader import Defect, TreeRootError, load_tree, require_tree_root
+from agent_os.product.tree.reference_checks import repository_root_of
 from agent_os.product.tree.slicing import (
     SliceError,
     build_slice,

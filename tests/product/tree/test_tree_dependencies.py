@@ -11,11 +11,11 @@ from tree_helpers import write_node, write_sound_tree
 
 from agent_os.product.tree import cli
 from agent_os.product.tree.checks import CHECKS, check_tree
-from agent_os.product.tree.implementation_paths import (
+from agent_os.product.tree.loader import load_tree
+from agent_os.product.tree.reference_checks import (
     IMPLEMENTATION_PATH_MISSING,
     repository_root_of,
 )
-from agent_os.product.tree.loader import load_tree
 
 
 def found(root: pathlib.Path) -> list[tuple[str, str]]:

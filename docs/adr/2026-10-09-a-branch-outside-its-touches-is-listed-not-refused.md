@@ -34,7 +34,7 @@ barrier but visibility at the one place a reviewer already looks, before the mer
 - The section is written when the pull request is created. A pull request that already exists keeps
   the body it was created with; a resumed worker that grows beyond its `touches` in a later round is
   seen by the validator through its own diff.
-- The listing is measured against the base before the merge `open-pr` makes, so the base's own
+- The listing is measured from the merge-base with the base (a three-dot diff), so the base's own
   commits never appear in it.
 - If the listing proves noisy (tests of the touched code are always listed when `touches` names only
   source paths), the answer is a better `touches` from whoever writes the node, not a looser check.

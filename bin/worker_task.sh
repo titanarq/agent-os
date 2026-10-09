@@ -337,10 +337,12 @@ alive() { alive_pidfile "$pidfile"; }
 # The status report's readers (`readable_events_file`, `usage_report`, `issue_token_line`).
 # shellcheck source=agent_os/bin/worker_status_report.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
-# What `open-pr` refuses to publish: the diary, a malformed `Node-Change` trailer, and a branch that
-# fails the code-quality ratchet.
+# What `open-pr` refuses to publish (the diary, a malformed trailer, a failing quality ratchet), and
+# the body it publishes the rest with.
 # shellcheck source=agent_os/bin/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
+# shellcheck source=agent_os/bin/worker_pull_request_body.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker_pull_request_body.sh"
 # shellcheck source=agent_os/bin/worker_init_worktree.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_init_worktree.sh"
 
@@ -1671,13 +1673,7 @@ open-pr)
     block_on_malformed_node_change_trailers "$issue" "$branch" "$base_ref" "$trailer_report"
     exit 1
   fi
-  # Nor one that would fail the host's code-quality ratchet: the same check, run before the PR.
   branch_fails_the_quality_ratchet "$issue" "$branch" "$base_ref" && exit 1
-  # Files beyond the ticket's `touches` are listed in the pull request, never refused: measured here,
-  # before the merge below brings the base's own commits into the range.
-  outside_touches_note=$(printf '%s\n' "$issue_body" \
-    | "$agent_python" -m agent_os.product.tracker.paths_outside_touches --worktree "$worktree" --base "$base_ref") \
-    || outside_touches_note=""
   if git -C "$worktree" fetch -q origin "$base" 2>/dev/null; then
     merge_ref=FETCH_HEAD
   elif git -C "$worktree" rev-parse --verify -q "origin/$base^{commit}" >/dev/null 2>&1; then
@@ -1818,17 +1814,9 @@ A human decides how the two tips are reconciled; then run \`open-pr\` again."
     echo "open-pr: PR #$existing is already open for $branch"
   else
     title=$(gh issue view "$issue" --json title -q .title) || title="issue #$issue"
-    pull_request_body="Closes #$issue
-
-Opened by the $backend worker at the end of its run, from $worktree. The acceptance criteria and
-the definition of done are in the issue; a validator agent reviews this pull request against them,
-and merging stays a human act."
-    [ -z "$outside_touches_note" ] || pull_request_body="$pull_request_body
-
-$outside_touches_note"
     gh pr create --base "$base" --head "$branch" \
       --title "$title (#$issue)" \
-      --body "$pull_request_body" \
+      --body "$(pull_request_body "$issue" "$base_ref")" \
       || { echo "open-pr: gh pr create failed -- the branch is pushed, the pull request is not"; exit 0; }
   fi
 

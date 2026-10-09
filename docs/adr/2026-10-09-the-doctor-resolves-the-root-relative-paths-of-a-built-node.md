@@ -2,7 +2,7 @@
 
 - Date: 2026-10-09
 - Status: accepted
-- Modules: `agent_os/product/tree/implementation_paths.py`, `agent_os/product/tree/checks.py`
+- Modules: `agent_os/product/tree/reference_checks.py`, `agent_os/product/tree/checks.py`
 - Plan: `docs/tree/dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check.md`, `docs/tree/dec-tree-as-repo-files.md`
 
 ## Context
