@@ -42,6 +42,12 @@ dev = [
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+# ruff 0.17 stopped enabling the naive-datetime rules (DTZ) by default, which 0.16 did, so the
+# `# noqa: DTZ...` directives in the guard turned into RUF100 errors on a fresh install: naming the
+# rule keeps the same lint result on both.
+extend-select = ["DTZ"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Shared builders sit beside the tests that use them (`tree_helpers`, `compile_support`) and are
