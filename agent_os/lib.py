@@ -160,6 +160,7 @@ from agent_os.streams.claude_jsonl import (  # noqa: F401 -- re-exported: guard 
     turn_context_tokens,
 )
 from agent_os.streams.role_run_log import (  # noqa: F401 -- re-exported: guard, puntal and tests import them here
+    ROLE_RUN_EXIT_MARKER_SUFFIX,
     RUNS_TSV_HEADER,
     last_result_event,
     planner_run_row,
