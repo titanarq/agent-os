@@ -24,7 +24,11 @@
 #     uncommitted, in a `WIP: cut by guard (<reason>)` commit -- the door `agent_guard.cut_run`
 #     reaches instead of keeping a freeze of its own (#482).
 #   agent_os/bin/worker_task.sh <qwen|claude> resume [<brief.md>] [--after <quota|guard_cut|manual>]
-#                                                 [--context "<text appended to the instruction>"]
+#                                                 [--context "<text appended to the instruction>"] [--rework]
+#     `--rework`: for a run whose every stage is committed and whose pull request the validator
+#     sent back with CHANGES_REQUESTED. Appends one stage -- "Address the changes requested on PR
+#     #<n>" -- to the issue's `## Stages` and launches it with that review as context; without it
+#     such a run has "nothing to launch" (`bin/worker_rework.sh`, `agent_os/rework.py`).
 #     refuses at `planner.relaunch_cap` `WIP: cut by guard` commits since the branch's fork point
 #     from its base (#362), of which `open-pr`'s pre-merge freeze is not one (#407): no pid, no
 #     state, no events are written on a refusal.
@@ -344,6 +348,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
 # shellcheck source=agent_os/bin/worker_init_worktree.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_init_worktree.sh"
+# `resume --rework`: the stage a pull request sent back with CHANGES_REQUESTED is owed.
+# shellcheck source=agent_os/bin/worker_rework.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker_rework.sh"
 
 # ----------------------------------------------------------------------------------------------
 # STAGES (#375). What the issue plans and what the branch has actually done, resolved together
@@ -602,10 +609,11 @@ freeze_uncommitted_work() {
   # human to commit by hand what the mechanism had just produced. Still never `git add -A`, which
   # has destroyed a symlink in this repo: the paths arrive one by one from `ls-files --others
   # --exclude-standard`, so what `.gitignore` or `.git/info/exclude` keeps out stays out, and the
-  # listing is also what the commit body below names. `.env` is the link this driver creates
-  # itself (#404), dropped only while it holds a link -- the same narrowing `uncommitted_work`
-  # reads, so the freeze cannot leave behind the one entry that refusal was taught to ignore.
-  [ -L "$worktree/.env" ] && untracked_pathspec+=(":!.env")
+  # listing is also what the commit body below names. The links this driver creates itself (#404,
+  # `driver_linked_paths`) are dropped only while they hold a link -- the same narrowing
+  # `uncommitted_work` reads, so the freeze can neither commit them nor leave behind the one
+  # entry that refusal was taught to ignore.
+  while IFS= read -r path; do untracked_pathspec+=(":!$path"); done < <(driver_linked_paths)
   while IFS= read -r -d '' path; do swept+=("$path"); done \
     < <(git -C "$worktree" ls-files --others --exclude-standard -z -- "${untracked_pathspec[@]}")
   if [ "${#swept[@]}" -gt 0 ]; then
@@ -639,8 +647,23 @@ hide_scratchpad_from_git() {
   printf '*\n' >"$ignore_file"
 }
 
-# Uncommitted work in the worktree, at most the five entries a refusal prints -- WITHOUT the `.env`
-# link this driver puts there itself (#404). `launch_stage` links `$main/.env` into a worktree that
+# THE PATHS THIS DRIVER LINKS INTO A WORKTREE ITSELF, and that are links right now: `.env`, which
+# `launch_stage` links (#404), and every `project.worktree_links` entry `init` provisions -- `.venv`
+# by default. A real file or directory at one of those paths is the worker's, so only a symlink
+# counts. A host's `.gitignore` of `.venv/` (with the slash) ignores a directory and never a
+# symlink, which git sees as a file: every new slot worktree showed `?? .venv`, and `branch` and
+# `start` refused it as dirty (stage1i). Read by `uncommitted_work` and by the freeze, which must
+# not commit the links either.
+driver_linked_paths() {
+  local linked
+  { echo .env; "$agent_python" -m agent_os.lib worktree-links 2>/dev/null || true; } | sort -u \
+    | while IFS= read -r linked; do
+      [ ! -L "$worktree/$linked" ] || printf '%s\n' "$linked"
+    done
+}
+
+# Uncommitted work in the worktree, at most the five entries a refusal prints -- WITHOUT the links
+# this driver puts there itself (#404, `driver_linked_paths`). `launch_stage` links `$main/.env` into a worktree that
 # has none, and the dirty check below read that link as untracked work: a relaunch was refused for
 # the driver's own doing, and in a repository carrying no ignore rule for `.env` -- a test's
 # temporary one, or any project that does not gitignore it -- it was refused every time. This
@@ -650,15 +673,15 @@ hide_scratchpad_from_git() {
 # `uncommitted_work resume` also leaves out the diary of the run it continues, and only that (#22,
 # #84): see `drop_the_resumed_runs_diary`. Every other caller still counts the diary as work.
 uncommitted_work() {
-  local mode=${1:-} entries
+  local mode=${1:-} entries linked
   entries=$(git -C "$worktree" status --porcelain)
-  # Narrow on purpose: only that path's UNTRACKED entry, and only while the path holds a symlink,
+  # Narrow on purpose: only a link's UNTRACKED entry, and only while the path holds a symlink,
   # which is the shape the driver's link has. A `.env` that is a real file, a tracked `.env` git
   # reports as modified or typechanged, the diary and every other path still count as work.
-  # Filtered before the five entries are taken, so the link cannot crowd a real one out.
-  if [ -L "$worktree/.env" ]; then
-    entries=$(printf '%s\n' "$entries" | grep -v -x '?? \.env' || true)
-  fi
+  # Filtered before the five entries are taken, so a link cannot crowd a real one out.
+  while IFS= read -r linked; do
+    entries=$(printf '%s\n' "$entries" | grep -v -x -F "?? $linked" || true)
+  done < <(driver_linked_paths)
   if [ "$mode" = resume ]; then
     entries=$(printf '%s\n' "$entries" | drop_the_resumed_runs_diary)
   fi
@@ -1244,10 +1267,11 @@ branch)
 
 start|resume)
   mode=$1; shift
-  force=no; after=manual; extra_context=""; positional=()
+  force=no; rework=no; after=manual; extra_context=""; positional=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --force) force=yes ;;
+      --rework) rework=yes ;;
       --after) shift; after=${1:-manual} ;;
       # What the planner hands a resumed run that has something new to act on -- today, the body
       # of the validator's request-changes review (agent_os/docs/adr/2026-09-14-a-pr-is-validated-by-a-
@@ -1270,6 +1294,7 @@ start|resume)
   [ -n "$dirty" ] && { echo "worktree is dirty; commit or clean it first:"; echo "$dirty"; exit 1; }
 
   if [ "$mode" = start ]; then
+    [ "$rework" = no ] || { echo "usage: --rework belongs to resume: a start has no review to answer"; exit 2; }
     issue=${positional[0]:-}
     extra=${positional[1]:-}
     case "$issue" in ''|*[!0-9]*)
@@ -1435,6 +1460,7 @@ start|resume)
       fi
     fi
     launch_issue=$cap_issue
+    [ "$rework" = no ] || prepare_rework "$cap_issue"
   fi
 
   launch_stage "$mode" "$launch_issue" "$brief" "$after" "$extra_context"
