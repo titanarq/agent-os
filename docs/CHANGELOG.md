@@ -8,6 +8,13 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session ingestion (no issue; branch `fix/test-session-ingest`) -- the half of `uc-open-a-test-session-for-a-branch`
+  that Agentos owns. `agent-os-sessions test-ingest` reads the closed test sessions the app writes
+  (`tree.test_sessions_dir`, contract in `docs/AGENT_OS.md` §4.11), prints the plan by default and with `--apply`
+  writes each answer into its node, opens one rework issue per rejected case (keyed, so a second run opens none) and
+  records the owner's acceptance on the node (new optional `acceptances` field); the verdicts of `feedback.jsonl`
+  inside the session are summarised in the plan; the reader is versioned by the file's `schema` (1 today). ADR 2026-10-09.
+
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
