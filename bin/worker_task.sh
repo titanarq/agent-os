@@ -36,8 +36,9 @@
 #   concurrent workers it addresses. Slot 1 is the backend's own worktree and `.cache/worker_<name>.*`
 #   files; slot n > 1 is `<worktree>-<n>` and `.cache/worker_<name>-<n>.*`. A backend with one slot
 #   needs no `--slot`. With several: `start` and `branch` pick a free slot themselves (one whose
-#   branch already names the issue first), `resume --issue <N>` the slot that recorded issue N,
-#   `status` and `init` without one cover every slot, and every other subcommand refuses to guess.
+#   branch already names the issue first), `resume`, `collect`, `open-pr`, `stop` and `watch` take
+#   `--issue <N>` for the slot that recorded issue N, `status` and `init` without one cover every
+#   slot, and every other subcommand refuses to guess.
 #   The run's own subshell carries its slot, so `stage-exit`, `open-pr` and the chain stay on it.
 #
 # ONE STAGE PER PROCESS (#375, agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-
@@ -146,17 +147,18 @@ shift
 # subshell and the guard's cut name it: read once here and then UNSET, so nothing this driver
 # launches -- the backend CLI, the guard's exit hook, the planner that hook may wake -- inherits a
 # slot it would then be pinned to. Every internal call passes the slot explicitly instead.
-# `--issue <N>` is `resume`'s way to name the run it continues when the backend has several slots.
+# `--issue <N>` is how `resume`, `collect`, `open-pr`, `stop` and `watch` name the run they address
+# when the backend has several slots: the slot that recorded issue N.
 # ----------------------------------------------------------------------------------------------
 requested_slot=${WORKER_SLOT:-}
 unset WORKER_SLOT
-resume_issue=""
+addressed_issue=""
 remaining_arguments=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --slot) shift; requested_slot=${1:-} ;;
     --slot=*) requested_slot=${1#--slot=} ;;
-    --issue) shift; resume_issue=${1:-} ;;
+    --issue) shift; addressed_issue=${1:-} ;;
     *) remaining_arguments+=("$1") ;;
   esac
   shift
@@ -1104,8 +1106,9 @@ pick_free_slot() {
   use_slot "${clean_uncut:-${clean:-${free[0]}}}"
 }
 
-# THE SLOT WHOSE RECORDED ISSUE IS THIS ONE, for `resume --issue <N>`: a relaunch continues the
-# run that recorded the issue, in the worktree that holds its branch. The newest record wins when
+# THE SLOT WHOSE RECORDED ISSUE IS THIS ONE, for `--issue <N>` (`resume`, `collect`, `open-pr`,
+# `stop`, `watch`): the command addresses the run that recorded the issue, in the worktree that
+# holds its branch. The newest record wins when
 # two slots have run the same issue at different times.
 pick_slot_of_issue() {
   local wanted=$1 n found="" found_file=""
@@ -1118,7 +1121,7 @@ pick_slot_of_issue() {
     fi
   done
   if [ -z "$found" ]; then
-    echo "resume refused: no slot of backend '$backend' recorded issue #$wanted"
+    echo "$subcommand refused: no slot of backend '$backend' recorded issue #$wanted"
     list_slots
     exit 1
   fi
@@ -1160,13 +1163,22 @@ else
       ;;
     branch) pick_free_slot "" "${2:-}" ;;
     resume)
-      if [ -z "$resume_issue" ]; then
+      if [ -z "$addressed_issue" ]; then
         echo "usage: backend '$backend' has $slot_count slots -- name the run to resume with" \
           "--issue <N> (or --slot <n>):"
         list_slots
         exit 2
       fi
-      pick_slot_of_issue "$resume_issue"
+      pick_slot_of_issue "$addressed_issue"
+      ;;
+    collect | open-pr | stop | watch)
+      if [ -z "$addressed_issue" ]; then
+        echo "usage: backend '$backend' has $slot_count slots -- name one with --slot <n>" \
+          "(or the run's issue with --issue <N>):"
+        list_slots
+        exit 2
+      fi
+      pick_slot_of_issue "$addressed_issue"
       ;;
     *)
       echo "usage: backend '$backend' has $slot_count slots -- name one with --slot <n>:"
@@ -1178,10 +1190,11 @@ fi
 
 # `--issue` on a slot named some other way, or on a one-slot backend: the relaunch must still be
 # of that issue, never of whatever this slot happens to have recorded instead.
-if [ "$subcommand" = resume ] && [ -n "$resume_issue" ] \
-  && [ "$(cat "$issuefile" 2>/dev/null || true)" != "$resume_issue" ]; then
-  echo "resume refused: slot $slot of backend '$backend' recorded" \
-    "issue #$(cat "$issuefile" 2>/dev/null || echo none), not #$resume_issue"
+case "$subcommand" in resume | collect | open-pr | stop | watch) addresses_a_run=yes ;; *) addresses_a_run=no ;; esac
+if [ "$addresses_a_run" = yes ] && [ -n "$addressed_issue" ] \
+  && [ "$(cat "$issuefile" 2>/dev/null || true)" != "$addressed_issue" ]; then
+  echo "$subcommand refused: slot $slot of backend '$backend' recorded" \
+    "issue #$(cat "$issuefile" 2>/dev/null || echo none), not #$addressed_issue"
   exit 1
 fi
 
