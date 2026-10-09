@@ -110,8 +110,8 @@ ends, `worker_finished` (every stage done) and `worker_cut` (one stage's process
 own commit). `worker_cut` also carries `open-pr`'s own endings, `BLOCKED reason=<reason>`
 (`malformed_node_change_trailer`, `quality_ratchet_failed`, `push_rejected`, `workflows_permission`, `merge_failed`): the work is
 committed and no pull request exists. The planner prompt says what to do with them: never `resume` the issue and never run `open-pr`
-again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it for the first three;
-`merge_failed` leaves the issue `doing`, with no comment) and mention the human with the reason.
+again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it, with a comment
+saying what unblocks it, for every one of them) and mention the human with the reason.
 `tests/product/worker/test_planner_knows_open_pr_endings.py` reads
 the reasons from the drivers so a new one cannot go unnamed there.
 
@@ -421,7 +421,10 @@ a Sonnet worker class on `claude-sonnet-5-5` — read and write the same verdict
 windows may be counted per model family, so it can happen that Opus is exhausted while Sonnet still
 has room; the mechanism cannot tell, and an `exhausted` verdict cut on one family parks every role
 and worker on `claude` until the verdict expires (`mechanism.quota_verdict_ttl_minutes`), each falling back
-per its own `fallback:` where it declares one. This is deliberate and errs safe: a host that wants
+per its own `fallback:` where it declares one. The verdict is written by the guard's tick for a live worker,
+by the fold of a role run's log, and by a worker's own `stage-exit` when it reads a refusal
+(`agent_os.product.tracker.quota_verdict`): a run relaunched into the wall dies before any tick sees it,
+and without that record the next launch would read a stale `allowed` and probe the wall again. This is deliberate and errs safe: a host that wants
 the families isolated declares a second backend for the other model (its own `command`, `worktree`
 and `quota` entry) and points those classes at it. Nothing else changes: model ids stay opaque.
 
@@ -680,7 +683,7 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
-| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
+| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. The expert declares it on every node that compiles to a ticket (`prompts/expert.md`), and splits a node when two independent ones would touch the same code. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a leaf is dispatched with a command, a judged criterion or none (the ticket's acceptance is then judged by an agent); a `command` is **mandatory for a `hardened` node** | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |

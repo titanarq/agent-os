@@ -1300,6 +1300,7 @@ stage-exit)
   # -- and, for a run that died before its first event, of the words it printed instead.
   quota=$("$agent_python" -m agent_os.lib quota-status "$events" --log "$logfile" --backend "$backend" \
     2>/dev/null || echo allowed)
+  [ "$quota" != exhausted ] || "$agent_python" -m agent_os.product.tracker.quota_verdict exhausted --backend "$backend" || true
   # A backend the account's quota refused DID start: it is a quota cut below, never this.
   if [ "$backend_status" != 0 ] && [ ! -s "$events" ] && [ "$quota" != exhausted ]; then
     # ANY non-zero status, not only 127. The EVENT STREAM is what carries the weight here: a
@@ -1509,7 +1510,6 @@ open-pr)
   # Below the `ahead` check on purpose: a branch on the base itself, or with nothing on it, has
   # already exited above, and neither of them has anything to conflict with.
   conflicting_paths=""
-  merge_failed=""
   merge_ref=""
   # THE TREE MUST BE COMMITTED BEFORE THE MERGE, or the merge never starts. `git merge` refuses
   # outright when tracked files are modified, and the success arm of `stage-exit` (the last stage
@@ -1563,12 +1563,11 @@ open-pr)
       # a missing committer identity, a broken index. That is NOT "no conflict": pushing now
       # would publish a branch unmerged with its base while reporting nothing wrong, which is the
       # case this step exists to prevent. Stop before the push and say so.
-      merge_failed=yes
       write_state "BLOCKED reason=merge_failed base=$base"
       echo "open-pr: merging $base into $branch never started (no unmerged paths, so not a"
       echo "  conflict): an untracked file in the way, or no committer identity. NOT pushing --"
       echo "  a branch pushed unmerged is the silent no-CI case, and this run will not create one."
-      git -C "$worktree" status --porcelain | sed 's/^/  /'
+      block_on_a_merge_that_never_started "$issue" "$branch" "$base"
       exit 1
     fi
   fi

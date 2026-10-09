@@ -8,6 +8,25 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1k (no issue; branch `fix/rollout-stage1k`) -- four edges of the first v2 host, each reproduced
+  by a test that failed first. D: `open-pr` whose merge of the base never started (`BLOCKED reason=merge_failed`,
+  no unmerged paths: an untracked file in the way, no committer identity) left the issue in `doing` with no
+  comment; it now comments what was in the way (`git status --porcelain`) and what unblocks it and moves the
+  issue to `blocked-on-human`, like the other endings, and the three endings share one `hand_the_issue_to_the_human`
+  (`bin/worker/worker_publication_refusals.sh`). E: `prompts/expert.md` tells the expert to declare `touches:` on
+  every node that compiles to a ticket and to split a node, or order it with `depends_on:`, when two independent ones
+  would touch the same code -- two tickets of the host depended on the same code undeclared and ran at once; golden
+  `expert.md` changed by exactly that bullet (read diff by diff). F: the planner prompt described the manual rework
+  route (paste the review into `--after manual --context`), which fails for a run whose every stage is committed; it now
+  says `resume --issue N --rework`, that the driver appends the stage and hands over the review, and that two such
+  stages are the attempts before `blocked-on-human` (the driver counts only cuts, so the planner reads the stages);
+  neutral on lines (the file stays at the 300-line ratchet) and golden `planner.md` changed by exactly those
+  sentences. G: the quota verdict was persisted by the guard's tick for a live worker and by the fold of role logs,
+  and nothing wrote it when `stage-exit` itself read the refusal of a run relaunched into the wall (it dies before any
+  tick) -- the next launch read a stale `allowed` and probed the wall again. `stage-exit` now records `exhausted`
+  through `record_quota_observation` (extracted from the fold; `agent_os.product.tracker.quota_verdict`); only a
+  refusal is recorded, and it lapses by the existing TTL (`mechanism.quota_verdict_ttl_minutes`). A worker class with
+  no `fallback:` is still not refused at launch over an exhausted verdict.
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
