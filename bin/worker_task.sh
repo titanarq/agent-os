@@ -341,8 +341,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/worker_status_report.sh"
 # the body it publishes the rest with.
 # shellcheck source=agent_os/bin/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_publication_refusals.sh"
-# shellcheck source=agent_os/bin/worker_pull_request_body.sh
-source "$(dirname "${BASH_SOURCE[0]}")/worker_pull_request_body.sh"
 # shellcheck source=agent_os/bin/worker_init_worktree.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker_init_worktree.sh"
 

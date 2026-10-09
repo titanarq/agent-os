@@ -87,7 +87,7 @@ def test_move_review_says_in_one_line_that_the_app_cannot_read_checks():
     assert "GraphQL" not in message
     assert message.startswith("move #7 review refused:")
     assert "Checks: read" in message and "Commit statuses: read" in message
-    assert "ADOPTION.md step 14" in message
+    assert "adoption/substrate.md step 14" in message
 
 
 def test_move_review_keeps_any_other_gh_failure_as_it_was():
@@ -152,7 +152,7 @@ def test_the_doctor_fails_naming_the_app_the_missing_permissions_and_the_remedy(
     assert "acme-validator" in check.detail
     assert "Checks: read" in check.detail and "Commit statuses: read" in check.detail
     assert "acme-planner" not in check.detail.split("--")[0]
-    assert "accept" in check.detail and "ADOPTION.md step 14" in check.detail
+    assert "accept" in check.detail and "adoption/substrate.md step 14" in check.detail
     assert "\n" not in check.line()
 
 
