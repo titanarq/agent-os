@@ -590,7 +590,7 @@ def test_main_reports_a_missing_config_as_a_failed_check(tmp_path):
     assert len(config_lines) == 1, result.stdout
     assert config_lines[0].startswith("[FAIL]")
     assert str(config_path) in config_lines[0]
-    assert "ADOPTION.md step 8" in config_lines[0]
+    assert "adoption/substrate.md step 8" in config_lines[0]
     # The checks that need no config still run and report.
     assert "[ok  ] python3 >= 3.12" in result.stdout
     assert "[ok  ] gh auth status" in result.stdout

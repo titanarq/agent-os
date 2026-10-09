@@ -250,7 +250,7 @@ def test_the_budget_reads_the_live_cost_through_the_backends_own_parser():
 
 # ---- the adoption checklist names live keys (agent-os#8) ---------------------------------------
 
-# A config key as `docs/ADOPTION.md` spells it: `project.backends.<name>.app`,
+# A config key as the adoption documents (`docs/ADOPTION.md`, `docs/adoption/*.md`) spell it: `project.backends.<name>.app`,
 # `project.labels.{a,b}`. Not preceded by a word character or `[`, so `pyproject.toml` and the
 # `[project.scripts]` table of `pyproject.toml` are not read as keys of `config/agents.yaml`.
 _CONFIG_KEY = re.compile(
@@ -295,14 +295,22 @@ def _deprecated_project_keys() -> set[str]:
 def test_every_config_key_the_adoption_checklist_names_is_a_live_key():
     deprecated = _deprecated_project_keys()
     assert deprecated, "the loader deprecates no key any more -- drop this half of the test"
-    mentions = _CONFIG_KEY.findall((AGENT_OS_DIR / "docs" / "ADOPTION.md").read_text())
-    assert mentions, "ADOPTION.md names no config key -- the pattern no longer matches it"
+    adoption_documents = [AGENT_OS_DIR / "docs" / "ADOPTION.md"] + sorted(
+        (AGENT_OS_DIR / "docs" / "adoption").glob("*.md")
+    )
+    mentions = [
+        mention
+        for document in adoption_documents
+        for mention in _CONFIG_KEY.findall(document.read_text())
+    ]
+    assert mentions, "the adoption documents name no config key -- the pattern no longer matches"
     problems = []
     for section, dotted in mentions:
         key = f"{section}{dotted}"
         problems += [f"{key}: no field {name!r}" for name in _unknown_segments(section, dotted)]
         if section == "project" and dotted.split(".")[1] in deprecated:
             problems.append(f"{key}: deprecated")
-    assert not problems, "ADOPTION.md names config keys the loader does not read:\n" + "\n".join(
-        sorted(set(problems))
+    assert not problems, (
+        "the adoption documents name config keys the loader does not read:\n"
+        + "\n".join(sorted(set(problems)))
     )

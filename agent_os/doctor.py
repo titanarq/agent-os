@@ -7,7 +7,7 @@ project field-list` for the Project v2 board, file existence under the host's ow
 reacts to -- a manual check would re-announce a run that already finished and wake the planner for
 free (`agent_os/docs/AGENT_OS.md` §7, the `role_died`/exit-hook machinery in `agent_os.guard`) -- and it
 never arms, restarts or edits a systemd unit: that stays a human decision
-(`agent_os/docs/ADOPTION.md` step 22).
+(`agent_os/docs/adoption/substrate.md` step 22).
 
     agent-os-doctor        # one line per check, exit 1 if any fails
 
@@ -314,7 +314,7 @@ def check_guard_timer(project: ProjectConfig) -> Check:
         state
         if ok
         else f"{state} -- arm it with `systemctl --user enable --now {unit}` once "
-        "`agent-os-install` has written the unit (agent_os/docs/ADOPTION.md steps 20 and 22)"
+        "`agent-os-install` has written the unit (agent_os/docs/adoption/substrate.md steps 20 and 22)"
     )
     return Check("guard timer active", ok, detail)
 
