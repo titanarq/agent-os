@@ -29,7 +29,7 @@ handed the PR back to the human.
   `.github/workflows/` whose `on:` block fires on `pull_request` without a `paths`/`paths-ignore`
   filter. The heuristic reads only the `on:` block and says so in its message.
 - **A host lands its CI before its first product PR**, merged by hand if need be, and never makes
-  its CI task depend on a skeleton (`docs/ADOPTION.md` step 23).
+  its CI task depend on a skeleton (`docs/adoption/substrate.md` step 23).
 
 ## Rejected alternative
 "No checks" acceptable when no workflow's path filter matches the diff and the control plane ran

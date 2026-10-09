@@ -1052,7 +1052,7 @@ def config_load_failure(error: Exception, path: pathlib.Path | str = DEFAULT_AGE
     if isinstance(error, FileNotFoundError):
         return (
             f"{path} does not exist -- write it from agent_os/config.example.yaml "
-            "(agent_os/docs/ADOPTION.md step 8)"
+            "(agent_os/docs/adoption/substrate.md step 8)"
         )
     return f"{path} does not load -- {' '.join(str(error).split())}"
 

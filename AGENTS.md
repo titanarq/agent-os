@@ -30,7 +30,8 @@ non-obvious "why".
 1. Read this file.
 2. Read the issue (`gh issue view N`) and whatever it links: another issue, a host's issue, a PR.
 3. Read only the sections of `docs/AGENT_OS.md` and the `docs/adr/*.md` the issue touches — then
-   the code. `docs/ADOPTION.md` is the second-host checklist; issues about adoption land there.
+   the code. `docs/ADOPTION.md` is the onboarding index (the v2 ladder for a new product; the v1 substrate checklist
+   is `docs/adoption/substrate.md`); issues about adoption land there.
 4. The issue is a report, not a spec: reproduce the defect with a failing test first, then fix it.
    If the report's premise does not hold against the code, say so on the issue instead of building
    to it.

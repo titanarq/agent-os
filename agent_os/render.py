@@ -23,7 +23,7 @@ from agent_os.lib import ProjectConfig
 UNKNOWN_TOKEN_RE = re.compile(r"__[A-Z][A-Z0-9_]*__")
 
 # Where a host keeps the mechanism, relative to its root: the `git subtree` prefix every host is
-# told to pull into (docs/ADOPTION.md step 7). The commands an agent definition names are spelled
+# told to pull into (docs/adoption/substrate.md step 7). The commands an agent definition names are spelled
 # from it because it is the one path every host has -- a `scripts/` wrapper is a host's own choice,
 # and a host that wrote none was sent to files that do not exist.
 MECHANISM_DIR = "agent_os"

@@ -16,6 +16,13 @@ that closed several small issues at once name them all. This file starts on 2026
   quota is the only limit and that puntales and workers never limit each other (owner, 2026-10-09). The
   ticket-writing modules of `agent_os/product/dispatch/` moved to its `tickets/` subpackage (and their tests) to
   keep both folders under twelve entries.
+- Onboarding v2 (no issue; branch `fix/onboarding-v2`) -- `docs/ADOPTION.md` is now the index of the
+  ladder that starts a product with Agentos v2, written from the first host's real start (installing,
+  the owner's goals and evaluators, the expert, `compile` in waves, foundations with a worker and a
+  validator by hand, parallel slots, the test session), with per-rung baselines (time, USD, rounds), what
+  failed the first time and which edges are still open. The 26-step v1 checklist moved unchanged to
+  `docs/adoption/substrate.md`; the messages, comments, ADR and tests that named `docs/ADOPTION.md` step N
+  now name that file, and the live-config-key test reads every adoption document.
 - Rollout stage 1g, 2 (no issue; branch `fix/rollout-stage1g`) -- parallelising is a requirement of
   Agentos's own tree: `docs/tree/fr-independent-work-runs-in-parallel.md`, under
   `goal-product-early-grown-by-use` (the owner's choice: a requirement under that goal, not a fifth goal).
