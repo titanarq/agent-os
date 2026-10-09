@@ -6,7 +6,7 @@ runs and `Commit statuses: read` for the legacy statuses. `gh pr list --json sta
 run) need both, and an App without them is answered "Resource not accessible by integration" --
 GraphQL's wording on one path, a bare 403 on the REST one. Nothing in that sentence says which
 permission is missing or where to grant it, so the doctor probes both before the first run and
-`move` translates the refusal when it meets it anyway (docs/ADOPTION.md step 14).
+`move` translates the refusal when it meets it anyway (docs/adoption/substrate.md step 14).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ PERMISSION_REFUSAL_MARKER = "resource not accessible by integration"
 REMEDY = (
     "grant them under the App's Permissions & events > Repository permissions, then accept the "
     "new permissions on the installation (an organization owner approves the request); "
-    "docs/ADOPTION.md step 14"
+    "docs/adoption/substrate.md step 14"
 )
 
 

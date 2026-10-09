@@ -415,7 +415,7 @@ def test_main_reports_a_missing_config_without_a_traceback(tmp_path):
     assert result.returncode == 1
     assert "Traceback" not in result.stderr, result.stderr
     assert str(tmp_path / "absent.yaml") in result.stderr
-    assert "ADOPTION.md step 8" in result.stderr
+    assert "adoption/substrate.md step 8" in result.stderr
 
 
 @pytest.mark.parametrize(
