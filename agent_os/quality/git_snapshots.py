@@ -21,6 +21,12 @@ def _git_output(repository: pathlib.Path, *arguments: str) -> bytes:
     return completed.stdout
 
 
+def git_toplevel_of(directory: pathlib.Path) -> pathlib.Path:
+    """The root of the checkout `directory` belongs to -- a linked worktree's own root, never the
+    main checkout it was made from -- and an error when it belongs to none."""
+    return pathlib.Path(_git_output(directory, "rev-parse", "--show-toplevel").decode().strip())
+
+
 def count_lines(content: bytes) -> int:
     """A binary file has no lines to speak of, so it counts as none."""
     if b"\0" in content:

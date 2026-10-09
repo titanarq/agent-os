@@ -9,7 +9,12 @@ own defect, and one fault is one line.
 
 from __future__ import annotations
 
+import pathlib
+import subprocess
+
+from agent_os.product.dispatch.touched_code import paths_named_in
 from agent_os.product.tree.loader import Defect, Tree
+from agent_os.product.tree.models import Node
 
 DANGLING_DECISION = "dangling-decision"
 SUPERSEDED_DECISION_IN_USE = "superseded-decision-in-use"
@@ -20,6 +25,8 @@ SUCCESSOR_CYCLE = "successor-cycle"
 DANGLING_FRICTION_NODE = "dangling-friction-node"
 DANGLING_DEPENDENCY = "dangling-dependency"
 DEPENDENCY_CYCLE = "dependency-cycle"
+IMPLEMENTATION_PATH_MISSING = "implementation-path-missing"
+STATES_WITH_BUILT_CODE = ("implemented", "hardened")
 
 REFERENCE_CHECKS: dict[str, str] = {
     DANGLING_DECISION: "a node's `decisions` names an id that is not a decision",
@@ -33,6 +40,11 @@ REFERENCE_CHECKS: dict[str, str] = {
     DANGLING_FRICTION_NODE: "a friction entry's `node` is not the id of any node",
     DANGLING_DEPENDENCY: "a node's `depends_on` names an id that is not a node",
     DEPENDENCY_CYCLE: "the `depends_on` edges loop back on themselves",
+    IMPLEMENTATION_PATH_MISSING: (
+        "an implemented or hardened node's `implementation` names a path written from the "
+        "repository root (`web/app/x.py`, its first folder there) that does not exist: the code "
+        "moved or was deleted. Checked only when the doctor is given the repository"
+    ),
 }
 
 
@@ -218,6 +230,57 @@ def check_friction_nodes(tree: Tree) -> list[Defect]:
                     tree.paths[decision.id],
                     DANGLING_FRICTION_NODE,
                     f"friction of {entry.date}: node {entry.node!r} does not exist",
+                )
+            )
+    return defects
+
+
+# THE PATHS A BUILT NODE NAMES STILL EXIST (docs/adr/2026-10-09-the-doctor-resolves-the-root-relative-
+# paths-of-a-built-node.md). `implementation` is prose, so this is built for precision and not for
+# recall: a false positive turns a sound tree red, a false negative only leaves today's blindness.
+# Only nodes that are `implemented` or `hardened` (before that the code may not exist yet); only
+# words with a `/`, never a bare `entry.html` (possibly relative to a folder named earlier) or a
+# dotted word like `http.client`; and only those whose first folder the repository root holds
+# (`answers/puntal_client.py` after `web/app/shell/` is relative, and nothing here can resolve it).
+# What survives is a root-relative path whose first folder is real and whose rest is not.
+
+
+def repository_root_of(directory: pathlib.Path) -> pathlib.Path | None:
+    """The git checkout `directory` belongs to, or None when it belongs to none -- a tree under a
+    temporary directory, which has no repository to hold its paths against."""
+    completed = subprocess.run(
+        ["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    return pathlib.Path(completed.stdout.strip()).resolve()
+
+
+def _missing_paths_of(node: Node, repository_root: pathlib.Path) -> list[str]:
+    missing = []
+    for path in paths_named_in(node.implementation or ""):
+        first_folder, separator, _rest = path.partition("/")
+        if not separator or not (repository_root / first_folder).exists():
+            continue
+        if not (repository_root / path).exists():
+            missing.append(path)
+    return missing
+
+
+def check_implementation_paths(tree: Tree, repository_root: pathlib.Path) -> list[Defect]:
+    defects = []
+    for node in tree.nodes.values():
+        if node.state not in STATES_WITH_BUILT_CODE:
+            continue
+        for path in _missing_paths_of(node, repository_root):
+            defects.append(
+                Defect(
+                    tree.paths[node.id],
+                    IMPLEMENTATION_PATH_MISSING,
+                    f"`implementation` names {path}, which does not exist in the repository",
                 )
             )
     return defects

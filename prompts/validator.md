@@ -120,6 +120,15 @@ goal and the acceptance each one carries.
   --root "$PWD/__TREE_ROOT__" --agent-authored` from inside the worktree: no output and exit 0
   means every commit of the branch that touches the tree carries one valid trailer git can read;
   any line it prints is a request for changes quoting that line.
+- A pull request body with a section `Files outside the ticket's `touches`` lists what the worker
+  changed beyond the code its ticket declared, which is what keeps two tickets from running on the same
+  code. Judge each listed file, one line of your checklist apiece, under `## Definition of done`:
+  justified (the criteria need it: a refactor they force, a test of the touched code) or not (a change
+  the issue never asked for), and say which. Then say whether it could collide with what runs in
+  parallel: `"$AGENT_OS_PYTHON" -m agent_os.issues list --label status:doing` names the running
+  tickets and `show <N>` carries the `<!-- touches: -->` line of each; name any whose paths overlap the
+  file. An unjustified file is a request for changes; a justified one that overlaps a running ticket
+  goes in `## Doubts` for the human, who decides the order.
 
 CODE QUALITY OF THE DIFF
 Besides the issue's own criteria, you review the code the diff adds or changes against the owner's

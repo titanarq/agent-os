@@ -8,6 +8,18 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1j (no issue; branch `fix/rollout-stage1j`) -- three edges of the first v2 host. A: `open-pr`
+  runs the code-quality ratchet on the worktree before the pull request exists and refuses a branch that fails
+  it (`BLOCKED reason=quality_ratchet_failed`, issue to `blocked-on-human`; a ratchet that could not run does not
+  refuse), like the malformed-trailer ending; `prompts/worker.md` tells the worker to run it before closing a stage;
+  `prompts/planner.md` names the ending; and `agent-os-quality` now judges the git checkout of the working directory
+  (or `--root`) instead of `AGENT_OS_HOST_ROOT`, which in a worker's worktree measured `main` and gave a false green.
+  B: `open-pr` lists in the pull request body the files outside the ticket's `touches` marker and the validator
+  judges each (ADR 2026-10-09: listed, not refused). C: the tree doctor reports `implementation-path-missing` for
+  an implemented or hardened node whose root-relative `implementation` path does not exist (`validate`, with the
+  repository found from the tree root; `compile` and `slice` leave it out); on the host's five checkouts it names
+  exactly the two nodes that pointed at the deleted `entry.html`. Goldens changed by exactly the sentences added
+  to the worker, validator and planner prompts (read diff by diff). D and E were not done.
 - Rollout stage 1h (no issue; branch `fix/rollout-stage1h`) -- the planner asks every run whether more work can
   run at once. New read-only `python -m agent_os.product.dispatch headroom [--json]` (what starts now, what waits
   and why, what waits only for the cap; the rules are `tree_dispatch_refusals`, not a copy); the planner prompt

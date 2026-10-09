@@ -11,11 +11,14 @@ a test keeps the two equal, so a rule cannot be added here and left undocumented
 Scope, stated because it is a choice (`docs/adr/2026-10-04-the-product-tree-and-the-decision-ledger-are-markdown-files-with-a-doctor.md`): the doctor reads ONE snapshot of
 the tree. It checks that a record is well-formed and consistent with the others; it does not check
 that a state TRANSITION was legal (a hardened node going back to pending), which needs two
-snapshots and so a git base, and it does not run a verification command or check that an
-implementation pointer resolves.
+snapshots and so a git base, and it does not run a verification command. It resolves an
+implementation pointer only when it is given the repository, and only the paths written from the
+repository root of a built node (`reference_checks.py`).
 """
 
 from __future__ import annotations
+
+import pathlib
 
 from agent_os.product.tree.loader import (
     BAD_FRONTMATTER,
@@ -37,6 +40,7 @@ from agent_os.product.tree.reference_checks import (
     REFERENCE_CHECKS,
     SUCCESSOR_WITHOUT_SUPERSESSION,
     SUPERSEDED_WITHOUT_SUCCESSOR,
+    check_implementation_paths,
     check_references,
     cycle_defects,
     describe_kind,
@@ -102,12 +106,16 @@ CHECKS: dict[str, str] = {
 }
 
 
-def check_tree(tree: Tree) -> list[Defect]:
+def check_tree(tree: Tree, repository_root: pathlib.Path | None = None) -> list[Defect]:
     """Every defect in the tree, loader's included, in a stable order: by file, then code, then
-    message. Empty means the tree is sound."""
+    message. Empty means the tree is sound. The one rule that reads the repository and not the tree
+    alone (`implementation-path-missing`) runs when `repository_root` is given: `compile` and `slice`
+    leave it out, because a stale pointer in one node's prose must not stop every other ticket."""
     defects = [*tree.defects, *_check_node_records(tree), *_check_decision_records(tree)]
     defects += check_references(tree)
     defects += _check_parent_edges(tree)
+    if repository_root is not None:
+        defects += check_implementation_paths(tree, repository_root)
     return sorted(set(defects), key=lambda defect: (str(defect.path), defect.code, defect.message))
 
 

@@ -238,9 +238,9 @@ you such an issue and it is not already labeled, that comment is the evidence: l
 `status:blocked-on-human` yourself (agent_os/docs/adr/2026-09-14-a-humans-reply-wakes-the-planner-never-the-
 worker-that-asked.md) -- do not relaunch it, and do not restate the worker's own question in your
 own comment, just confirm you saw it. A blocked `open-pr` ends as a `worker_cut` reading
-`BLOCKED reason=<reason>` (`push_rejected`, `malformed_node_change_trailer`, `workflows_permission`,
-`merge_failed`): work committed, no pull request, no cut stage -- never `resume` it nor re-run
-`open-pr` blindly. Make sure it is `status:blocked-on-human` and mention the human with the reason.
+`BLOCKED reason=<reason>` (`push_rejected`, `malformed_node_change_trailer`, `quality_ratchet_failed`,
+`workflows_permission`, `merge_failed`): work committed, no pull request, no cut stage -- never `resume` it
+nor re-run `open-pr` blindly. Make sure it is `status:blocked-on-human` and mention the human with the reason.
 
 QUOTA: CLAUDE EXHAUSTED FALLS BACK TO QWEN, ONLY WHEN THE TASK CLASS ALLOWS IT
 agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md: when

@@ -73,6 +73,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | `status:doing`, stage N/M committed → stage N+1 starts in a fresh process | Driver, from its exit hook | a stage process exits cleanly with a new `stage N/M:` commit landed and the guard's checks pass (agents-paused, quota, and the issue's cumulative cost AND cumulative tokens both under their class caps — either one passed ends the chain, #387) | fresh backend process (new session, never `--resume`), archives the finished stage's `.jsonl` under `.cache/spend/<issue>/` | `agent_os/bin/worker_task.sh` (chaining, `issue_cost_usd`/`issue_total_tokens`/`ceiling_passed`), `agent_os.guard` `check`, `agent_os.lib` `stages_completed`/`cumulative_cost_usd`/`cumulative_total_tokens`; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:doing` → `status:ai-completed` | Driver (`worker_task.sh open-pr`), called by the worker's own subshell | backend CLI exits on its own | branch push, `gh pr create` (`Closes #N`), `issues.py move N ai-completed` | `agent_os/bin/worker_task.sh:464-543` |
 | `status:doing` → `status:blocked-on-human` (no pull request): the branch's `Node-Change` trailers are not what the host's CI requires | Driver (`worker_task.sh open-pr`), before the merge and the push | a commit of the branch that touches the tree root has no trailer git reads (`missing-node-change`, `misplaced-node-change`: the line sits in a paragraph that is not the last one, as when a `Co-Authored-By:` follows a blank line), has two, a value outside the three, or `owner` (`owner-word-by-agent`: the owner's own word, which an agent never writes) | `.state=BLOCKED reason=malformed_node_change_trailer branch=...`, the command's own output as a comment on the issue, `issues.py move N blocked-on-human`; nothing pushed, no commit rewritten. A human rewords the commits and runs `open-pr` again, which rewrites `BLOCKED` to `DONE` | `bin/worker_publication_refusals.sh`, `agent_os.product.tracker.branch_trailers` |
+| `status:doing` → `status:blocked-on-human` (no pull request): the branch fails the code-quality ratchet the host's CI runs | Driver (`worker_task.sh open-pr`), after the pre-merge freeze, before the merge and the push | `python -m agent_os.quality --base <base> --root <worktree>` exits 1: a new file or folder over a `quality:` limit, or one already over it that got worse (`--root` is not optional: the driver does not stand in the worktree). Exit 2 (it could not run) is printed and does not refuse: a failure of the tool is no verdict, and CI judges the pull request | `.state=BLOCKED reason=quality_ratchet_failed branch=...`, the violations as a comment on the issue, `issues.py move N blocked-on-human`; nothing pushed, nothing rewritten. A human (or a resumed worker) brings the paths within the limits and runs `open-pr` again. `prompts/worker.md` tells the worker to run the same command before closing a stage | `bin/worker_publication_refusals.sh` (`branch_fails_the_quality_ratchet`) |
 | `status:doing`, a stage's process exits without its `stage N/M:` commit → cut, not a completed stage | Driver's exit hook, or the guard's `tick` | clean exit with no new stage commit since the last one, or the mechanical cut reasons in the row below | `worker_cut` event; `WIP: cut by guard` commit if there is uncommitted work to freeze | same as the row below; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:doing` → frozen (`CUT_BY_GUARD`), label unchanged | Guard (`tick`) | budget exceeded, stall (turns without commit / 3 identical calls), quota exhausted, or silence past the declared cutoff | `worker_task.sh stop`; `WIP: cut by guard (<reason>)` commit; `.state=CUT_BY_GUARD reason=...` | `agent_os.guard:585-602` (`cut_run`), `652-744` (`_tick_backend`) |
 | `CUT_BY_GUARD` → `status:doing` (relaunched from the last completed stage) | Planner, via `worker_task.sh resume` | `worker_cut` event | fresh process (never `--resume` of the cut session) starting at the first stage with no `stage N/M:` commit yet, `.state=RESUMED after=guard_cut` | `agent_os/bin/worker_task.sh` `resume` (cap check inline, now counting cut commits across stages); prompt says what a refusal means, `agent_os/bin/planner_task.sh`; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
@@ -107,7 +108,7 @@ mechanically from `stage N/M:` commits on the branch (`agent_lib.stages_complete
 from the planner or the worker declaring progress themselves — the planner only sees the two
 ends, `worker_finished` (every stage done) and `worker_cut` (one stage's process ended without its
 own commit). `worker_cut` also carries `open-pr`'s own endings, `BLOCKED reason=<reason>`
-(`malformed_node_change_trailer`, `push_rejected`, `workflows_permission`, `merge_failed`): the work is
+(`malformed_node_change_trailer`, `quality_ratchet_failed`, `push_rejected`, `workflows_permission`, `merge_failed`): the work is
 committed and no pull request exists. The planner prompt says what to do with them: never `resume` the issue and never run `open-pr`
 again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it for the first three;
 `merge_failed` leaves the issue `doing`, with no comment) and mention the human with the reason.
@@ -721,8 +722,10 @@ under it (see the slice and the tickets).
 if there is any. `check_tree` (`agent_os.product.tree.checks`) is the one implementation, and a host's own
 test command or CI step runs it: add `agent-os-tree validate` to `project.test_command`'s script, or
 call `check_tree(load_tree(root))` from a test. It reads one snapshot of the tree, so it does not
-check that a state *transition* was legal, nor run a verification, nor resolve an implementation
-pointer.
+check that a state *transition* was legal, nor run a verification. The one rule that reads the repository
+(`implementation-path-missing`) runs under `validate`, which finds the repository from the tree root's git
+checkout, and when `check_tree` is called with `repository_root`; `compile` and `slice` leave it out, because
+a stale pointer in one node's prose must not stop every other ticket.
 
 | Code | A defect when |
 |---|---|
@@ -743,6 +746,7 @@ pointer.
 | `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal tickets, and the shell does not go live until they are implemented and accepted (their tests come later) |
 | `hardened-needs-implementation` | a hardened node has no `implementation` |
 | `hardened-needs-verification` | a hardened node has no `verification` with a `command`: tests harden, and a judged criterion alone is acceptance, not hardening |
+| `implementation-path-missing` | an `implemented` or `hardened` node's `implementation` names a path written from the repository root (`web/app/x.py`, its first folder there) that does not exist: the code moved or was deleted. Built for precision, not recall: bare file names (`entry.html`), dotted words (`http.client`) and paths relative to a folder named earlier in the sentence (`answers/x.py` after `web/app/shell/`) are never judged. Checked only when the doctor is given the repository |
 | `dangling-decision` | a node's `decisions` names an id that is not a decision |
 | `superseded-decision-in-use` | a node's `decisions` names a superseded decision; the line names the live successor |
 | `superseded-without-successor` | a superseded decision has no `superseded_by` |
@@ -1262,6 +1266,10 @@ not run (no merge-base: the CI checkout needs `fetch-depth: 0`; a config that do
 ```
 agent-os-quality --base origin/main [--root DIR] [--config PATH]
 ```
+
+The repository judged is the git checkout the working directory (or `--root`) belongs to, never `AGENT_OS_HOST_ROOT`: the drivers export that variable, the host's main checkout, into every worker's worktree, where reading it measured `main` and answered green for a branch CI fails. Outside any repository the check exits 2.
+
+`open-pr` also lists, in the pull request body, the files the branch changes outside the ticket's `touches` marker (`agent_os.product.tracker.paths_outside_touches`; listed, never refused, `docs/adr/2026-10-09-a-branch-outside-its-touches-is-listed-not-refused.md`), and `prompts/validator.md` asks for a verdict on each.
 
 The `quality:` section of `config/agents.yaml` (`config.example.yaml` documents it) holds
 `max_entries_per_folder`, `max_lines_per_file` and `excluded_paths`: data and prose are not code, so
