@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_os.rework import (
+from agent_os.product.tracker.rework import (
     ReworkRefused,
     newest_review_requesting_changes,
     prepare,

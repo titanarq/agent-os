@@ -4,11 +4,11 @@ A worker whose every stage is committed has nothing left to launch, so `worker_t
 refused a run whose pull request the validator had sent back with CHANGES_REQUESTED -- and the fix
 was done by hand: a new stage appended to the issue's `## Stages` checklist, carrying the review's
 fixes, and a relaunch with the review as context. This module is that hand work as a first-class
-step (`worker_task.sh <backend> resume --issue <N> --rework`, bin/worker_rework.sh): it reads the
+step (`worker_task.sh <backend> resume --issue <N> --rework`, bin/worker/worker_rework.sh): it reads the
 pull request's newest verdict, appends the stage the branch's own commits will then count, and
 writes the review down as the context the relaunched run is handed.
 
-Pure functions plus one CLI, `python -m agent_os.rework prepare`; the driver does every `gh` call.
+Pure functions plus one CLI, `python -m agent_os.product.tracker.rework prepare`; the driver does every `gh` call.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ def prepare(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="python -m agent_os.rework")
+    parser = argparse.ArgumentParser(prog="python -m agent_os.product.tracker.rework")
     sub = parser.add_subparsers(dest="command", required=True)
     prepare_parser = sub.add_parser("prepare")
     prepare_parser.add_argument("--pull-requests", required=True, help="`gh pr list --json` file")

@@ -13,7 +13,7 @@ from agent_os.cli import AGENT_OS_DIR
 
 BLOCKED_STATE_WRITTEN = re.compile(r"write_state \"BLOCKED reason=(?P<reason>[a-z_]+)[ \"]")
 PUSH_REJECTION_CLASSIFIED = re.compile(r"push_rejection=(?P<reason>[a-z_]+)$", re.MULTILINE)
-DRIVER_FILES = ("worker_task.sh", "worker_publication_refusals.sh")
+DRIVER_FILES = ("worker_task.sh", "worker/worker_publication_refusals.sh")
 PLANNER_PROMPT = AGENT_OS_DIR / "prompts" / "planner.md"
 
 

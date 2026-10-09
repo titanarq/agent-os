@@ -14,7 +14,7 @@ that closed several small issues at once name them all. This file starts on 2026
   had "nothing to launch", and three times that day the fix was an extra stage added by hand to the issue's
   `## Stages` plus `resume --after manual --context`; the driver now appends the stage (`Address the changes
   requested on PR #<n>`) from the newest settling review of the branch's open pull request and launches it
-  with the review as context (`bin/worker_rework.sh`, `agent_os/rework.py`; `prompts/planner.md` still names
+  with the review as context (`bin/worker/worker_rework.sh`, `agent_os/product/tracker/rework.py`; `prompts/planner.md` still names
   the manual route and is left to the branch that edits it). (2) A worker relaunched into an exhausted quota
   window died before its first event and was recorded as `CUT_BY_GUARD reason=no_stage_commit` -- the planner
   may escalate the model after that, and may not after `reason=quota`; `stage-exit` now reads the stream's

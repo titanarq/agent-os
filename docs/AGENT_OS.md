@@ -467,6 +467,8 @@ agent_os/
 │   ├── puntal_task.sh             puntal driver, one `claude -p` per UI action (§4.7)
 │   ├── _python.sh                 the one interpreter/host-root resolver every driver sources
 │   ├── qwen_task.sh               compatibility wrapper (`exec worker_task.sh qwen "$@"`)
+│   ├── worker/                    helpers `worker_task.sh` sources and no host `exec`s: the status
+│   │                              report, publication refusals, `init`, `--rework`, worktree dirt
 │   ├── worker_progress.sh         what the workers have done lately and spent, one screen
 │   └── worker_task.sh             worker driver: init/branch/start/status/watch/collect/open-pr/…
 ├── bench/puntal/                the puntal bench's instrument (and its executor), outside the package (§4.7)

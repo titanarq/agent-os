@@ -2879,11 +2879,8 @@ def test_no_cut_stages_itself_and_no_freeze_reaches_for_git_add_all():
     }
     assert not literals & {"git", "add", "-u", "-A", "--all"}, sorted(literals)
 
-    staging = [
-        command
-        for command in _git_commands((AGENT_OS_DIR / "bin" / "worker_task.sh").read_text())
-        if re.search(r"\badd\b", command)
-    ]
+    driver_text = "\n".join(p.read_text() for p in (AGENT_OS_DIR / "bin").rglob("worker_*.sh"))
+    staging = [c for c in _git_commands(driver_text) if re.search(r"\badd\b", c)]
     assert staging, "the driver stages nothing: this audit has drifted away from the code"
     assert not [c for c in staging if "-A" in c or "--all" in c], staging
 
