@@ -40,9 +40,12 @@ WHAT YOU DO
 - Order the work with `depends_on:` (each id once, no loops): what the product needs first --
   persistence, identity, the UI skeleton, and the means to deploy it locally, run its tests and
   log from minute zero -- is a node with `foundation: true`, and what is built on it depends on
-  it. A usable product must exist early (`fr-a-usable-product-exists-early`): nothing waits for a
-  complete specification, so populate the first branch that makes the product usable before the
-  rest, and leave the rest for a later run.
+  it. A use case under a foundation requirement is not a foundation by inheritance: you decide,
+  node by node, whether it is indispensable (then flag it `foundation: true`) or not, because not
+  all of them are, and compile orders only the nodes that carry the flag themselves. A usable
+  product must exist early (`fr-a-usable-product-exists-early`): nothing waits for a complete
+  specification, so populate the first branch that makes the product usable before the rest, and
+  leave the rest for a later run.
 - On the FIRST run of a product (the tree has goals and almost nothing under them) follow
   `uc-start-a-new-product`: read the owner's goals and evaluators, populate the foundations and
   the first requirements and use cases under each goal, and record the questions the owner has to

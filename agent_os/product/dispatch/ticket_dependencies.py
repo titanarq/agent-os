@@ -55,8 +55,11 @@ def effective_dependencies(tree: Tree, node_id: str) -> tuple[str, ...]:
 
 
 def is_foundation_work(tree: Tree, node_id: str) -> bool:
-    """A foundation, or work under a foundation requirement: it goes out with the foundations."""
-    return any(tree.nodes[member].foundation for member in (node_id, *ancestor_ids(tree, node_id)))
+    """Whether the node itself is flagged `foundation`, which goes out ahead of the rest. A use case
+    under a foundation requirement is not one by inheritance: whether it is indispensable is the
+    expert's call, node by node, and it says so with the flag on that use case
+    (`docs/tree/fr-a-usable-product-exists-early.md`)."""
+    return tree.nodes[node_id].foundation
 
 
 def ticket_dependencies(

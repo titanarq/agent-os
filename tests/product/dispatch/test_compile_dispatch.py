@@ -256,11 +256,30 @@ def test_a_dependency_on_a_requirement_waits_for_the_use_cases_under_it(tmp_path
     assert "uc-zzz-boot" in one_ticket(tmp_path, "uc-aaa-screen").depends_on
 
 
-def test_a_use_case_under_a_foundation_requirement_is_ordered_as_a_foundation(tmp_path):
+def test_a_use_case_under_a_foundation_requirement_is_not_a_foundation_by_inheritance(tmp_path):
+    # The owner, 2026-10-09: "not every use case under a foundation is indispensable". `uc-zzz-boot`
+    # sorts after `uc-edit`, so being ordered ahead of it would take a flag it does not carry.
     write_sound_tree(tmp_path)
     write_requirement_with_use_case(tmp_path, "fr-zzz-base", "uc-zzz-boot", foundation=True)
     order = [t.node_id for t in compiled(tmp_path).tickets]
-    assert order.index("uc-zzz-boot") < order.index("uc-edit")
+    assert order.index("uc-edit") < order.index("uc-zzz-boot")
+
+
+def test_a_use_case_the_expert_flags_under_a_foundation_requirement_is_ordered_as_a_foundation(
+    tmp_path,
+):
+    write_sound_tree(tmp_path)
+    write_requirement_with_use_case(tmp_path, "fr-zzz-base", "uc-zzz-boot", foundation=True)
+    write_node(
+        tmp_path,
+        "uc-zzz-persistence",
+        "use-case",
+        parent="fr-zzz-base",
+        foundation=True,
+        verification=[{"command": "true"}],
+    )
+    order = [t.node_id for t in compiled(tmp_path).tickets]
+    assert order.index("uc-zzz-persistence") < order.index("uc-edit") < order.index("uc-zzz-boot")
 
 
 def test_inherited_dependencies_that_loop_are_refused_instead_of_hanging(tmp_path):

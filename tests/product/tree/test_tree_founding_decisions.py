@@ -111,6 +111,25 @@ def test_the_evaluators_are_moved_verbatim_and_none_is_dropped():
         assert [check.judge for check in tree.nodes[goal_id].verification] == criteria
 
 
+def test_parallelism_is_a_requirement_under_the_first_goal_with_the_owners_four_evaluators():
+    # The owner, 2026-10-09: parallelising is a requirement under the first goal, not a fifth goal,
+    # with these evaluators approved as trends.
+    tree = load_tree(LEDGER)
+    requirement = tree.nodes["fr-independent-work-runs-in-parallel"]
+    assert requirement.type == "functional-requirement"
+    assert requirement.parent == "goal-product-early-grown-by-use"
+    assert "dec-dispatch-never-runs-two-tickets-on-the-same-code" in requirement.decisions
+    assert all(check.is_judged for check in requirement.verification)
+    assert [check.judge for check in requirement.verification] == [
+        "Work items running at once when there is independent work: grows.",
+        "A wave's wall-clock time approaches that of its longest ticket, not the sum of its tickets.",
+        "Merge conflicts between work done in parallel: few.",
+        "No dispatchable work waits for another run to finish without a reason.",
+    ]
+    assert "Owner, 2026-10-09" in requirement.sources[0]
+    assert len([node for node in tree.nodes.values() if node.type == "goal"]) == len(GOALS)
+
+
 def test_the_slice_of_a_use_case_of_agentos_shows_its_goals_evaluators_as_judged():
     cut = build_slice(load_tree(LEDGER), "uc-use-the-product-from-early-on")
     assert cut.ancestors[-1].id == "goal-product-early-grown-by-use"
