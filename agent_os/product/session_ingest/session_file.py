@@ -96,16 +96,7 @@ def _question(row, where: str) -> Question:
     )
 
 
-def parse_closed_session(document, source: str) -> ClosedSession | None:
-    """The session, or None when it is still open: an open session is the owner's work in progress
-    and is read by nobody. A closed one that breaks the contract raises `SessionFileError`."""
-    if not isinstance(document, dict):
-        raise SessionFileError(f"{source}: not a JSON object")
-    status = _text(document, "status", source)
-    if status == "open":
-        return None
-    if status != "closed":
-        raise SessionFileError(f"{source}: status {status!r} is neither open nor closed")
+def _read_schema_1(document: dict, source: str) -> ClosedSession:
     session_id = _text(document, "id", source)
     if not SESSION_ID_RE.fullmatch(session_id):
         raise SessionFileError(f"{source}: id {session_id!r} is not lowercase words and digits")
@@ -120,6 +111,34 @@ def parse_closed_session(document, source: str) -> ClosedSession | None:
         cases=tuple(_case(row, source) for row in cases),
         questions=tuple(_question(row, source) for row in questions),
     )
+
+
+# One reader per `schema` the app can write. A file with no `schema` key is schema 1: the key did not
+# exist when that contract was fixed. A newer schema is added here, with its reader, and an older
+# reader never guesses at what it does not know.
+SCHEMA_READERS = {1: _read_schema_1}
+
+
+def parse_closed_session(document, source: str) -> ClosedSession | None:
+    """The session, or None when it is still open: an open session is the owner's work in progress
+    and is read by nobody, whatever its schema. A closed one that breaks the contract, or is written
+    in a schema this version does not read, raises `SessionFileError`."""
+    if not isinstance(document, dict):
+        raise SessionFileError(f"{source}: not a JSON object")
+    status = _text(document, "status", source)
+    if status == "open":
+        return None
+    if status != "closed":
+        raise SessionFileError(f"{source}: status {status!r} is neither open nor closed")
+    schema = document.get("schema", 1)
+    reader = SCHEMA_READERS.get(schema) if isinstance(schema, int) else None
+    if reader is None:
+        known = ", ".join(str(known_schema) for known_schema in SCHEMA_READERS)
+        raise SessionFileError(
+            f"{source}: schema {schema!r} is not read by this version (it reads: {known}); "
+            "the session stays pending until a version that reads it ingests it"
+        )
+    return reader(document, source)
 
 
 def read_closed_sessions(

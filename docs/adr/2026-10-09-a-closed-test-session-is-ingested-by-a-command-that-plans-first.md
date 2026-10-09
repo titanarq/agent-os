@@ -38,6 +38,10 @@ Agentos read that file, so what the owner said in the app stopped at the app.
 7. **The verdicts on improvised answers are input, not yet action.** Those of `feedback.jsonl` inside the
    session's window are summarised in the plan; the window is the only join the two files have.
 
+8. **The reader is versioned by `schema`.** The file carries an optional `schema` (absent = 1, the contract above) and
+   the reader has one parser per schema. A closed session in a schema the reader does not know is named and left
+   pending, never half-read; a newer schema arrives with its reader in a later change.
+
 ## Rejected alternatives
 
 - *Open the pull request from the command.* Left to the planner's worker as with `apply`: committing and merging

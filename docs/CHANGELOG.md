@@ -13,7 +13,7 @@ that closed several small issues at once name them all. This file starts on 2026
   (`tree.test_sessions_dir`, contract in `docs/AGENT_OS.md` §4.11), prints the plan by default and with `--apply`
   writes each answer into its node, opens one rework issue per rejected case (keyed, so a second run opens none) and
   records the owner's acceptance on the node (new optional `acceptances` field); the verdicts of `feedback.jsonl`
-  inside the session are summarised in the plan. ADR 2026-10-09.
+  inside the session are summarised in the plan; the reader is versioned by the file's `schema` (1 today). ADR 2026-10-09.
 - Rollout stage 1j (no issue; branch `fix/rollout-stage1j`) -- three edges of the first v2 host. A: `open-pr`
   runs the code-quality ratchet on the worktree before the pull request exists and refuses a branch that fails
   it (`BLOCKED reason=quality_ratchet_failed`, issue to `blocked-on-human`; a ratchet that could not run does not

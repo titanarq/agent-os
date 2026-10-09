@@ -1396,6 +1396,7 @@ object, written whole each time, id `ts-<YYYYMMDD>-<HHMMSS>-<6 hex>`.
 
 | key | content |
 |---|---|
+| `schema` | optional integer, the version of this contract; absent means 1, the one described here. The reader has one parser per schema and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
 | `id`, `branch`, `branch_title` | the session and the requirement of the tree it tests |
 | `status`, `opened_at`, `closed_at` | `open` or `closed`; ISO-8601 moments **with a UTC offset** (a moment without one cannot be placed against the feedback log) |
 | `commit`, `since`, `changes`, `changes_problem` | where the repository stood when it opened, the previous session of the branch, and what changed; ingestion does not read them |

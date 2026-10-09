@@ -238,3 +238,27 @@ def test_the_verdicts_of_the_session_window_are_summarised(host, capsys):
         "create-ad on uc-ok: accepted 1, rejected 1 (wrong tone), retried 1"
         in capsys.readouterr().out
     )
+
+
+def test_a_schema_the_reader_does_not_know_is_named_and_stays_pending(host, capsys):
+    tmp_path, tracker = host
+    (tmp_path / "sessions" / "b.json").write_text(
+        json.dumps(session_document("ts-20261009-180000-aaaaaa", schema=2))
+    )
+    (tmp_path / "sessions" / "c.json").write_text(
+        json.dumps(session_document("ts-20261009-181000-bbbbbb", status="open", schema=2))
+    )
+    assert ingest(tmp_path, "--apply") == 1
+    captured = capsys.readouterr()
+    assert "b.json: schema 2 is not read by this version (it reads: 1)" in captured.err
+    assert "c.json" not in captured.err
+    assert len(tracker.opened) == 1
+    assert ingest(tmp_path) == 1
+    assert "ts-20261009-180000-aaaaaa" not in capsys.readouterr().out
+
+
+def test_an_explicit_schema_1_reads_like_one_without_the_key(host, capsys):
+    tmp_path, _ = host
+    (tmp_path / "sessions" / "a.json").write_text(json.dumps(session_document(schema=1)))
+    assert ingest(tmp_path) == 0
+    assert "write answer" in capsys.readouterr().out
