@@ -243,14 +243,14 @@ def test_the_verdicts_of_the_session_window_are_summarised(host, capsys):
 def test_a_schema_the_reader_does_not_know_is_named_and_stays_pending(host, capsys):
     tmp_path, tracker = host
     (tmp_path / "sessions" / "b.json").write_text(
-        json.dumps(session_document("ts-20261009-180000-aaaaaa", schema=2))
+        json.dumps(session_document("ts-20261009-180000-aaaaaa", schema=3))
     )
     (tmp_path / "sessions" / "c.json").write_text(
-        json.dumps(session_document("ts-20261009-181000-bbbbbb", status="open", schema=2))
+        json.dumps(session_document("ts-20261009-181000-bbbbbb", status="open", schema=3))
     )
     assert ingest(tmp_path, "--apply") == 1
     captured = capsys.readouterr()
-    assert "b.json: schema 2 is not read by this version (it reads: 1)" in captured.err
+    assert "b.json: schema 3 is not read by this version (it reads: 1, 2)" in captured.err
     assert "c.json" not in captured.err
     assert len(tracker.opened) == 1
     assert ingest(tmp_path) == 1

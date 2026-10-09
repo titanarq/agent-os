@@ -3,8 +3,9 @@ the backlog.
 
     agent-os-sessions test-ingest [--root DIR] [--sessions-dir DIR] [--session ID] [--apply]
         # default: print the plan of every closed session not yet ingested, write nothing
-        # --apply: write the answers and the acceptances into the working tree, open the rework
-        #          issues, and remember the session as ingested (a pull request carries the tree)
+        # --apply: write the answers and the acceptances into the working tree, open the issues
+        #          (rework or changes), write `understood.json` for the app, and remember the session
+        #          as ingested (a pull request carries the tree)
         # --session ID: plan (or apply) that one session again, ingested or not
 
 This module owns the command's arguments and its run; `agent_os.product.sessions.cli` registers it
@@ -23,17 +24,21 @@ from agent_os.cli import host_root
 from agent_os.issues import type_labels
 from agent_os.product.puntal.options import run_dir_for
 from agent_os.product.session_ingest.apply import (
+    AppliedSession,
     ReworkTicketSettings,
-    ReworkTracker,
     apply_session_plan,
 )
+from agent_os.product.session_ingest.chat.apply import apply_chat_plan
+from agent_os.product.session_ingest.chat.model import ChatSession
+from agent_os.product.session_ingest.chat.plan import ChatSessionPlan, plan_chat_session
+from agent_os.product.session_ingest.chat.render import render_chat_plan
+from agent_os.product.session_ingest.chat.understood import UnderstoodFileError
 from agent_os.product.session_ingest.github_tracker import GitHubReworkTracker
 from agent_os.product.session_ingest.plan import plan_session
 from agent_os.product.session_ingest.registry import ingested_session_ids, record_ingested
 from agent_os.product.session_ingest.render import render_plan
 from agent_os.product.session_ingest.rework_ticket import ReworkTicketError
 from agent_os.product.session_ingest.session_file import (
-    ClosedSession,
     SessionFileError,
     read_closed_sessions,
 )
@@ -58,7 +63,7 @@ def add_parser(sub, *, handler) -> None:
     parser.set_defaults(handler=handler)
 
 
-def build_tracker() -> ReworkTracker:
+def build_tracker() -> GitHubReworkTracker:
     return GitHubReworkTracker()
 
 
@@ -80,18 +85,42 @@ def _ticket_settings(config: lib.AgentsConfig) -> ReworkTicketSettings:
         labels=[label for label in (types.get("bug") or types.get("task"),) if label]
         + config.tree.ticket_labels,
         tree_root=config.tree.root,
+        change_labels=[label for label in (types.get("task") or types.get("bug"),) if label]
+        + config.tree.ticket_labels,
     )
 
 
-def _sessions_to_ingest(
-    sessions: list[ClosedSession], already: set[str], only: str | None
-) -> list[ClosedSession]:
+def _sessions_to_ingest(sessions: list, already: set[str], only: str | None) -> list:
     if only is None:
         return [session for session in sessions if session.id not in already]
     chosen = [session for session in sessions if session.id == only]
     if not chosen:
         raise IngestRefused(f"no closed test session {only!r} in the sessions directory")
     return chosen
+
+
+def _utc_now() -> str:
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _apply(
+    plan, tree, tracker, args: argparse.Namespace, config: lib.AgentsConfig
+) -> AppliedSession:
+    """Carries out a plan of either schema; the ticket settings are asked of the config only when a
+    ticket is still to be opened, so a session with nothing to open never needs a budget class."""
+    if isinstance(plan, ChatSessionPlan):
+        to_open = any(step.existing_issue is None for step in plan.issues)
+        return apply_chat_plan(
+            plan,
+            tree,
+            tracker=tracker,
+            settings=_ticket_settings(config) if to_open else None,
+            understood_directory=_sessions_directory(args, config),
+            ingested_at=_utc_now(),
+        )
+    to_open = any(step.existing_issue is None for step in plan.reworks)
+    settings = _ticket_settings(config) if to_open else None
+    return apply_session_plan(plan, tree, tracker=tracker, settings=settings)
 
 
 def run_test_ingest(
@@ -109,33 +138,36 @@ def run_test_ingest(
     problems = list(file_problems)
     if not pending:
         print("no closed test session is waiting to be ingested")
-    settings = (
-        _ticket_settings(config)
-        if args.apply and any(c.verdict == "reject" for s in pending for c in s.cases)
-        else None
-    )
     tracker = build_tracker()
     feedback_file = run_dir_for(host_root()) / FEEDBACK_FILE
     written_files: list[pathlib.Path] = []
     for session in pending:
         tree = load_tree(tree_root)
-        plan = plan_session(
-            session, tree, find_rework_issue=tracker.find, feedback_file=feedback_file
-        )
-        print("\n".join(render_plan(plan)))
+        if isinstance(session, ChatSession):
+            plan = plan_chat_session(
+                session, tree, find_issue=tracker.find_by_key, feedback_file=feedback_file
+            )
+            print("\n".join(render_chat_plan(plan)))
+        else:
+            plan = plan_session(
+                session, tree, find_rework_issue=tracker.find, feedback_file=feedback_file
+            )
+            print("\n".join(render_plan(plan)))
         problems.extend(f"{session.id}: {problem}" for problem in plan.problems)
         if not args.apply:
             continue
         try:
-            applied = apply_session_plan(plan, tree, tracker=tracker, settings=settings)
-        except (WritebackError, ReworkTicketError) as error:
+            applied = _apply(plan, tree, tracker, args, config)
+        except (WritebackError, ReworkTicketError, UnderstoodFileError) as error:
             raise IngestRefused(f"{session.id}: {error}") from error
         written_files.extend(applied.written_files)
+        if applied.understood_file:
+            print(f"wrote {applied.understood_file} (the app reads it; not part of the tree)")
         if not plan.problems:
             record_ingested(
                 cache,
                 session=session.id,
-                ingested_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                ingested_at=_utc_now(),
                 answers=applied.answers_written,
                 accepted=applied.acceptances_written,
                 rework_issues=applied.rework_issues,

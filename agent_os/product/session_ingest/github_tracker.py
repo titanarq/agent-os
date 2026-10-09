@@ -19,7 +19,10 @@ class GitHubReworkTracker:
         return self._repo
 
     def find(self, session_id: str, node_id: str) -> int | None:
-        return find_by_key(self.repo, rework_key(session_id, node_id))
+        return self.find_by_key(rework_key(session_id, node_id))
+
+    def find_by_key(self, key: str) -> int | None:
+        return find_by_key(self.repo, key)
 
     def open(self, title: str, body: str, labels: list[str]) -> int:
         return int(create_issue(self.repo, title, body, labels)["number"])

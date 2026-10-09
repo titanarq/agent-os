@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session ingestion, schema 2 (no issue; branch `fix/test-session-ingest-v2`) -- `agent-os-sessions test-ingest`
+  now reads the chat the app writes (`schema: 2`: `comments[]`, `cases[].verdict` of `perfect`/`ok_with_improvements`/`needs_work`,
+  optional `items[]` from the feedback interpreter) and, as the owner said ("Directo, salvo decisiones",
+  `uc-open-a-test-session-for-a-branch`, `dec-a-test-session-happens-inside-the-app`): a `change` item becomes one keyed
+  issue, a `decision` and a `question_of_what` are not launched but kept for the next session, a withdrawn item is nothing,
+  `perfect` is recorded as the owner's acceptance, and what no item covers (a session with no `items`, or one the interpreter
+  could not read) is handled by the state of its case with the thread quoted, so no comment is lost. New
+  `<tree.test_sessions_dir>/understood.json` ("what I understood and where it went"), written by Agentos for the app to
+  read when the owner opens the next session (contract in `docs/AGENT_OS.md` §4.11). Schema 1 is unchanged; a schema above 2
+  is still named and left pending. ADR 2026-10-09 (a chat test session is ingested directly, except decisions).
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
   after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
   and `dec-a-test-session-happens-inside-the-app` say the session opens from a "Test session" header button

@@ -1403,7 +1403,7 @@ object, written whole each time, id `ts-<YYYYMMDD>-<HHMMSS>-<6 hex>`.
 
 | key | content |
 |---|---|
-| `schema` | optional integer, the version of this contract; absent means 1, the one described here. The reader has one parser per schema and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
+| `schema` | optional integer, the version of this contract; absent means 1, the one in this table (schema 2 is below). The reader has one parser per schema (1 and 2) and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
 | `id`, `branch`, `branch_title` | the session and the requirement of the tree it tests |
 | `status`, `opened_at`, `closed_at` | `open` or `closed`; ISO-8601 moments **with a UTC offset** (a moment without one cannot be placed against the feedback log) |
 | `commit`, `since`, `changes`, `changes_problem` | where the repository stood when it opened, the previous session of the branch, and what changed; ingestion does not read them |
@@ -1435,6 +1435,54 @@ A step already done is shown as such and not repeated; a step that cannot be don
 question the node does not carry open, or already answered with other words) is a `problem:` line, exit 1, and the
 session stays pending. The registry of ingested sessions is `.cache/test-sessions/ingested.jsonl`: every effect is
 idempotent on its own, so losing it costs a longer plan and no duplicate.
+
+**Schema 2: the chat.** The owner's comment box is a chat with the feedback interpreter
+(`docs/tree/dec-a-test-session-happens-inside-the-app.md`), and the host writes what the chat produced:
+
+| key | content |
+|---|---|
+| `schema`, `id`, `status`, `opened_at`, `closed_at` | `2`; the rest as above (the id needs no `branch`: a session is not tied to one) |
+| `cases` | `[{node, title, state, verdict}]`, `verdict` one of `perfect`, `ok_with_improvements`, `needs_work` (the last state the owner gave that case in the session) or `not_tried` |
+| `comments` | the thread, in the order sent: `[{role, text, state, case, page, at}]`; `role` `owner` or `agent`, `text` a string (empty when only a state was given), `state` `perfect`, `ok_with_improvements`, `needs_work` or `null`, `case` the node or `null`, `page` and `at` free text |
+| `questions` | as above (the host writes only the answered ones) |
+| `items` | **optional**: what the interpreter understood, `[{id, kind, summary, node, page, from_messages, withdrawn}]` (`docs/FEEDBACK_INTERPRETER.md`); `kind` `change`, `decision` or `question_of_what`; `from_messages` are positions in `comments` |
+
+A closed session without the `items` key (closed before the interpreter was connected) is valid, and so is `items: []`;
+`commit`, `since`, `changes` and `changes_problem` are not read. Per session, **directly, except decisions** (the owner's word):
+
+- a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
+  configures it, else the bug label), with `<!-- node: -->` when the item has a node, the interpreter's reading **and** the
+  messages of `from_messages` quoted whole, and `<!-- key: test-change.<session>.item.<id> -->`;
+- a `decision` is **not launched**, and a `question_of_what` neither (it is not a question-session issue: it has no node
+  question and no default answer): both are kept for the next session in `understood.json`; a withdrawn item is nothing;
+- an owner message **no item names** is never lost, whatever the reason (no `items`, `items: []`, a message the interpreter
+  could not read): by the last state of its case, `needs_work` is a rework issue (`test-rework.<session>.<node>`, the
+  thread of the case quoted), `ok_with_improvements` or a remark with no state is a change issue
+  (`test-change.<session>.case.<node>`, thread quoted), a state with no text names no change and the plan says so, and the
+  comments on no case are one general change issue (`test-change.<session>.general`) that says no interpreter read them;
+- a case whose last state is `perfect` is recorded as the owner's acceptance, once per session (`acceptances`); `not_tried`
+  with no comment is left alone; the answered questions are written into their nodes as in schema 1.
+
+A node the tree lacks (a case, or the node of a `change` item) is a `problem:` line and the session stays pending.
+
+**What the app shows when the owner opens the next session** is `<tree.test_sessions_dir>/understood.json`
+(`chat/understood.py`; the session reader passes it by name). Agentos is its only writer and the app only reads it; a
+single JSON object written whole by atomic replace, `{"schema": 1, "sessions": [block, ...]}`, one block per ingested
+session that left something to show, oldest `closed_at` first (a second ingestion replaces the session's block):
+
+```json
+{"session": "ts-20261010-101500-abc123", "closed_at": "2026-10-10T10:15:00+02:00", "ingested_at": "2026-10-10T08:20:00Z",
+ "decisions": [{"id": "item-3", "summary": "...", "node": "uc-x", "page": null, "from_messages": [3]}],
+ "questions": [{"id": "item-4", "summary": "...", "node": null, "page": "/p", "from_messages": [3]}],
+ "changes":   [{"origin": "item", "summary": "...", "node": "uc-x", "issue": 101}]}
+```
+
+`decisions` await the owner's confirmation or correction, `questions` stay open until the owner answers, `changes` were
+launched (`origin` `item`, `rework`, `case change` or `general`; `issue` the number that carries it). The host paints "what
+I understood and where it went" from the blocks whose `closed_at` precedes the opening of the session, once each (what it has
+shown it remembers itself, in its own session file), and looks a `from_messages` position up in that session's own file for
+the words. What the owner says about a block is a message of the new session like any other. The file is not part of the
+tree and is not committed. The decision: `docs/adr/2026-10-09-a-chat-test-session-is-ingested-directly-except-decisions.md`.
 
 **Hand-off.** The tree edits stay in the working tree, as with `apply`: a worker commits them with
 `Node-Change: usage` (revisions driven by the owner's answer or use; never `owner`, which an agent does not
