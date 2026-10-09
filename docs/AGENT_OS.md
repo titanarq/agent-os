@@ -831,7 +831,7 @@ itself (the expert decides it node by node). Those effective dependencies are wh
 `depends-on` marker and Dependencies section carry, **as tickets**: dispatch only waits for an open
 ticket, so a dependency on a node that never gets one (already `improvised`, `implemented` or
 `hardened`, or escalated) is replaced, in its place, by what that node waits for, as many levels down
-as there are such nodes (`agent_os.product.dispatch.ticket_dependencies`); left standing it would
+as there are such nodes (`agent_os.product.dispatch.tickets.ticket_dependencies`); left standing it would
 let the ticket start before the foundations under that node. Dependencies that only loop once
 inherited make `compile` refuse the tree, in the text, the JSON and the files. The labels are the task type label,
 `tree.ticket_labels` and `--label`; every body is checked by `validate_issue_body` before it is
@@ -855,6 +855,13 @@ its `config/agents.yaml` sets `tree.dispatch_by_node: true`. In one, and only th
   collides with nothing: the check cannot know what it does not say.
 - the worker's **brief** (`agent_os.issues brief`) ends with the slice of its node
   (`agent-os-tree context <node>`, cut from the tree as it is at dispatch), never the tree.
+- `python -m agent_os.product.dispatch headroom [--json]` is the read-only question *can more work
+  run at once right now*: for each ready issue it says whether the start gate and the cap would let it
+  start (the issues in the doing state are what runs) or why it waits (an open dependency, code shared
+  with a running ticket or one ahead of it, or only `planner.max_parallel_issues` / the backend's
+  `slots`), then `N could start now; M wait only for the cap`. The planner asks it every run, starts
+  every issue it says could start, and comments `headroom: waits only for the cap` on the rest, with no
+  page: quota is the only limit (`docs/tree/fr-independent-work-runs-in-parallel.md`).
 
 Roles: the worker writes back to its own node file (`mechanism`, `implementation`,
 `state: implemented`, never `hardened`, never a goal, a `verification` or a `challenge`) and reads

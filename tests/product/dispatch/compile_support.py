@@ -13,7 +13,7 @@ from conftest import EXAMPLE_CONFIG
 
 from agent_os.lib import load_agents_config
 from agent_os.product.dispatch.markers import render_marker_lines
-from agent_os.product.dispatch.results import CompileResult, Ticket
+from agent_os.product.dispatch.tickets.results import CompileResult, Ticket
 from agent_os.product.tree.compile import compile_tree
 from agent_os.product.tree.loader import load_tree
 
