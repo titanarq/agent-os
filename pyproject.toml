@@ -33,7 +33,7 @@ agent-os-doctor = "agent_os.doctor:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.6",
+    "ruff>=0.6,<0.17",
 ]
 
 # Matches the host project's own configuration on purpose: a file that moves between the two trees
