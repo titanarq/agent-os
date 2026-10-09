@@ -8,6 +8,7 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session panel, fifth correction in the tree (no issue; branch `docs/test-session-panel-v2`) -- on the owner's word of 2026-10-09 after trying the panel, `uc-open-a-test-session-for-a-branch` and `dec-a-test-session-happens-inside-the-app` drop the close button and the "session is open" header (the session opens by itself, closes by inactivity and is read while open), put the use-case list with its scroll above a full-width chat with state and send on one line, keep one thread per case across sessions, make the panel resizable with a minimum width, and show the pull requests merged since the previous session filtered by the case. Tree only.
 - Onboarding rung 6 (no issue; branch `docs/onboarding-rung6`) -- `docs/adoption/v2-build-the-product.md` rung 6 now describes the test session the first v2 host really ran on 2026-10-09 (the header button and side panel of `dec-a-test-session-happens-inside-the-app`, the order given by `depends_on`, the owner's web kept apart from the workers', `agent-os-sessions test-ingest`) with its first-time findings and cost; the interpreter chat and the schema 2 reader are named as not built.
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
   after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
