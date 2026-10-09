@@ -60,16 +60,19 @@ signal appears in 1.4 ms. These are single measurements, not a distribution.
 no code.
 **Why.** `fr-independent-work-runs-in-parallel`; `dec-dispatch-never-runs-two-tickets-on-the-same-code`.
 **How.**
-1. `project.backends.claude.slots: N` and `planner.max_parallel_issues: N`; `worker_task.sh claude init`
-   creates `<worktree>-2..N`. Give each slot an interpreter and `.env` of its own (below).
+1. Nothing to size: leave `project.backends.claude.slots` and `planner.max_parallel_issues` out. When a
+   dispatch finds every slot busy, `worker_task.sh claude branch`/`start` makes the next one
+   (`<worktree>-N`, with the host's `worktree_links` and setup command), so the number of workers follows the
+   number of independent tickets and the quota is the only limit. `slots: N` only precreates slots with
+   `worker_task.sh claude init`; set `max_parallel_issues` only if you want a ceiling anyway.
 2. Before each launch ask the gate: `python -m agent_os.product.dispatch start-gate <N> <live issues>`;
-   launch if it is 0, then `worker_task.sh claude start <N> --slot <S>`. With more than one slot every
-   subcommand except `start`, `branch`, `status`, `init` and `resume --issue` needs `--slot`. Ask the question after every finished
-   worker: does more fit? Free the slot when its worker ends, not when its pull request merges.
+   launch if it is 0 with `worker_task.sh claude branch ...` then `start <N>` (they land on the same slot).
+   With more than one slot `collect`, `open-pr`, `stop`, `watch` and `resume` take `--issue <N>`. Ask the
+   question after every finished worker: does more fit? A free slot is reused before another is made.
 3. Merge with step 6 of rung 4, one pull request at a time; when another slot merged first, merge
    `origin/main` into the branch, wait for CI, then merge.
-4. Watch the shared quota: it belongs to the backend, so an exhausted window cuts every live slot.
-   Park workers first; never the puntales the owner is trying.
+4. Watch the shared quota: it belongs to the backend, so an exhausted window cuts every live slot and no new
+   slot is made until it reopens. Park workers first; never the puntales the owner is trying.
 **Check.** `status` without `--slot` lists every slot; `start-gate` refuses two tickets whose `touches`
 overlap; each slot's worktree is clean before it starts.
 **First time.** `worktree_links` symlinks the root `.venv` into each slot, and `.gitignore` `.venv/`
@@ -77,10 +80,13 @@ does not cover a symlink, so the worktree is dirty and the branch step refuses (
 workaround: a virtualenv of its own per slot, built by hand). A quota cut with no events is recorded as
 `no_stage_commit` (open). `collect`, `open-pr`, `stop` and `watch` demand `--slot` although one run owns
 the issue (open). A rework after rejection needs the manual stage (rung 4, step 7) (open). The planner
-does not page by the cap, only records it (open). Slots are a fixed number, not on demand (open).
+does not page by the cap, only records it (open). Slots were a fixed number, not on demand (closed in stage 1l:
+the driver makes the next one; slots made for a ticket the start gate then refused stay idle and are reused,
+never deleted, so they are worktrees to prune by hand when the work is done).
 **Baseline.** Two slots from 16:02 (PR #30), five from 17:22 (PR #44); merges in the 17:18-17:33 window:
 three, against one per 22 minutes serial.
-**First host.** Five slots on one backend, `max_parallel_issues` 5, venvs `...-claude-2` to `-5`.
+**First host.** Five slots on one backend, `max_parallel_issues` 5, venvs `...-claude-2` to `-5`: delete the two
+keys from its `config/agents.yaml` after the `subtree pull` and it grows past five on demand; the five stay.
 
 ## Rung 6 - The test session
 

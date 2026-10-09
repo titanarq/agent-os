@@ -172,15 +172,19 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     Then `agent_os/bin/worker_task.sh <backend> init`, once per
     `project.backends` entry that sets a `worktree`: idempotent `git worktree add` on a fresh
     branch from `origin/main` when the configured path has no `.git` yet, plus a `.venv`/`.env` symlink from the host root when
-    either is missing. A backend that should run more than one worker at once sets
-    `project.backends.<name>.slots: N` (agent-os#90, ADR
-    `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`): slot 1 is `worktree`,
-    slot N is `<worktree>-N`, and the same `init` creates every missing one. A worktree that was
+    either is missing. A backend runs as many workers at once as the work has
+    room for: slot 1 is `worktree`, slot N is `<worktree>-N` (agent-os#90, ADR
+    `2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`), and when a dispatch finds
+    every slot busy the driver makes the next one itself, with the same links and setup `init`
+    gives (ADR `2026-10-09-worker-slots-are-created-on-demand.md`), so nothing has to be sized in
+    advance. `project.backends.<name>.slots: N` is optional and only says how many `init`
+    precreates; it is a floor, not a limit. A worktree that was
     lost (the directory deleted, a clone moved) is recreated by running `init` again: it reuses the
     `agent-os/init-<backend>` branch when that holds nothing `origin/main` lacks, and otherwise
-    stops and prints the `git` commands to keep or drop the branch. Raise
-    `planner.max_parallel_issues` with it -- that stays the cap across every slot of every
-    backend -- and give the issues `module:` labels, which keep two slots off the same area.
+    stops and prints the `git` commands to keep or drop the branch. Leave
+    `planner.max_parallel_issues` out -- the quota is the only limit; a host that wants a ceiling
+    sets it, and it counts every slot of every backend -- and give the issues `module:` labels,
+    which keep two slots off the same area.
 19. **`.secrets/`** — `<secrets_dir>/ntfy_topic` (the ntfy.sh topic string) and the App
     `.json`/`.pem` pairs from step 15, if not already placed there; `<host>/.env` at the repo root
     for any credential a worker's backend process needs — both are written by hand, nothing in the

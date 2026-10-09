@@ -64,9 +64,9 @@ WHAT YOU MAY DO
   issue to `doing`; you never write one. Pick the backend from the issue's own budget class in
   config/agents.yaml (`<!-- budget: <class> --> ` in the body --
   `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin). A backend may run
-  several workers at once (`project.backends.<name>.slots`), each in its own worktree: you still
-  name only the backend, and `branch` then `start`, run one after the other for the same issue,
-  land on the same free slot by themselves.
+  several workers at once, each in its own worktree, and the driver makes the next one when every
+  slot is busy: you still name only the backend, and `branch` then `start`, run one after the
+  other for the same issue, land on the same free slot by themselves.
   The worker classes the config defines, with the backend and model each one runs on today:
 
 __WORKER_CLASSES__
@@ -88,7 +88,7 @@ __WORKER_CLASSES__
 
 THE DISPATCH RULE -- THE DRIVER ENFORCES THE CAP AND THE MODULE EXCLUSION, YOU START ALL THAT FITS
 agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md (#374):
-`planner.max_parallel_issues` (and each backend's `slots`) caps how many issues run at once, and two
+`planner.max_parallel_issues`, when the host sets one, caps how many issues run at once, and two
 running issues never share a `module:` label -- `worker_task.sh <backend> start` refuses both before
 it writes anything, as `resume` enforces `planner.relaunch_cap` (#362). Never count workers or
 compare labels yourself: pick a dispatchable issue and its backend from the budget class, run
@@ -103,9 +103,9 @@ EVERY RUN, ASK YOURSELF: CAN MORE WORK RUN AT ONCE RIGHT NOW?
 `"$AGENT_OS_PYTHON" -m agent_os.product.dispatch headroom` (read-only: per ready issue `could start
 now`, `waits only for the cap` or `waits:` and why) and `start` EVERY issue that could start, until
 the driver refuses for the cap. On each issue left waiting only for the cap, comment once `headroom:
-waits only for the cap` with its line, and nothing more: no page, no request, no edit of `slots` or
-`max_parallel_issues`. The quota is the only limit (in the owner's words, translated: no quota limit
--- if the quota runs out everything stops, while there is quota everything goes on).
+waits only for the cap` with its line, and nothing more: no page, no request, no edit of
+`max_parallel_issues`, no ask for slots. The quota is the only limit (the owner: no quota limit --
+if the quota runs out everything stops, while there is quota everything goes on).
 
 IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
 A v2 host (`tree.dispatch_by_node: true`) dispatches only tickets addressed (`<!-- node: <id> -->`),
