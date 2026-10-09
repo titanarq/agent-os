@@ -8,6 +8,14 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
+  after his first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
+  and `dec-a-test-session-happens-inside-the-app` say the session opens from a "Test session" header button
+  into a side panel that keeps its state when collapsed, holding one comments box with a state dropdown always at the top, the use cases prioritized by
+  what the others depend on (filtered by default to the screen he is on), the comments box a chat with the
+  agent that interprets the feedback, and a comment split into changes launched directly except decisions of
+  what, shown to the owner at the start of the next session. Tree only; the session file contract is documented on
+  `fix/test-session-ingest`.
 - Rollout stage 1i (no issue; branch `fix/rollout-stage1i`) -- five defects observed on the vector host on
   2026-10-09, each with a test that failed first. (1) `worker_task.sh <backend> resume --issue N --rework`: a
   run whose every stage is committed and whose pull request the validator sent back with CHANGES_REQUESTED
