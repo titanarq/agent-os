@@ -194,3 +194,13 @@ def test_the_foundation_flag_is_per_node_and_the_docs_say_so(tmp_path):
 def test_the_field_table_has_a_row_for_touches_and_says_a_present_one_decides():
     row = table_row(section_of_the_tree_doc(), "touches")
     assert "decides" in row and "`touches: []`" in row and "derived" in row
+
+
+def test_the_docs_say_a_use_case_under_a_foundation_is_one_only_when_it_is_flagged_itself():
+    # The owner, 2026-10-09: not every use case under a foundation is indispensable, so the expert
+    # decides node by node and `compile` counts only the flag the node carries.
+    assert "not a foundation by inheritance" in table_row(section_of_the_tree_doc(), "foundation")
+    ordering = re.search(r"a use case under a `foundation`[^.]*\.", AGENT_OS_DOC.read_text())
+    assert ordering and "not" in ordering.group(0) and "flagged" in ordering.group(0)
+    expert_prompt = (AGENT_OS_DIR / "prompts" / "expert.md").read_text()
+    assert "node by node" in " ".join(expert_prompt.split())

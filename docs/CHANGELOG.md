@@ -8,6 +8,16 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1g, 1 (no issue; branch `fix/rollout-stage1g`) -- a use case under a foundation requirement is
+  no longer a foundation by inheritance. `compile` ordered with the foundations every node that had a
+  `foundation: true` ancestor (`is_foundation_work`); it now counts only the flag the node carries itself,
+  which the expert (`prompts/expert.md`) sets node by node when it judges the use case indispensable. The
+  owner's word of 2026-10-09: "no tiene por qué, esto tiene que decidirlo algún agente, porque a lo mejor no
+  todos los casos son imprescindibles". Recorded in the mechanism of `fr-a-usable-product-exists-early`
+  (with the owner's words as a source), `docs/AGENT_OS.md` (field table and compile ordering) and the expert
+  prompt; golden `expert.md` changed by exactly the sentence added to the prompt (read diff by diff). The
+  test that asserted the inheritance now asserts its absence, and a second one asserts that a flagged use
+  case is still ordered first.
 - Rollout stage 1f, 6 (no issue; branch `fix/rollout-stage1f`) -- `docs/ADOPTION.md` step 16 says that the
   drivers link the mechanism's `agent_os/.venv` into every worktree (`agent_os_link_mechanism_venv`),
   where and when, and that nothing is linked by hand. A test ties the step to the function it names.
