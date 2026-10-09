@@ -2,6 +2,10 @@
 
     agent-os-quality --base origin/main [--root DIR] [--config PATH]
 
+The repository judged is the checkout the working directory (or `--root`) belongs to: never the
+host's main checkout named by `AGENT_OS_HOST_ROOT`, which the drivers export into every worker's
+worktree, where it would measure `main` and answer green for a branch CI fails.
+
 Exit 0: no folder or file is over a limit without having been so on the merge-base with REF, or
 got worse since. Exit 1: violations, one line each. Exit 2: the check could not run."""
 
@@ -15,10 +19,11 @@ from collections.abc import Sequence
 import yaml
 
 from agent_os import lib
-from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.cli import AGENT_OS_DIR
 from agent_os.quality.config import QualityConfig
 from agent_os.quality.git_snapshots import (
     GitError,
+    git_toplevel_of,
     merge_base_with_head,
     snapshot_of_checkout,
     snapshot_of_revision,
@@ -63,7 +68,11 @@ def _load_quality_and_tree_root(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=PROGRAM, description=__doc__.split("\n")[0])
     parser.add_argument("--base", required=True, help="the ref the pull request targets")
-    parser.add_argument("--root", type=pathlib.Path, help="the repository (default: the host's)")
+    parser.add_argument(
+        "--root",
+        type=pathlib.Path,
+        help="a directory of the repository (default: the working directory's)",
+    )
     parser.add_argument(
         "--config", type=pathlib.Path, help="config/agents.yaml to read limits from"
     )
@@ -72,8 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
-    repository = (arguments.root or host_root()).resolve()
     try:
+        repository = git_toplevel_of(arguments.root or pathlib.Path.cwd()).resolve()
         quality, tree_root, loaded_config = _load_quality_and_tree_root(arguments.config)
         merge_base = merge_base_with_head(repository, arguments.base)
         excluded_paths = [*quality.excluded_paths, tree_root]

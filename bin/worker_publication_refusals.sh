@@ -92,8 +92,9 @@ again. The driver rewrites no commit."
 # `agent_os.quality` on every pull request, and a worker that never ran it opened pull requests
 # that failed it: a file passed the line limit, the review came back `CHANGES_REQUESTED`, and the
 # round it cost a full worker run. The same question is asked here, of the worktree about to be
-# published: `--root` is not optional, because without it the ratchet measures the host's MAIN
-# checkout, which is clean, and reports a branch that is over the limit as sound.
+# published: `--root` is not optional, because the driver does not stand in the worktree and the
+# ratchet judges the checkout it stands in -- the host's MAIN one, which is clean, and a branch that
+# is over the limit would be reported as sound.
 # Prints the ratchet's own words; returns its status: 0 sound, 1 violations, 2 it could not run.
 quality_ratchet_report() {
   "$agent_python" -m agent_os.quality --base "$1" --root "$worktree" 2>&1

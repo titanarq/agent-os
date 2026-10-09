@@ -101,8 +101,8 @@ def test_open_pr_does_not_refuse_over_a_ratchet_that_could_not_run(worker_at_its
 
 def test_the_worker_prompt_tells_it_to_run_the_ratchet_on_its_own_worktree_before_a_stage_ends():
     prompt = " ".join((AGENT_OS_DIR / "prompts" / "worker.md").read_text().split())
-    assert '"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main --root .' in prompt
-    assert "Keep `--root .`" in prompt
+    assert '"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main`' in prompt
+    assert "run it in your worktree and never in the main checkout" in prompt
     assert "Before the commit that closes a stage" in prompt
 
 

@@ -75,9 +75,8 @@ prose file counts like code. A pull request refused or sent back for this costs 
 a file, so you find out here, while the stage is still yours.
 - Before the commit that closes a stage, run from your worktree, with the base your pull request
   targets (`origin/main` unless the issue says `Base: <branch>`):
-  `"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main --root .`
-  Keep `--root .`: without it the check measures the main checkout, which is clean, and reports your
-  branch as sound.
+  `"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main`
+  It judges the checkout you stand in, so run it in your worktree and never in the main checkout.
 - Exit 0 prints nothing: carry on. Exit 1 prints one line per path over its limit: bring each back
   within it in this same stage -- move code or text into a new file or subfolder -- run the check
   again, and only then commit. Exit 2 means the check could not run: say so in your report.
