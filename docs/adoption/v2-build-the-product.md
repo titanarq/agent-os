@@ -97,6 +97,13 @@ what to try, and where each verdict is recorded. Answers go back into nodes by p
 (`agent-os-sessions answers/apply`, `verify-answer`).
 **Check.** A verdict recorded on a real puntal answer is recorded where the verdict ticket says and appears in the
 node's history; the owner can run it without help.
+**Ingesting a closed session.** The app writes the closed session to `tree.test_sessions_dir` (set it in
+`config/agents.yaml` to where the product writes; contract in `docs/AGENT_OS.md` §4.11) and never touches the tree.
+`agent-os-sessions test-ingest` prints what each closed session would change (read it: answers, acceptances, rework
+tickets, the verdicts of the improvised answers); `--apply` writes the answers and acceptances into the working
+tree, opens one rework issue per rejected case and remembers the session. Commit the tree edits on a branch with
+`Node-Change: usage`, open the pull request with `Test-Session: <id>` in its body and merge it on the owner's word;
+move the rework issues to `ready` as any ticket. Run it again freely: nothing is repeated.
 **First time / baseline.** In flight when this was written: the session ticket's pull request was open
 (PR #47) and its worker done; the owner had not yet tested. No baseline.
 

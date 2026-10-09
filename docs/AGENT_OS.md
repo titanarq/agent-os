@@ -567,6 +567,7 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-sonnet` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
+| `tree.test_sessions_dir` | where the product writes a test session's file when the owner closes it (§4.11), relative to the host's root unless absolute; `agent-os-sessions test-ingest` reads it. A host sets it to where its product writes | `var/test-sessions` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `expert`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
 | `board.*` | the progress board's GitHub Project (§4.6), all optional: `owner` (`@me`), `number` (0: found by `title`, created on a real sync), `title`, `progress_field`, `order_field` |
 | `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract of both paths: the slow path calls it, the fast path reads it as reference for the operations it plans), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
@@ -690,6 +691,7 @@ body; every other field is frontmatter. An unknown field is an error.
 | `foundation` | optional, default false | persistence, identity, UI skeleton: built as a normal ticket and never improvised (`foundation-improvised`). It is **implemented and accepted** -- the essential top-down acceptance, then the owner's in the first test session -- before the shell goes live, and its tests come later, when it hardens: foundations follow the same rule as every node (`docs/tree/dec-tests-harden-they-do-not-build.md`). The flag is **per node**: the doctor reads the node's own, so a use case under a foundation requirement that is not flagged itself may be improvised, and `compile` orders with the foundations only the nodes that carry the flag themselves: a use case under a foundation requirement is **not a foundation by inheritance**, because not every use case under one is indispensable and the expert (`prompts/expert.md`) decides it node by node, marking `foundation: true` the ones it judges indispensable (owner, 2026-10-09) |
 | `experiments` | optional | what was tried or is still to be found out about the node (`docs/tree/dec-a-doubt-of-how-is-settled-by-an-experiment.md`); replaces `spikes`. Each entry: `kind` (`spike`, `demand-probe`, `question`, `lookup`), `question`, `outcome` (`open`, `feasible`, `infeasible`, `inconclusive`, and `answered` for a question only), `finding` (required unless `open`), `date`, and for a `question` only its `scope` (`what` or `how`, required) and its `default_answer` (required for `what`: it stands until the owner answers). An open `what` question marks the node **not hardenable** |
 | `depends_on` | optional | ids of the nodes that must be done first, each once (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`); the doctor checks that each exists and that the edges do not loop. `compile` writes it into the ticket and orders the tickets by it, and a v2 host's dispatch starts a ticket only once the tickets of those nodes are closed (see Dispatch in a v2 host) |
+| `acceptances` | optional | the test sessions in which the owner accepted this node, `[{session, date}]`, oldest first; written only by `agent-os-sessions test-ingest` (§4.11) and read by the hardening order: what the owner accepted, and how often, says what to consolidate first (`docs/tree/dec-use-orders-hardening-and-the-owner-order-wins.md`). It is evidence, not a change of the what |
 | `challenge` | optional | the node is flagged as possibly not finishable (`docs/tree/dec-a-challenge-is-flagged-early-and-the-owner-decides.md`): `reason` (`no-solution`, `no-verification`, `over-cost`) and an optional `explanation`. It marks the node, and every node that depends on it, **not hardenable**; the owner decides whether to go on. Any node may carry it, a goal included |
 
 A goal carries none of `mechanism`, `implementation`, `experiments`, `depends_on`, `foundation` or a
@@ -1394,6 +1396,55 @@ a pull request is never merged automatically: it is condition 6 of the control p
 request claiming `Session-Answer: #N`: exit 0 only when every changed file is a node whose sole
 difference is an answer (or reclaimed question) the owner gave, word for word.
 
+### 4.11 The test session of the owner, ingested (`agent-os-sessions test-ingest`)
+
+The owner tries what changed inside the running product and closes the session there
+(`docs/tree/uc-open-a-test-session-for-a-branch.md`, `docs/tree/dec-a-test-session-happens-inside-the-app.md`).
+**The app writes the result and never touches the tree**; carrying it there is Agentos'. What every v2
+product writes when a session closes is the **contract**: `<tree.test_sessions_dir>/<id>.json`, one JSON
+object, written whole each time, id `ts-<YYYYMMDD>-<HHMMSS>-<6 hex>`.
+
+| key | content |
+|---|---|
+| `schema` | optional integer, the version of this contract; absent means 1, the one described here. The reader has one parser per schema and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
+| `id`, `branch`, `branch_title` | the session and the requirement of the tree it tests |
+| `status`, `opened_at`, `closed_at` | `open` or `closed`; ISO-8601 moments **with a UTC offset** (a moment without one cannot be placed against the feedback log) |
+| `commit`, `since`, `changes`, `changes_problem` | where the repository stood when it opened, the previous session of the branch, and what changed; ingestion does not read them |
+| `cases` | `[{node, title, state, verdict, note}]`, `verdict` one of `accept`, `reject`, `not_tried` |
+| `questions` | `[{node, question, default_answer, date, answer}]`; `answer` is `null` when the owner did not answer, and then the default stands |
+
+**The command** reads the closed sessions not yet ingested and, by default, **prints the plan and writes
+nothing**; `--apply` carries it out; `--session ID` plans or applies one session again; `--sessions-dir` and
+`--root` override the keys. A file that breaks the contract is named on stderr and skipped (exit 1 at the end);
+a missing directory is refused naming `tree.test_sessions_dir`. Per session:
+
+- an **answered question** is written into its node, the owner's words exactly (the same edit as
+  `agent-os-sessions apply`); an unanswered one is left alone and **its default stands**, which the plan says;
+- a **rejected case** becomes one rework issue for its node: the seven sections of a brief (validated before
+  anything is written), `type:bug` plus `tree.ticket_labels`, `<!-- node: -->`, the budget class
+  `tree.ticket_budget_class`, the owner's note quoted whole and the session id as source, and a
+  `<!-- key: test-rework.<session>.<node> -->` line by which a second run finds the issue it already opened. No
+  `status:*` label is set (as `compile` does not): moving it to `ready` is the planner's or the owner's step.
+  Whether a note asks to *fix* or to *decide* is not reliably readable from free text, so every rejection is
+  rework and the ticket tells the worker to record a question of what instead when the note asks to decide; the
+  expert may reclassify it;
+- an **accepted case** is recorded on its node as `acceptances: [{session, date}]`, once per session;
+- a case **not tried** is left alone;
+- the **verdicts on improvised answers** that `feedback.jsonl` holds inside the session's window
+  (`opened_at`..`closed_at`: the two files have no other join) are summarised per action and node (accepted,
+  rejected with the note, retried) inside the plan, as input; nothing is written from them yet.
+
+A step already done is shown as such and not repeated; a step that cannot be done (a node the tree lacks, a
+question the node does not carry open, or already answered with other words) is a `problem:` line, exit 1, and the
+session stays pending. The registry of ingested sessions is `.cache/test-sessions/ingested.jsonl`: every effect is
+idempotent on its own, so losing it costs a longer plan and no duplicate.
+
+**Hand-off.** The tree edits stay in the working tree, as with `apply`: a worker commits them with
+`Node-Change: usage` (revisions driven by the owner's answer or use; never `owner`, which an agent does not
+write) and opens a pull request whose body says `Test-Session: <id>`. It changes the what, so it is merged on the
+owner's word, which the answers are (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`).
+The decision: `docs/adr/2026-10-09-a-closed-test-session-is-ingested-by-a-command-that-plans-first.md`.
+
 ## 5. Export recipe
 
 1. **Copy `agent_os/` as a unit** — `git subtree add --prefix=agent_os <the split repo> main`,
@@ -1555,7 +1606,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 | `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, whether the planner's and the validator's Apps may read CI checks, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
 | `agent-os-tree validate\|doctor\|context\|compile\|board` (`agent_os.product.tree`, `agent_os.product.board`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh expert N [--dry-run]` | human (manual run; never unattended) | one-shot population of the product tree for issue N and one pull request on it (§4.9); detaches like the other one-shot roles |
-| `agent-os-sessions judgment\|outcome\|open\|answers\|apply\|guard-what\|verify-answer` (`agent_os.product.sessions`) | planner, validator, control plane, human | the judgments log, the question session issue and its write-back, and the guard on the what of §4.10: `guard-what PR` exits 1 for a pull request that touches a goal node or an evaluator (merge condition 6), `verify-answer` exits 0 for one that is exactly a session answer. Needs `gh`; never a backend |
+| `agent-os-sessions judgment\|outcome\|open\|answers\|apply\|guard-what\|verify-answer\|test-ingest` (`agent_os.product.sessions`, `agent_os.product.session_ingest`) | planner, validator, control plane, human | the judgments log, the question session issue and its write-back, and the guard on the what of §4.10: `guard-what PR` exits 1 for a pull request that touches a goal node or an evaluator (merge condition 6), `verify-answer` exits 0 for one that is exactly a session answer. Needs `gh`; never a backend |
 | `agent_os/bin/agent_task.sh validator\|refiner N [--dry-run]` | planner, human (manual/`--no-wake` runs) | one-shot review of a PR, or one-shot split/rewrite of an issue, resolving class/identity/prompt without spending when `--dry-run`. The launch DETACHES and returns at once printing the run's pid, PID file and log, so the run outlives whoever launched it and announces its own end as an event (#400) |
 | `agent_os/bin/planner_task.sh run ["<context>"]` | guard (`wake`), human (manual) | one `claude -p` decision over the events it is handed; never resumed |
 | `agent_os/bin/puntal_task.sh --action A --node-file N [...]`, `--json [--plan-only]`, `feedback ...` | an app's UI or shell, a bench | answers one live UI action from its node slice: the node's declared reads are loaded by code, the model plans in one turn with no tool, the app's executor applies the operations; response on stdout (or one JSON envelope with `--json`), one telemetry line per call; `feedback` records the owner's verdict (§4.7). Not a role the planner launches |

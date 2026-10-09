@@ -38,6 +38,11 @@ class TreeConfig(Strict):
     # never merged automatically (`agent-os-sessions guard-what`). Empty by default: a mechanism
     # does not know where a host keeps its evaluators.
     owner_only_paths: list[str] = []
+    # The directory the product writes a test session's file into when the owner closes the
+    # session (`<id>.json`, the contract of `docs/AGENT_OS.md` §4.11), relative to the host's root
+    # unless absolute. `agent-os-sessions test-ingest` reads it. The default is a name, not a
+    # location the host's data already has: a host sets this key to where its product writes.
+    test_sessions_dir: str = "var/test-sessions"
 
 
 class BoardConfig(Strict):
