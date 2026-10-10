@@ -7,11 +7,13 @@ import re
 
 import pytest
 from sessions_support import (
+    QUESTION,
     SESSION,
-    build_chat_host,
+    ChatTracker,
     chat_document,
-    ingest,
-    write_session,
+    config_file,
+    what_question,
+    write_node,
 )
 from sessions_support import (
     chat_case as case,
@@ -23,6 +25,8 @@ from sessions_support import (
     chat_item as item,
 )
 
+from agent_os.product.session_ingest import cli as ingest_cli
+from agent_os.product.sessions.cli import main
 from agent_os.product.tree.loader import load_tree
 
 SECOND_SESSION = "ts-20261011-090000-def456"
@@ -30,7 +34,32 @@ SECOND_SESSION = "ts-20261011-090000-def456"
 
 @pytest.fixture
 def host(tmp_path, monkeypatch):
-    return build_chat_host(tmp_path, monkeypatch)
+    root = tmp_path / "product"
+    write_node(root, "goal-a", "goal")
+    write_node(
+        root,
+        "fr-a",
+        "functional-requirement",
+        parent="goal-a",
+        experiments=[what_question(QUESTION, "No cap.")],
+    )
+    for node_id in ("uc-ok", "uc-bad", "uc-mid", "uc-skip"):
+        write_node(root, node_id, "use-case", parent="fr-a", state="improvised")
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    config = config_file(
+        tmp_path, ticket_budget_class="mechanical-qwen", test_sessions_dir=str(sessions)
+    )
+    tracker = ChatTracker()
+    monkeypatch.setattr(ingest_cli, "build_tracker", lambda: tracker)
+    monkeypatch.setenv("WORKER_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("AGENT_CACHE_DIR", str(tmp_path / "puntal"))
+    monkeypatch.setenv("AGENT_OS_HOST_ROOT", str(tmp_path))
+    return tmp_path, tracker, config, sessions
+
+
+def ingest(host, *argv) -> int:
+    return main(["test-ingest", *argv], config_path=host[2])
 
 
 def with_items_document() -> dict:
@@ -70,6 +99,10 @@ def without_items_document(**fields) -> dict:
     cases = [case("uc-ok", "perfect"), case("uc-bad", "needs_work")]
     cases += [case("uc-mid", "ok_with_improvements"), case("uc-skip", "ok_with_improvements")]
     return chat_document(comments, cases, **fields)
+
+
+def write_session(host, document: dict, name="a.json") -> None:
+    (host[3] / name).write_text(json.dumps(document), encoding="utf-8")
 
 
 def test_items_launch_changes_and_keep_decisions_and_questions_for_the_next_session(host, capsys):

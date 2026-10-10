@@ -102,22 +102,28 @@ def _without_ingestion_time(block: dict) -> dict:
 
 
 def write_session_block(directory: pathlib.Path, block: dict) -> pathlib.Path | None:
-    """Puts the block in the file, replacing the same session's earlier one; None when the session
-    left nothing to show (so that an empty block never lands in front of the owner) or when the file
-    already says the same: an open session is ingested on every run, and the file is rewritten only
-    when something in it changed."""
-    if not (block["decisions"] or block["questions"] or block["changes"]):
-        return None
+    """Puts the block in the file, replacing the same session's earlier one. A session that now
+    leaves nothing to show has no block (an empty one never lands in front of the owner, and the
+    earlier one of an open session, whose items were all withdrawn since, is taken out). None when
+    nothing in the file changes: an open session is ingested on every run, and the file is rewritten
+    only when something in it changed."""
     path = directory / UNDERSTOOD_FILE_NAME
     document = _read(path)
     earlier = next(
         (row for row in document["sessions"] if row.get("session") == block["session"]), None
     )
-    if earlier is not None and _without_ingestion_time(earlier) == _without_ingestion_time(block):
+    has_something_to_show = bool(block["decisions"] or block["questions"] or block["changes"])
+    if not has_something_to_show and earlier is None:
+        return None
+    unchanged = earlier is not None and _without_ingestion_time(earlier) == _without_ingestion_time(
+        block
+    )
+    if has_something_to_show and unchanged:
         return None
     others = [row for row in document["sessions"] if row.get("session") != block["session"]]
     document["sessions"] = sorted(
-        [*others, block], key=lambda row: (str(row.get("opened_at")), str(row.get("session")))
+        [*others, *([block] if has_something_to_show else [])],
+        key=lambda row: (str(row.get("opened_at")), str(row.get("session"))),
     )
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(
