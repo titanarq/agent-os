@@ -8,6 +8,7 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session panel, fifth correction in the tree (no issue; branch `docs/test-session-panel-v2`) -- on the owner's word of 2026-10-09 after trying the panel, `uc-open-a-test-session-for-a-branch` and `dec-a-test-session-happens-inside-the-app` drop the close button and the "session is open" header (the session opens by itself, closes by inactivity and is read while open), put the use-case list with its scroll above a full-width chat with state and send on one line, keep one thread per case across sessions, make the panel resizable with a minimum width, and show the pull requests merged since the previous session filtered by the case. Tree only.
 - Test-session ingestion, schema 2 (no issue; branch `fix/test-session-ingest-v2`) -- `agent-os-sessions test-ingest`
   now reads the chat the app writes (`schema: 2`: `comments[]`, `cases[].verdict` of `perfect`/`ok_with_improvements`/`needs_work`,
   optional `items[]` from the feedback interpreter) and, as the owner said ("Directo, salvo decisiones",
