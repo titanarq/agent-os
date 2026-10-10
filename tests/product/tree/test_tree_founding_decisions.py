@@ -65,6 +65,11 @@ GOALS = (
     "goal-improves-with-every-product",
 )
 
+# Added on the owner's word of 2026-10-09 (a global goal of efficiency linked to self-improvement),
+# after the four founding goals; its evaluators are a proposal that waits for the owner's signature,
+# so it does not share the founding goals' "set by the owner on 2026-10-06" closing line.
+EFFICIENCY_GOAL = "goal-efficient-with-what-it-spends"
+
 
 @pytest.mark.parametrize("goal_id", GOALS)
 def test_each_goal_carries_its_evaluators_in_the_verification_field_as_judged_criteria(goal_id):
@@ -127,7 +132,20 @@ def test_parallelism_is_a_requirement_under_the_first_goal_with_the_owners_four_
         "No dispatchable work waits for another run to finish without a reason.",
     ]
     assert "Owner, 2026-10-09" in requirement.sources[0]
-    assert len([node for node in tree.nodes.values() if node.type == "goal"]) == len(GOALS)
+    goal_ids = {node.id for node in tree.nodes.values() if node.type == "goal"}
+    assert goal_ids == {*GOALS, EFFICIENCY_GOAL}
+
+
+def test_the_efficiency_goal_and_the_self_improvement_goal_name_each_other():
+    tree = load_tree(LEDGER)
+    efficiency, improvement = (
+        tree.nodes[EFFICIENCY_GOAL],
+        tree.nodes["goal-improves-with-every-product"],
+    )
+    assert "goal-improves-with-every-product" in efficiency.description
+    assert EFFICIENCY_GOAL in improvement.description
+    assert efficiency.verification and all(check.is_judged for check in efficiency.verification)
+    assert "until the owner signs them" in efficiency.description
 
 
 def test_the_slice_of_a_use_case_of_agentos_shows_its_goals_evaluators_as_judged():
