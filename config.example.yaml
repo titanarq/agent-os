@@ -377,7 +377,8 @@ quality:
 #
 # Worker classes (a mechanical one on Haiku, the same on Sonnet for the issues that name it, and a
 # less specified, more expensive one on Sonnet) and one class per one-shot role, all on Claude Code:
-# Haiku 5.5 for the puntal, the interpreter and mechanical tasks, Sonnet 5.5 for every other role
+# Haiku 5.5 for the puntal and mechanical tasks, Sonnet 5.5 for every other role (the interpreter
+# included: it decides which case a comment points at, so it is neither a puntal nor a simple task)
 # (docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md, docs/adr/2026-10-10-puntals-and-
 # mechanical-tasks-default-to-haiku-5-5.md).
 # A worker class may declare two optional things, none of them here by default:
@@ -511,7 +512,7 @@ classes:
   interpreter:
     role: interpreter
     backend: claude
-    model: claude-haiku-5-5
+    model: claude-sonnet-5-5
     max_context: 30000
     max_cost_usd: 0.25
     max_total_tokens: 300000

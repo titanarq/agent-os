@@ -1,4 +1,4 @@
-# Puntals, the interpreter and mechanical tasks default to Haiku 5.5; one action may name its own model
+# Puntals and mechanical tasks default to Haiku 5.5; one action may name its own model
 
 - Date: 2026-10-10
 - Status: accepted
@@ -26,12 +26,13 @@ The experiment measured puntal actions. Mechanical worker tasks are Haiku's by t
 not by a measurement of its own.
 
 ## Decision
-1. **Defaults.** In `config.example.yaml` the `puntal` and `interpreter` classes run on
-   `claude-haiku-5-5`. A new worker class `mechanical-haiku` (the same ceilings as
+1. **Defaults.** In `config.example.yaml` the `puntal` class runs on `claude-haiku-5-5`. A new worker class `mechanical-haiku` (the same ceilings as
    `mechanical-sonnet`) is the default for a small, fully specified change; `tree.ticket_budget_class`
    names it. The class descriptions tell the refiner which one a new task takes.
-2. **What stays on Sonnet.** The planner, the validator, the complex worker (`complex-sonnet`) and the
-   expert. The refiner and task writing do not change (the refiner is on Sonnet since the amendment of
+2. **What stays on Sonnet.** The planner, the validator, the complex worker (`complex-sonnet`), the
+   expert and the feedback interpreter (owner, 2026-10-10: it decides which case a comment points at
+   and may point at changing a use case or the puntal's instructions, so it is neither a puntal nor a
+   simple task). The refiner and task writing do not change (the refiner is on Sonnet since the amendment of
    2026-10-06, task writing is `project.agent_models.task_writer`). The custodian and the
    consolidator stay on Opus. `mechanical-sonnet` keeps existing and working: an issue that already
    carries `<!-- budget: mechanical-sonnet -->` runs on Sonnet, and a host may name it in any new one.
