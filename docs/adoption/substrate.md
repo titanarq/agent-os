@@ -160,6 +160,13 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     only where git ignores it (the mechanism's `.gitignore` names `.venv`), so it never shows up as
     an untracked file that refuses the next `start`. There is nothing to link by hand or to commit;
     a worktree is linked only to a `.venv` that already exists, so build it before `init`.
+    This is the only interpreter that carries the mechanism's dependencies (`pyyaml`, `pydantic`,
+    `PyJWT[crypto]`, declared in `agent_os/pyproject.toml`); the host's root `.venv` carries the host's
+    own packages and is not expected to import `agent_os`. Every mechanism command is run on
+    `agent_os/.venv/bin/python -m agent_os.<module>` or as `agent_os/.venv/bin/agent-os-<name>`
+    (`agent-os-sessions test-ingest`, `agent-os-tree validate`, ...); `No module named 'pydantic'` from
+    any other interpreter is that mistake, and `bash agent_os/bootstrap.sh` repairs a `.venv` a
+    `git subtree pull` left behind a new dependency. `agent-os-doctor` (step 21) probes it.
 17. **Binaries** — `gh` (authenticated with `repo`+`project` scopes), `git`, `python3.12`, the
     backend CLI a role runs (`claude`), `curl`
     (`agent_os/bin/notify.sh`), `ruff` at the version `agent_os/bootstrap.sh` pins (CI), `systemd --user`. Point
@@ -222,7 +229,9 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     host that sets `project.install_host_ci: false` copies those two steps into its own CI, with
     `fetch-depth: 0` on its checkout so the merge-base exists. Tune `quality:` (step 8) before
     the first PR if the defaults in `config.example.yaml` do not fit.
-21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: `gh auth status`
+21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: the mechanism's own
+    interpreter (step 16) importing `pyyaml`, `pydantic`, `PyJWT[crypto]` and `agent_os.product`
+    (a failing line names the missing module and the exact repair command), `gh auth status`
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
     each App's secrets, whether the planner's and the validator's Apps may read CI checks (they are
     probed with their own installation tokens, which mints or reuses the cached one), each
