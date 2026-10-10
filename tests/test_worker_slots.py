@@ -4,7 +4,8 @@ A backend is a CLI plus its quota; a SLOT is one concurrent worker on it -- a PI
 a branch. `project.backends.<name>.slots` (default 1) says how many; slot 1 is exactly the paths a
 backend has always had, and slot N > 1 derives `<worktree>-N` and `.cache/worker_<backend>-N.*`.
 `worker_task.sh <backend> start` picks the first free slot itself, so the planner keeps
-dispatching by backend.
+dispatching by backend; with every slot busy it makes the next one, which
+`tests/product/worker/test_slots_made_on_demand.py` covers.
 
 These tests drive the real `worker_task.sh` with a stub `gh` and a fake `claude`/`qwen` first on
 `PATH` (the fakes never exit, so a launched run stays alive until the test stops it by PID through
@@ -20,7 +21,7 @@ import subprocess
 import sys
 
 import pytest
-from conftest import EXAMPLE_CONFIG
+from conftest import EXAMPLE_CONFIG, throwaway_host_with_origin
 from pydantic import ValidationError
 from test_agent_guard import VALID_BODY as GUARD_VALID_BODY
 from test_agent_guard import _assistant_event, _rate_limit_event, _task_class
@@ -104,6 +105,7 @@ def _slotted_environment(tmp_path, *, slots=2, max_parallel_issues=2, labels_by_
         if key not in ("WORKER_WORKTREE", "WORKER_SLOT")
     }
     environment.update(
+        AGENT_OS_HOST_ROOT=str(throwaway_host_with_origin(tmp_path)),
         PATH=f"{binaries}:{environment['PATH']}",
         WORKER_CACHE_DIR=str(cache),
         AGENTS_CONFIG_PATH=str(config_path),
@@ -191,29 +193,6 @@ def test_a_second_start_sharing_a_module_label_is_refused_as_it_is_today(tmp_pat
         assert "#347" in second.stdout
         assert not any(name.startswith("worker_claude-2.") for name in _cache_files(cache))
         assert _cache_files(cache) == before
-    finally:
-        _stop_every_slot(environment, 2)
-
-
-def test_a_third_start_with_every_slot_busy_is_refused_and_writes_nothing(tmp_path):
-    environment, cache, _ = _slotted_environment(
-        tmp_path,
-        max_parallel_issues=3,
-        labels_by_issue={
-            "347": ["module:workers"],
-            "348": ["module:prices"],
-            "349": ["module:reports"],
-        },
-    )
-    try:
-        assert _driver(environment, "start", "347").returncode == 0
-        assert _driver(environment, "start", "348").returncode == 0
-        before = {name: (cache / name).read_bytes() for name in _cache_files(cache)}
-        third = _driver(environment, "start", "349")
-        assert third.returncode == 1
-        assert "every slot of backend 'claude' is busy" in third.stdout
-        after = {name: (cache / name).read_bytes() for name in _cache_files(cache)}
-        assert after == before
     finally:
         _stop_every_slot(environment, 2)
 

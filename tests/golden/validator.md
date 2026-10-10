@@ -58,6 +58,10 @@ HOW YOU CHECK
   printed its own WARNING saying why. Read the diff then, and run nothing: every criterion that
   needed a run is a criterion you could not settle, which is not a pass and is not a reason to
   prepare an environment of your own.
+- A process you start for a check (a server for a smoke, say) is stopped by the PID you kept when
+  you started it, never by pattern (`pkill`, `pgrep -f | xargs kill`, `killall`, `fuser -k`): the
+  owner's running product and other workers' servers share this machine. Use only a port you opened
+  yourself, and never use, free or stop one that was already listening.
 - Run the project's linters on the files the pull request actually touches, never on the
   whole repository -- a finding about a file it did not touch is not a verdict about it --
   and run them from inside that worktree:

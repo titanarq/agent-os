@@ -142,12 +142,12 @@ BACKENDS: tuple[str, ...] = tuple(
 BACKEND_WORKTREES = {
     name: str((HOST_ROOT / PROJECT.backends[name].worktree).resolve()) for name in BACKENDS
 }
-# A backend runs as many workers at once as its `slots:` says (#90, agent_os/docs/adr/2026-09-26-a-
-# backend-runs-several-workers-in-slots-of-its-own.md). Slot 1 IS the backend as it always was --
-# `BACKEND_WORKTREES`, `worker_<backend>.*` -- so only the other slots' worktrees are kept here.
+# A backend runs as many workers at once as it has slots: the `slots:` its config precreates plus the
+# ones the driver made on demand (#90, agent_os/docs/adr/2026-10-09-worker-slots-are-created-on-
+# demand.md). Slot 1 IS the backend as it always was -- `BACKEND_WORKTREES`, `worker_<backend>.*`.
 EXTRA_SLOT_WORKTREES: dict[tuple[str, int], str] = {
     (name, slot): str(worker_slot_worktree_path(name, slot, main=HOST_ROOT, project=PROJECT))
-    for name, slot in worker_slots(PROJECT)
+    for name, slot in worker_slots(PROJECT, HOST_ROOT)
     if slot > 1
 }
 
@@ -2535,8 +2535,8 @@ def write_seen_dispatchable(issues: list[int], *, main: Path = HOST_ROOT) -> Non
     path.write_text(json.dumps(sorted(issues)))
 
 
-def _occupied_worker_slots(*, main: Path) -> tuple[int, int]:
-    """(workers alive right now, `planner.max_parallel_issues`) -- the SAME cap
+def _occupied_worker_slots(*, main: Path) -> tuple[int, int | None]:
+    """(workers alive right now, `planner.max_parallel_issues`, None for no cap) -- the SAME cap
     `worker_task.sh start` refuses a dispatch against
     (agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md, #374), read
     with the SAME `_is_alive` reading `tick`'s own `any_alive` below already uses, so a
@@ -2584,7 +2584,7 @@ def _write_new_dispatchable_event_if_gained(
         return EventOutcome()
     listed = ", ".join(f"#{number}" for number in gained[:10])
     occupied, cap = _occupied_worker_slots(main=main)
-    if occupied >= cap:
+    if cap is not None and occupied >= cap:
         return EventOutcome(
             f"{len(gained)} issue(s) became dispatchable ({listed}) but {occupied} worker(s) "
             f"already running (>= planner.max_parallel_issues={cap}) -- no planner pass; a slot "
@@ -2963,55 +2963,54 @@ def _bookkeeping_lock_path(bookkeeping: Path) -> Path:
     return bookkeeping.with_name(bookkeeping.name + ".lock")
 
 
+def record_quota_observation(
+    backend: str, status: str, observed_at_ns: int, *, source: str, main: Path = HOST_ROOT
+) -> str | None:
+    """Writes one observation of `backend`'s quota into its verdict file, when it is newer than
+    what the file holds: the file's mtime is the verdict's age for every reader
+    (`agent_lib.read_persisted_quota_verdict`) and the write sets it to the observation's own time,
+    so the same observation read twice changes nothing and a live worker's tick, which rewrites the
+    file at its own now, stays the newest for as long as it runs. Only `last_quota_status`
+    changes; the stall bookkeeping beside it is carried over. Returns the line the caller logs --
+    the write, or why there was none -- and None when the file holds a newer verdict. The lock is
+    never waited on (a caller reached from a worker's own exit must not block on a tick cutting it);
+    a file that does not parse is the worker path's to rewrite and is left alone."""
+    bookkeeping_path = cache_dir(main) / f"agent_guard_{backend}.json"
+    bookkeeping_path.parent.mkdir(parents=True, exist_ok=True)
+    with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return f"{backend}: verdict file busy -- observation left for next fold"
+        if bookkeeping_path.is_file() and bookkeeping_path.stat().st_mtime_ns >= observed_at_ns:
+            return None
+        try:
+            bookkeeping = _load_bookkeeping(bookkeeping_path)
+        except (ValueError, TypeError) as error:
+            return f"{backend}: {bookkeeping_path.name} unreadable ({error}) -- not folded"
+        bookkeeping.last_quota_status = status
+        _save_bookkeeping(bookkeeping_path, bookkeeping)
+        os.utime(bookkeeping_path, ns=(observed_at_ns, observed_at_ns))
+    return f"{backend}: quota verdict {status} from {source}"
+
+
 def fold_role_quota_observations(
     *, main: Path = HOST_ROOT, now: datetime | None = None
 ) -> list[str]:
-    """Writes each backend's newest role-run observation into that backend's verdict file, when it
-    is NEWER than what the file already holds, and returns one line per write for the caller's log.
-
-    "Newer" is measured against the file's own mtime, which is the verdict's age for every reader
-    (`agent_lib.read_persisted_quota_verdict`): the write sets that mtime to the observation's time,
-    not to now, so the same run read again by the next fold is not newer than itself and changes
-    nothing -- and a live worker's tick, which rewrites the file at its own now, stays the most
-    recent observation for as long as it runs. Only `last_quota_status` changes; the stall
-    bookkeeping in the same file is carried over as it was.
-
-    Never WRITES `quota_changed`: that trigger belongs to the worker path. It does move the baseline
-    that path compares against, though, so while a worker of the same backend is alive, a fold that
-    changes `last_quota_status` can make that worker's next tick see a change and emit the event --
-    see `docs/modules/workers.md`. The lock is taken without blocking, and a file whose lock is
-    held -- a tick checking that backend's live worker right now -- is left for the next fold rather
-    than waited on, so a worker's exit hook that reaches `wake` while the tick is cutting that very
-    worker can never deadlock against it. A verdict file that does not parse is left alone with a
-    line: it is the worker path's to rewrite, and guessing its stall bookkeeping would be worse."""
+    """Writes each backend's newest role-run observation into its verdict file
+    (`record_quota_observation`), one line per write. It never WRITES `quota_changed` but moves the
+    baseline the worker path compares against, so its next tick may emit it (`docs/modules/workers.md`)."""
     lines = []
     for backend, observation in sorted(role_log_quota_observations(main=main, now=now).items()):
-        bookkeeping_path = cache_dir(main) / f"agent_guard_{backend}.json"
-        bookkeeping_path.parent.mkdir(parents=True, exist_ok=True)
-        with _bookkeeping_lock_path(bookkeeping_path).open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                lines.append(f"{backend}: verdict file busy -- role observation left for next fold")
-                continue
-            if (
-                bookkeeping_path.is_file()
-                and bookkeeping_path.stat().st_mtime_ns >= observation.observed_at_ns
-            ):
-                continue
-            try:
-                bookkeeping = _load_bookkeeping(bookkeeping_path)
-            except (ValueError, TypeError) as error:
-                lines.append(
-                    f"{backend}: {bookkeeping_path.name} unreadable ({error}) -- not folded"
-                )
-                continue
-            bookkeeping.last_quota_status = observation.status
-            _save_bookkeeping(bookkeeping_path, bookkeeping)
-            os.utime(bookkeeping_path, ns=(observation.observed_at_ns, observation.observed_at_ns))
-        lines.append(
-            f"{backend}: quota verdict {observation.status} from role log {observation.log.name}"
+        line = record_quota_observation(
+            backend,
+            observation.status,
+            observation.observed_at_ns,
+            source=f"role log {observation.log.name}",
+            main=main,
         )
+        if line:
+            lines.append(line)
     return lines
 
 
