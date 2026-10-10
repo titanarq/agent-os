@@ -3,6 +3,9 @@
 - Date: 2026-09-15
 - Status: accepted
 - Modules: workers
+- Amended by: `2026-10-09-worker-slots-are-created-on-demand.md` -- the cap is optional and absent means
+  no cap (it defaulted to 1); a host that sets it keeps the refusal below, and the quota is the only
+  other limit
 
 ## Context
 Budget runs out fast (`agent_os/docs/adr/2026-09-14-agent-spend-is-tokens-not-time-and-needs-a-written-

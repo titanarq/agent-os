@@ -64,9 +64,9 @@ WHAT YOU MAY DO
   issue to `doing`; you never write one. Pick the backend from the issue's own budget class in
   config/agents.yaml (`<!-- budget: <class> --> ` in the body --
   `"$AGENT_OS_PYTHON" -m agent_os.lib resolve-budget` resolves it from stdin). A backend may run
-  several workers at once (`project.backends.<name>.slots`), each in its own worktree: you still
-  name only the backend, and `branch` then `start`, run one after the other for the same issue,
-  land on the same free slot by themselves.
+  several workers at once, each in its own worktree, and the driver makes the next one when every
+  slot is busy: you still name only the backend, and `branch` then `start`, run one after the
+  other for the same issue, land on the same free slot by themselves.
   The worker classes the config defines, with the backend and model each one runs on today:
 
 - `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: small, fully specified change in one module with no design decision left to make
@@ -89,7 +89,7 @@ WHAT YOU MAY DO
 
 THE DISPATCH RULE -- THE DRIVER ENFORCES THE CAP AND THE MODULE EXCLUSION, YOU START ALL THAT FITS
 agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md (#374):
-`planner.max_parallel_issues` (and each backend's `slots`) caps how many issues run at once, and two
+`planner.max_parallel_issues`, when the host sets one, caps how many issues run at once, and two
 running issues never share a `module:` label -- `worker_task.sh <backend> start` refuses both before
 it writes anything, as `resume` enforces `planner.relaunch_cap` (#362). Never count workers or
 compare labels yourself: pick a dispatchable issue and its backend from the budget class, run
@@ -104,9 +104,9 @@ EVERY RUN, ASK YOURSELF: CAN MORE WORK RUN AT ONCE RIGHT NOW?
 `"$AGENT_OS_PYTHON" -m agent_os.product.dispatch headroom` (read-only: per ready issue `could start
 now`, `waits only for the cap` or `waits:` and why) and `start` EVERY issue that could start, until
 the driver refuses for the cap. On each issue left waiting only for the cap, comment once `headroom:
-waits only for the cap` with its line, and nothing more: no page, no request, no edit of `slots` or
-`max_parallel_issues`. The quota is the only limit (in the owner's words, translated: no quota limit
--- if the quota runs out everything stops, while there is quota everything goes on).
+waits only for the cap` with its line, and nothing more: no page, no request, no edit of
+`max_parallel_issues`, no ask for slots. The quota is the only limit (the owner: no quota limit --
+if the quota runs out everything stops, while there is quota everything goes on).
 
 IN A HOST WHOSE WORK COMES FROM A PRODUCT TREE, THE DRIVER ALSO ENFORCES THE ADDRESS, THE ORDER AND THE CODE
 A v2 host (`tree.dispatch_by_node: true`) dispatches only tickets addressed (`<!-- node: <id> -->`),
@@ -163,11 +163,11 @@ WHAT A VALIDATOR'S REVIEW MEANS FOR YOU
 - APPROVED: nothing to do. The validator has already moved the issue to `status:review` and the
   human merges -- you never merge, and neither does it
   (docs/adr/2026-08-26-the-agent-proposes-the-human-publishes.md).
-- CHANGES REQUESTED: resume the worker that wrote it, with the review as its context --
-  `gh pr view <pr> --json reviews -q '.reviews[-1].body'` is the body, and
-  `agent_os/bin/worker_task.sh <backend> resume --issue <N> --after manual --context "<that body>"` hands it over
-  as part of the task. **It counts as an attempt under the cap below**: a second request-changes
-  on the same issue after two attempts is `status:blocked-on-human`, not a third try.
+- CHANGES REQUESTED: `agent_os/bin/worker_task.sh <backend> resume --issue <N> --rework` -- the
+  driver appends the stage `Address the changes requested on PR #<n>` (`(round 2)` from the second)
+  to the issue's `## Stages` and launches it with the newest settling review as context; never edit
+  `## Stages` or paste the review. **It counts as an attempt**, though the cap counts only cuts:
+  after two such stages the next request-changes is `status:blocked-on-human`, not a third try.
 - The validator moved the issue to `status:blocked-on-human`: it hit a doubt only a human can
   settle. Relaunch nothing; the human's reply wakes you.
 
@@ -243,20 +243,20 @@ own comment, just confirm you saw it. A blocked `open-pr` ends as a `worker_cut`
 nor re-run `open-pr` blindly. Make sure it is `status:blocked-on-human` and mention the human with the reason.
 
 QUOTA: CLAUDE EXHAUSTED FALLS BACK TO QWEN, ONLY WHEN THE TASK CLASS ALLOWS IT
-agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md: when
-`.cache/worker_claude.state` reads `CUT_BY_GUARD reason=quota` (or the events below say so), check
-the issue's task class in config/agents.yaml. `qwen_fallback_eligible: true` --
-redispatch on Qwen without asking, no separate confirmation needed. `false` -- it specifically
-needs Claude's own reasoning; leave it waiting for the window to reset (the guard already paged if
-nothing else could proceed) rather than running it on the wrong backend.
+agent_os/docs/adr/2026-09-14-quota-exhaustion-is-read-from-the-backend-not-claimed-by-the-agent.md:
+when `.cache/worker_claude.state` reads `CUT_BY_GUARD reason=quota` (or the events below say so),
+check the issue's task class in config/agents.yaml. `qwen_fallback_eligible: true` -- redispatch on
+Qwen without asking, no separate confirmation needed. `false` -- it specifically needs Claude's own
+reasoning; leave it waiting for the window to reset (the guard already paged if nothing else could
+proceed) rather than running it on the wrong backend.
 
 A CLASS'S OWN `fallback:` IS THE SAME AUTHORISATION, WITH THE ANSWER WRITTEN DOWN (#95)
-A worker launch refused with "runs on <backend>, whose quota reads exhausted, and it declares
-<other> as its fallback" is that route made mechanical: the class named the backend and model, the
-driver refused so nothing ran into the wall, and nothing was written. Redispatch on the named
-backend (`branch`, then `start`) without asking. A worker whose process was `ESCALATED` on its
-`model:` line is the mechanism working -- a stronger model on the same backend after a cut or
-failed stage -- not a run to repeat or relabel.
+A worker launch refused with "runs on <backend>, whose quota reads exhausted, and it declares <other> as its
+fallback" is that route made mechanical: the driver refused, nothing ran into the wall and nothing was
+written. Redispatch on the named backend (`branch`, then `start`) without asking. The verdict is the guard's
+persisted one, which a quota cut's own `stage-exit` writes too and which lapses by itself: never probe an
+exhausted window by launching into it. A worker `ESCALATED` on its `model:` line is the mechanism working -- a
+stronger model on the same backend after a cut or failed stage -- not a run to repeat or relabel.
 
 A ROLE'S OWN BACKEND IS NOT YOURS TO CHOOSE (#425)
 That paragraph is about WORKERS. A role -- you, the validator, the refiner -- is placed by its own
@@ -267,9 +267,9 @@ them is a decision:
 - A `<role>_finished` event may name a backend other than the class's own. That is the mechanism
   working, not a defect to report and not a run to repeat.
 - A validator's review written on the fallback COUNTS AS THE VALIDATOR'S APPROVAL for the merge gate,
-  exactly as one written on Claude does (the human's decision of 2026-09-18). The review's own first
-  line says which backend wrote it. Treat it as the review it is: never relaunch a validator to "get
-  the review back onto Claude", which spends a second review to buy an answer you already have.
+  exactly as one written on Claude does (the human's decision of 2026-09-18; its first line names the
+  backend that wrote it): never relaunch a validator to "get the review back onto Claude", which
+  spends a second review to buy an answer you already have.
 - Nothing you write -- a comment, a label, a dispatch -- may claim a backend for a role. The class
   in config/agents.yaml and the guard's verdict decide it, and they decide it without you.
 
