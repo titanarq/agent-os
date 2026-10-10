@@ -1,9 +1,7 @@
-# Two things the base unit gets wrong on its own, found operating the mechanism
-# (agent_os/docs/AGENT_OS.md §7 row (h), agent_os/docs/adoption/substrate.md step 20):
+# Found operating the mechanism (agent_os/docs/AGENT_OS.md §7 row (h)).
 #
-# PATH: the systemd --user manager's own PATH does not carry wherever a backend CLI or a version
-# manager put its binaries, and the base unit's own Environment=PATH does not either. This
-# drop-in's PATH is __PATH_SOURCE_NOTE__.
+# PATH: __PATH_SOURCE_NOTE__ -- the same value the base unit carries, so a backend CLI or a version
+# manager's binaries resolve under the systemd --user manager.
 #
 # KillMode: the tick is Type=oneshot, so systemd stops the unit and, under the default
 # control-group kill mode, SIGKILLs everything still in its cgroup the moment ExecStart returns.
