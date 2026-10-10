@@ -28,12 +28,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # New files and folders comply with the limits in `quality:` of `config/agents.yaml`, and a
-      # touched one never gets worse than on the base branch. The mechanism's own directory is
-      # skipped: it only ever changes through a `git subtree pull`.
       - name: bootstrap the mechanism's own interpreter
         run: bash agent_os/bootstrap.sh
 
+      # New files and folders comply with the limits in `quality:` of `config/agents.yaml`, and a
+      # touched one never gets worse than on the base branch. The mechanism's own directory is
+      # skipped: it only ever changes through a `git subtree pull`.
       - name: code-quality ratchet
         run: agent_os/.venv/bin/python -m agent_os.quality --base origin/${{ github.base_ref }}
 
@@ -41,7 +41,6 @@ jobs:
         run: __TEST_COMMAND__
 
       # Every commit that touches the product tree says why: `Node-Change: usage | rework | owner`
-      # (docs/AGENT_OS.md §4.6). Reads git only, on the history the checkout above fetched.
+      # (agent_os/docs/AGENT_OS.md §4.6). Reads git only, on the history the checkout above fetched.
       - name: the Node-Change trailer on every commit that touches the product tree
-        if: github.event_name == 'pull_request'
         run: agent_os/.venv/bin/python -m agent_os.product.tree trailers --base origin/${{ github.base_ref }}
