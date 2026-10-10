@@ -13,7 +13,7 @@
 ## Context
 The owner, 2026-10-09: "¿por qué has limitado a 5 slots?" and, of a web that works through puntales,
 "necesitará muchos agentes y a lo mejor hay agentes trabajando en partes de la web que están
-desbloqueadas mientras tanto, no se deben limitar". His only limit is the account's quota.
+desbloqueadas mientras tanto, no se deben limitar". The owner's only limit is the account's quota.
 
 Two settings made a number the limit anyway: `project.backends.<name>.slots` (default 1) -- with
 every slot busy `start` refused, "every slot of backend 'claude' is busy", and a one-slot backend

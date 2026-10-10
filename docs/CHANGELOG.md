@@ -27,6 +27,40 @@ that closed several small issues at once name them all. This file starts on 2026
   `2026-10-09-worker-slots-are-created-on-demand.md` amends `2026-09-26-...slots-of-its-own.md` and
   `2026-09-15-...cap-enforced-by-the-driver.md`. Host follow-up: none -- after `git subtree pull` a host with
   `slots: 5` and `max_parallel_issues: 5` keeps both, and gets the sixth slot only if it deletes the cap.
+- Rollout stage 1k (no issue; branch `fix/rollout-stage1k`) -- four edges of the first v2 host, each reproduced
+  by a test that failed first. D: `open-pr` whose merge of the base never started (`BLOCKED reason=merge_failed`,
+  no unmerged paths: an untracked file in the way, no committer identity) left the issue in `doing` with no
+  comment; it now comments what was in the way (`git status --porcelain`) and what unblocks it and moves the
+  issue to `blocked-on-human`, like the other endings, and the three endings share one `hand_the_issue_to_the_human`
+  (`bin/worker/worker_publication_refusals.sh`). E: `prompts/expert.md` tells the expert to declare `touches:` on
+  every node that compiles to a ticket and to split a node, or order it with `depends_on:`, when two independent ones
+  would touch the same code -- two tickets of the host depended on the same code undeclared and ran at once; golden
+  `expert.md` changed by exactly that bullet (read diff by diff). F: the planner prompt described the manual rework
+  route (paste the review into `--after manual --context`), which fails for a run whose every stage is committed; it now
+  says `resume --issue N --rework`, that the driver appends the stage and hands over the review, and that two such
+  stages are the attempts before `blocked-on-human` (the driver counts only cuts, so the planner reads the stages);
+  neutral on lines (the file stays at the 300-line ratchet) and golden `planner.md` changed by exactly those
+  sentences. G: the quota verdict was persisted by the guard's tick for a live worker and by the fold of role logs,
+  and nothing wrote it when `stage-exit` itself read the refusal of a run relaunched into the wall (it dies before any
+  tick) -- the next launch read a stale `allowed` and probed the wall again. `stage-exit` now records `exhausted`
+  through `record_quota_observation` (extracted from the fold; `agent_os.product.tracker.quota_verdict`); only a
+  refusal is recorded, and it lapses by the existing TTL (`mechanism.quota_verdict_ttl_minutes`). A worker class with
+  no `fallback:` is still not refused at launch over an exhausted verdict.
+  H (added while the branch was open): a worker's smoke test ran `pkill -f "python -m app"` and killed the owner's
+  own web, another process on another port in the main checkout. `prompts/worker.md` and `prompts/validator.md` now say
+  that a process you start is stopped by the PID you kept, never by pattern (`pkill`, `pgrep -f | xargs kill`,
+  `killall`, `fuser -k`), and that a port you did not open is never used, freed or stopped; goldens `worker.md` and
+  `validator.md` changed by exactly those paragraphs (read diff by diff).
+- Feedback interpreter (no issue; branch `fix/feedback-interpreter`) -- the agent behind a test session's comment
+  box, which is a chat: `bin/interpreter_task.sh interpret` (`python -m agent_os.product.interpreter`) reads the
+  thread, the owner's message and the case, and answers one JSON envelope with a short `reply` (or ONE question,
+  `needs_answer`) and the items it adds or corrects (`change` / `decision` / `question_of_what`, tied to a node),
+  one per thing a message holds. One no-tool model turn through the puntal's own turn runner, observer and
+  telemetry; one retry on an invalid answer, then a clean `not_run`/`invalid_output` envelope. New: class
+  `interpreter` (`role: interpreter`), `interpreter:` config section (`reply_language`, `timeout_seconds`,
+  `effort`, `max_thread_messages`), `prompts/interpreter.md` with golden, `docs/FEEDBACK_INTERPRETER.md` (contract,
+  session-file schema 2 `items[]`) and an ADR. `PuntalConfig` moved to `agent_os/product/config.py` (lib.py shrinks).
+- Ruff pinned (no issue; branch `fix/ruff-0-17`) -- `bootstrap.sh` and the dev group install `ruff==0.17.0` instead of the latest, and `[tool.ruff.lint] extend-select = ["DTZ"]` keeps the naive-datetime rules the guard's `noqa: DTZ00x` directives answer to; release 0.17 had dropped them from its default and turned `ruff check` red (RUF100) on every pull request.
 - Onboarding rung 6 (no issue; branch `docs/onboarding-rung6`) -- `docs/adoption/v2-build-the-product.md` rung 6 now describes the test session the first v2 host really ran on 2026-10-09 (the header button and side panel of `dec-a-test-session-happens-inside-the-app`, the order given by `depends_on`, the owner's web kept apart from the workers', `agent-os-sessions test-ingest`) with its first-time findings and cost; the interpreter chat and the schema 2 reader are named as not built.
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
   after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
