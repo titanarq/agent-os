@@ -1616,10 +1616,10 @@ def test_planner_config_relaunch_cap_defaults_to_two():
     assert PlannerConfig().relaunch_cap == 2
 
 
-def test_planner_config_max_parallel_issues_defaults_to_one():
-    # #374: the parallelism cap the driver enforces (`worker_task.sh start`) reads this field
-    # instead of an implicit "two backends, two slots" assumption.
-    assert PlannerConfig().max_parallel_issues == 1
+def test_planner_config_max_parallel_issues_defaults_to_no_cap():
+    # #374: the cap `worker_task.sh start` enforces. Absent means none -- the quota is the only
+    # limit (fr-independent-work-runs-in-parallel) -- and a host may still set one.
+    assert PlannerConfig().max_parallel_issues is None
 
 
 # ---- runs.tsv: one line per planner run ------------------------------------------------------

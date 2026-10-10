@@ -50,19 +50,17 @@ two measures. Numbers from one run are not a distribution: say so when you quote
 What is already fixed is in `docs/CHANGELOG.md` and `git log`; only what a reader can still trip over is
 listed here.
 
-- `open-pr` ending `merge_failed` writes BLOCKED without moving the issue to `status:blocked-on-human`.
 - A verification command that names a missing test leaves the worker without instruction.
-- `prompts/expert.md` does not tell the expert to declare `touches`.
 - The review gate reads a pull request's checks through GraphQL (`statusCheckRollup`), not REST, and the
   doctor probes the permissions over REST, not that call.
 - The evaluators paragraph repeats in every ticket.
 - `status` and `collect` sometimes take over 100 s.
-- Slots are a fixed number, not on demand.
 
 ## Not yet exercised in the first host
 
 The planner running unattended, the guard and its timer (armed only by the owner; the doctor stays red on
-the notification topic and the timer on purpose), the notification topic, slots on demand, question
-sessions through `agent-os-sessions open`, the progress board (`agent-os-tree board sync`,
-`docs/AGENT_OS.md`), and a second product (the baseline that `goal-improves-with-every-product` compares
-against). No steps are written for them until a run exists.
+the notification topic and the timer on purpose), the notification topic, slots on demand (made, never seen
+in a first host), question sessions through `agent-os-sessions open`, an open test session ingested as it
+goes (run by hand over an example; the owner has not used it), the progress board
+(`agent-os-tree board sync`, `docs/AGENT_OS.md`), and a second product (the baseline that
+`goal-improves-with-every-product` compares against). No steps are written for them until a run exists.

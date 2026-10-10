@@ -30,11 +30,12 @@ non-obvious "why".
 1. Read this file.
 2. Read the issue (`gh issue view N`) and whatever it links: another issue, a host's issue, a PR.
 3. Read only the sections of `docs/AGENT_OS.md` and the `docs/adr/*.md` the issue touches — then
-   the code. `docs/ADOPTION.md` is the onboarding index (the v2 ladder for a new product; the v1 substrate checklist
-   is `docs/adoption/substrate.md`); issues about adoption land there.
-4. The issue is a report, not a spec: reproduce the defect with a failing test first, then fix it.
-   If the report's premise does not hold against the code, say so on the issue instead of building
-   to it.
+   the code. Adoption issues land in `docs/ADOPTION.md`.
+4. The issue is a report, not a spec. A DEFECT found in use is reproduced with a test that fails
+   first, then fixed. Something new the owner has not used yet gets no new tests
+   (`docs/tree/dec-tests-harden-they-do-not-build.md`, not even when the request is about agentos
+   itself), and the existing suite keeps passing whole. If the report's premise does not hold
+   against the code, say so on the issue instead of building to it.
 
 ## Layout
 - `agent_os/` — the Python package: `guard`, `lib`, `issues`, `install`, `doctor`, `render`, `cli`…
@@ -54,12 +55,16 @@ non-obvious "why".
 ```bash
 bash bootstrap.sh                                   # own interpreter in .venv (idempotent)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-TERM=dumb .venv/bin/pytest tests -q                 # the whole suite, as CI runs it
-TERM=dumb .venv/bin/pytest tests/test_worker_task.py -q -k name   # one area while iterating
+bash bin/dev/run_suite.sh "$PWD" <run-dir>          # the whole suite, as CI runs it; add `-k name` for one area
+python3 -I bin/dev/suite_show.py <run-dir>/suite.xml <id-fragment>   # only that failing test, truncated
+bash bin/dev/wait_checks.sh "$PWD" <PR> [max_minutes]                # CI of the PR's head; exit 0 = every check SUCCESS
+bash bin/dev/safe_merge.sh "$PWD" <PR>              # merge commit only if all SUCCESS and the head holds origin/main
 ```
-The whole suite takes over ten minutes: launch it in the background and check its exit code.
-`TERM=dumb` matters — without it Rich wraps CLI error text in ANSI spans and message assertions
-diverge from CI.
+The whole suite takes over ten minutes: launch `run_suite.sh` in the background and read the one
+line it prints or `<run-dir>/suite.summary.json`, never `suite.raw.log` or a tail of pytest's
+output; the same goes for CI (`wait_checks.sh`, not `gh pr checks --watch`). `run_suite.sh` sets
+`TERM=dumb`, which matters — without it Rich wraps CLI error text in ANSI spans and message
+assertions diverge from CI.
 
 ## Rules
 - **Code quality, in every pull request** (`docs/tree/dec-every-pull-request-gets-a-code-quality-review.md`):
@@ -84,8 +89,13 @@ diverge from CI.
 - Never mutate the working tree while a pytest is running.
 
 ## Definition of done
-A failing test that reproduced the defect now passes; ruff is clean; the relevant tests pass, and
-the full suite if the change is wide; `docs/AGENT_OS.md`, `docs/ADOPTION.md` or `docs/CHANGELOG.md`
-are updated when behaviour, a config key or the adoption steps changed; an ADR is written in
-`docs/adr/` if a decision was taken; the issue carries the result. Work lands as a PR on a branch
-(`fix/<N>-<slug>`), never straight on `main`, and the PR body says `Closes #N`.
+A defect found in use has the test that reproduced it, failing first and passing now; something new
+the owner has not used yet has no new tests. Ruff is clean and the existing suite passes (the
+relevant tests while iterating, the whole suite if the change is wide). `docs/AGENT_OS.md` changes
+only if the change alters a behaviour it already describes, in its section, without growing it if
+that can be avoided; `docs/ADOPTION.md` changes when a config key or the adoption steps changed.
+The changelog note goes in its own fragment, `docs/changelog/unreleased/<branch-name-with-hyphens>.md`,
+never in `docs/CHANGELOG.md` (see that folder's README). An ADR is written in `docs/adr/` if a
+decision was taken; the issue, when there is one, carries the result. Work lands as a PR on a
+branch, never straight on `main`: `fix/<N>-<slug>` and `Closes #N` in the body when an issue
+exists; rollout and docs branches that have no issue are named by topic.

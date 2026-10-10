@@ -16,6 +16,8 @@ from conftest import EXAMPLE_CONFIG
 
 OWNER_LOGIN = "the-owner"
 TREE_ROOT = "product"
+SESSION = "ts-20261010-101500-abc123"
+QUESTION = "How many ads may an account keep open?"
 
 
 def write_node(root: pathlib.Path, node_id: str, node_type: str, **fields) -> pathlib.Path:
@@ -114,3 +116,63 @@ class FakeGh:
 
 def quoted(path: pathlib.Path) -> str:
     return shlex.quote(str(path))
+
+
+class ChatTracker:
+    def __init__(self) -> None:
+        self.opened: list[tuple[str, str, list[str]]] = []
+        self.known: dict[str, int] = {}
+
+    def find_by_key(self, key: str) -> int | None:
+        return self.known.get(key)
+
+    def open(self, title: str, body: str, labels: list[str]) -> int:
+        self.opened.append((title, body, labels))
+        self.known[body.split("<!-- key: ")[1].split(" -->")[0]] = 100 + len(self.opened)
+        return 100 + len(self.opened)
+
+
+def chat_comment(text, *, role="owner", state=None, case=None, page="/ads") -> dict:
+    return {"role": role, "text": text, "state": state, "case": case, "page": page, "at": "t"}
+
+
+def chat_case(node: str, verdict: str) -> dict:
+    return {"node": node, "title": node, "state": "improvised", "verdict": verdict}
+
+
+def chat_item(number: int, kind: str, summary: str, from_messages: list[int], **fields) -> dict:
+    return {
+        "id": f"item-{number}",
+        "kind": kind,
+        "summary": summary,
+        "node": None,
+        "page": None,
+        "from_messages": from_messages,
+        "withdrawn": False,
+        **fields,
+    }
+
+
+def chat_document(comments, cases, *, session_id=SESSION, **fields) -> dict:
+    return {
+        "schema": 2,
+        "id": session_id,
+        "status": "closed",
+        "opened_at": "2026-10-10T10:00:00+02:00",
+        "closed_at": "2026-10-10T10:15:00+02:00",
+        "commit": "abc",
+        "since": None,
+        "cases": cases,
+        "comments": comments,
+        "questions": [
+            {
+                "node": "fr-a",
+                "question": QUESTION,
+                "default_answer": "No cap.",
+                "date": "2026-10-01",
+                "answer": "At most 5.",
+                "at": "t",
+            }
+        ],
+        **fields,
+    }

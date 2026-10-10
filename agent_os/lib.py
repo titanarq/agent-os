@@ -47,8 +47,9 @@ budget check (`agent_os/guard.py`). Read-only: never writes anything.
         # for a config that does not load.
     python -m agent_os.lib worker-slots [<backend>]
         # one `<backend> <slot> <key> <worktree>` line (tab-separated) per worker slot (#90):
-        # every slot of every backend with a worktree, or of the one named. `<key>` is what the
-        # slot's `.cache/worker_<key>.*` files are named after, `<worktree>` its resolved path.
+        # every slot of every backend with a worktree, or of the one named, the ones made on
+        # demand included. `<key>` names the slot's `.cache/worker_<key>.*` files, `<worktree>` is
+        # its resolved path.
     python -m agent_os.lib backend-model <backend>
         # the model a worker on that backend runs when the dispatch names none: the first worker
         # class on it, else the first class of any role on it.
@@ -143,7 +144,12 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
-from agent_os.product.config import BoardConfig, TreeConfig
+from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
+from agent_os.product.dispatch.slots.naming import (
+    worker_slot_key,
+    worker_slot_worktree,
+    worker_slots,
+)
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
@@ -286,7 +292,9 @@ class TaskClass(Strict):
     # stand-in for one UI action: its three ceilings bind ONE invocation, not an issue
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
-    role: Literal["worker", "validator", "refiner", "expert", "planner", "puntal"] = "worker"
+    role: Literal[
+        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter"
+    ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
     backend: str
@@ -343,11 +351,14 @@ class TaskClass(Strict):
 
     @model_validator(mode="after")
     def a_puntal_declares_no_fallback(self) -> TaskClass:
-        # The puntal driver confines the backend with the flags of one CLI dialect and substitutes
-        # nothing: a click that cannot be answered on its own backend fails fast, which is what a
-        # person waiting for it needs. A declaration nothing would read is a config written wrong.
-        if self.role == "puntal" and self.fallback is not None:
-            raise ValueError("fallback is not supported on a puntal class: it never substitutes")
+        # The puntal driver (and the interpreter, which runs on its turn runner) confines the
+        # backend with the flags of one CLI dialect and substitutes nothing: a click that cannot be
+        # answered on its own backend fails fast, which is what a person waiting for it needs. A
+        # declaration nothing would read is a config written wrong.
+        if self.role in ("puntal", "interpreter") and self.fallback is not None:
+            raise ValueError(
+                f"fallback is not supported on a {self.role} class: it never substitutes"
+            )
         return self
 
     @property
@@ -494,11 +505,12 @@ class BackendConfig(Strict):
       stream-json log belong to the CLI that writes that shape. An unregistered name fails here.
     - `quota`: the detector whose `exhausted` verdict cuts a live run of this backend
       (`agent_os.streams.QUOTA_DETECTORS`); `none` records the verdict and never cuts on it.
-    - `slots`: how many workers may run on this backend at once (#90). Slot 1 is `worktree` and
-      the backend's own `.cache/worker_<name>.*` files, exactly what a backend had before this
-      key; slot N > 1 is `<worktree>-N` and `.cache/worker_<name>-N.*` (`worker_slot_key`,
-      `worker_slot_worktree`). The quota verdict and the App stay per backend, shared by its
-      slots. More than one needs a worktree to derive the others from."""
+    - `slots`: how many worker slots `init` precreates on this backend, at least one (#90). It is
+      a floor, never a ceiling: a dispatch that finds every slot busy makes the next one
+      (`agent_os.product.dispatch.slots`). Slot 1 is `worktree` and the backend's own
+      `.cache/worker_<name>.*` files; slot N > 1 is `<worktree>-N` and `.cache/worker_<name>-N.*`
+      (`worker_slot_key`, `worker_slot_worktree`). The quota verdict and the App stay per backend,
+      shared by its slots. More than one needs a worktree to derive the others from."""
 
     command: str = ""
     worktree: str = ""
@@ -532,31 +544,6 @@ class BackendConfig(Strict):
                 f"slots: {self.slots} needs a worktree to derive the other slots' worktrees from"
             )
         return self
-
-
-def worker_slot_key(backend: str, slot: int) -> str:
-    """What one worker slot's `.cache/worker_<key>.*` files -- and its guard-side stall bookkeeping
-    and planner events -- are named after (#90): the backend's own name for slot 1, which is every
-    path a backend had before slots existed, and `<backend>-<slot>` for the others."""
-    return backend if slot == 1 else f"{backend}-{slot}"
-
-
-def worker_slot_worktree(backend: BackendConfig, slot: int) -> str:
-    """One slot's worktree, relative to the host's root exactly as `worktree` is: `worktree` itself
-    for slot 1 and `<worktree>-<slot>` for the others -- the sibling-directory shape a host already
-    gives its backends' worktrees (`../host-claude`, `../host-claude-2`)."""
-    return backend.worktree if slot == 1 else f"{backend.worktree}-{slot}"
-
-
-def worker_slots(project: ProjectConfig) -> list[tuple[str, int]]:
-    """Every (backend, slot) a worker can run in: each slot of each backend with a worktree, in
-    declaration order and slot order -- the unit the guard ticks and the driver counts (#90)."""
-    return [
-        (name, slot)
-        for name, backend in project.backends.items()
-        if backend.worktree
-        for slot in range(1, backend.slots + 1)
-    ]
 
 
 class DeprecatedBackendMapsWarning(UserWarning):
@@ -939,8 +926,9 @@ class PlannerConfig(Strict):
     # resume` refuses to relaunch, read via `planner-value` below (#362).
     relaunch_cap: int = 2
     # How many issues may run at once across every backend, read via `planner-value` below and
-    # enforced by `worker_task.sh start`, not counted by the planner (#374).
-    max_parallel_issues: int = 1
+    # enforced by `worker_task.sh start`, not counted by the planner (#374). Absent means no cap:
+    # the quota is the only limit (docs/tree/fr-independent-work-runs-in-parallel.md).
+    max_parallel_issues: int | None = None
     # How far back the guard's FIRST reconciliation of closed-but-still-labeled issues looks, in
     # days (#365). Afterwards it asks only for issues closed since its own last pass, so the tick
     # never pages through the whole closed backlog: `gh issue list --state closed` is capped at
@@ -950,41 +938,6 @@ class PlannerConfig(Strict):
     reconcile_closed_lookback_days: int = 30
 
 
-class PuntalConfig(Strict):
-    """How a puntal (Agentos v2) reaches the app it stands in for and how long it may take
-    (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
-    cannot-write-code.md). Every key is optional, but the driver refuses to run without a
-    persistence command and, on its default path, without an executor command."""
-
-    # The app's persistence API: the command (shell-split) behind `./state get tickets T-1` and the
-    # pre-helper's reads. `--persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank it.
-    persistence_command: str = ""
-    # A text file (relative to the host's root) describing its subcommands, rendered at
-    # `__PERSISTENCE_API__` in both paths' contracts (the fast one, with no tool, reads it).
-    persistence_api_file: str = ""
-    # The app's EXECUTOR: the command (shell-split) that applies a plan's operations atomically
-    # (agent_os/product/puntal/fast/executor.py). Empty makes the fast path refuse unless the caller
-    # asks for the plan alone. `--executor-command` and `PUNTAL_EXECUTOR_COMMAND` outrank it.
-    executor_command: str = ""
-    # The words a node's declared read may start with: subcommands that change nothing.
-    read_subcommands: list[str] = ["get", "list"]
-    executor_timeout_seconds: int = 30  # the executor is on the click's critical path: cut after
-    # A model turn's process group is killed after this many seconds: a SAFETY for a person waiting
-    # on a click, not a budget (spend is bounded by the class's ceilings).
-    timeout_seconds: int = 90
-    # The slow path's loop guard: most tool calls before the driver cuts it.
-    max_tool_calls: int = 12
-    # `claude --effort`. Empty leaves the CLI's own default.
-    effort: str = ""
-
-    @field_validator("timeout_seconds", "max_tool_calls", "executor_timeout_seconds")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be at least 1")
-        return value
-
-
 class AgentsConfig(Strict):
     project: ProjectConfig
     # Every section after `project:` is optional, so a config that predates it still loads; an absent
@@ -992,6 +945,7 @@ class AgentsConfig(Strict):
     mechanism: MechanismConfig = MechanismConfig()
     planner: PlannerConfig = PlannerConfig()
     puntal: PuntalConfig = PuntalConfig()
+    interpreter: InterpreterConfig = InterpreterConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
     board: BoardConfig = BoardConfig()
@@ -1119,10 +1073,10 @@ def worker_slot_worktree_path(
     project: ProjectConfig | None = None,
 ) -> pathlib.Path:
     """`worker_slot_worktree`, resolved against the repository root the way `worktree_path`
-    resolves slot 1's. A KeyError for a backend with no worktree, or a slot it does not have."""
+    resolves slot 1's. A KeyError for a backend with no worktree, or a slot below 1."""
     project = project or load_project()
     config = project.backends[backend]
-    if not config.worktree or not 1 <= slot <= config.slots:
+    if not config.worktree or slot < 1:
         raise KeyError(f"{backend} slot {slot}")
     return (main / worker_slot_worktree(config, slot)).resolve()
 
@@ -2630,7 +2584,7 @@ def _print_worker_slots(backend: str | None) -> int:
     except CONFIG_LOAD_ERRORS as error:
         print(config_load_failure(error), file=sys.stderr)
         return 1
-    slots = worker_slots(project)
+    slots = worker_slots(project, HOST_ROOT)
     if backend is not None:
         slots = [(name, slot) for name, slot in slots if name == backend]
         if not slots:
@@ -2688,7 +2642,8 @@ def _planner_value(key: str) -> str:
     `_project_value` above. `relaunch_cap` is the first field of this section a bash driver reads
     directly -- every other one (`idle_wake_minutes`, `max_runs_per_day`, `refiner_unattended`) is
     only ever read from Python, inside `agent_guard.py` (#362)."""
-    return str(getattr(load_planner_config(), key))
+    value = getattr(load_planner_config(), key)
+    return "" if value is None else str(value)
 
 
 def main() -> None:

@@ -59,26 +59,30 @@ class SessionPlan:
     problems: list[str] = field(default_factory=list)
 
 
-def _plan_answer(plan: SessionPlan, tree: Tree, question: Question) -> None:
+def answer_step_for(tree: Tree, question: Question) -> AnswerStep | str:
+    """The step that writes this answer, or the sentence that says why it cannot be written."""
     node = tree.nodes.get(question.node)
     if node is None:
-        plan.problems.append(f"{question.node}: no such node, its answer cannot be written")
-        return
+        return f"{question.node}: no such node, its answer cannot be written"
     same_text = [e for e in node.experiments if e.kind == "question" and e.scope == "what"]
     same_text = [e for e in same_text if e.question == question.question]
     if any(e.outcome == "open" for e in same_text):
-        plan.answers.append(AnswerStep(question, already_written=False))
-    elif any(e.outcome == "answered" and e.finding == question.answer for e in same_text):
-        plan.answers.append(AnswerStep(question, already_written=True))
-    elif any(e.outcome == "answered" for e in same_text):
-        plan.problems.append(
+        return AnswerStep(question, already_written=False)
+    if any(e.outcome == "answered" and e.finding == question.answer for e in same_text):
+        return AnswerStep(question, already_written=True)
+    if any(e.outcome == "answered" for e in same_text):
+        return (
             f"{question.node}: {question.question!r} is already answered with other words; the "
             "answer of this session is not written, the owner decides which stands"
         )
-    else:
-        plan.problems.append(
-            f"{question.node}: no open question of what reads {question.question!r}"
-        )
+    return f"{question.node}: no open question of what reads {question.question!r}"
+
+
+def acceptance_step_for(tree: Tree, session_id: str, node_id: str) -> AcceptanceStep | str:
+    if node_id not in tree.nodes:
+        return f"{node_id}: no such node, its acceptance cannot be kept"
+    recorded = any(a.session == session_id for a in tree.nodes[node_id].acceptances)
+    return AcceptanceStep(node_id, recorded)
 
 
 def plan_session(
@@ -92,16 +96,17 @@ def plan_session(
     for question in session.questions:
         if question.answer is None:
             plan.unanswered.append(question)
+        elif isinstance(step := answer_step_for(tree, question), str):
+            plan.problems.append(step)
         else:
-            _plan_answer(plan, tree, question)
+            plan.answers.append(step)
     for case in session.cases:
         if case.verdict == "not_tried":
             plan.not_tried.append(case)
         elif case.node not in tree.nodes:
             plan.problems.append(f"{case.node}: no such node, its {case.verdict} cannot be kept")
         elif case.verdict == "accept":
-            recorded = any(a.session == session.id for a in tree.nodes[case.node].acceptances)
-            plan.acceptances.append(AcceptanceStep(case.node, recorded))
+            plan.acceptances.append(acceptance_step_for(tree, session.id, case.node))
         else:
             plan.reworks.append(ReworkStep(case, find_rework_issue(session.id, case.node)))
     return plan
