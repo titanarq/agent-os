@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+from agent_os.product.session_ingest.feedback_summary import ActionVerdicts
 from agent_os.product.session_ingest.plan import SessionPlan
 
 
-def _done(already: bool) -> str:
+def done_suffix(already: bool) -> str:
     return " (already done)" if already else ""
+
+
+def render_verdict_lines(verdicts: list[ActionVerdicts]) -> list[str]:
+    lines = []
+    if verdicts:
+        lines.append("  verdicts on improvised answers during the session (window of the session):")
+    for row in verdicts:
+        reasons = "; ".join(row.rejected_because)
+        rejected = f", rejected {len(row.rejected_because)} ({reasons})" if reasons else ""
+        lines.append(
+            f"    {row.action} on {row.node}: accepted {row.accepted}{rejected}, retried {row.retried}"
+        )
+    return lines
 
 
 def render_plan(plan: SessionPlan) -> list[str]:
@@ -16,7 +30,7 @@ def render_plan(plan: SessionPlan) -> list[str]:
         verb = "answered" if step.already_written else "write answer"
         lines.append(
             f"  {verb}: {step.question.node}: {step.question.question} -> {step.question.answer}"
-            f"{_done(step.already_written)}"
+            f"{done_suffix(step.already_written)}"
         )
     for question in plan.unanswered:
         lines.append(
@@ -26,7 +40,7 @@ def render_plan(plan: SessionPlan) -> list[str]:
     for acceptance in plan.acceptances:
         lines.append(
             f"  accepted: {acceptance.node} -> record the owner's acceptance"
-            f"{_done(acceptance.already_recorded)}"
+            f"{done_suffix(acceptance.already_recorded)}"
         )
     for rework in plan.reworks:
         existing = f" (already opened as #{rework.existing_issue})" if rework.existing_issue else ""
@@ -34,13 +48,6 @@ def render_plan(plan: SessionPlan) -> list[str]:
         lines.append(f"  rejected: {rework.case.node} -> rework issue{existing}: {note}")
     for case in plan.not_tried:
         lines.append(f"  not tried: {case.node} -- nothing written")
-    if plan.verdicts:
-        lines.append("  verdicts on improvised answers during the session (window of the session):")
-    for row in plan.verdicts:
-        reasons = "; ".join(row.rejected_because)
-        rejected = f", rejected {len(row.rejected_because)} ({reasons})" if reasons else ""
-        lines.append(
-            f"    {row.action} on {row.node}: accepted {row.accepted}{rejected}, retried {row.retried}"
-        )
+    lines.extend(render_verdict_lines(plan.verdicts))
     lines.extend(f"  problem: {problem}" for problem in plan.problems)
     return lines

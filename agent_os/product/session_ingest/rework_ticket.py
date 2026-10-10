@@ -36,7 +36,7 @@ def rework_title(node: Node, session_id: str) -> str:
     return prefixed_title(f"Rework `{node.id}`: rejected in test session {session_id}", "bug")
 
 
-def _quoted(note: str) -> str:
+def quoted_owner_words(note: str) -> str:
     """The owner's words, every line quoted so that no line of them can start a section heading, and
     with the comment delimiters defused so that none can forge a marker line."""
     safe = (note or NO_NOTE).replace("<!--", "&lt;!--").replace("-->", "--&gt;")
@@ -55,7 +55,7 @@ def render_rework_ticket(
     objective = (
         f"The owner rejected `{node.id}` ({node.title}) in test session `{session_id}`. Make it "
         "do what the owner expected, as the note below says.\n\nThe owner's note:\n\n"
-        f"{_quoted(note)}"
+        f"{quoted_owner_words(note)}"
     )
     criteria = (
         (

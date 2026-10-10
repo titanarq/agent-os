@@ -107,8 +107,8 @@ by Agentos); `dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check` (what t
 evidence and hardens the node).
 **How.**
 1. Build it as tickets of rung 4, after the owner's verdict on an improvised answer: the panel and its header
-   button in the shell, the session file the app writes when the owner closes the session
-   (`<tree.test_sessions_dir>/<id>.json`, the contract of `docs/AGENT_OS.md` section 4.11), and one command
+   button in the shell, the session file the app writes as the owner sends each message (no close button: it closes by
+   inactivity; `<tree.test_sessions_dir>/<id>.json`, the contract of `docs/AGENT_OS.md` section 4.11), and one command
    that starts the product with test data.
 2. When the expert compiles the tree, give every `uc-*` node the `depends_on` of its use (register, sign in,
    create, ...): the list is ordered by it, and a node without it falls back to file-name order.
@@ -117,10 +117,12 @@ evidence and hardens the node).
    (a SQLite backup), never over the live file. A worker stops only what it launched, by PID (the rule that
    `fix/rollout-stage1k` adds to `prompts/worker.md`). The quota is shared with the workers: park workers
    first, never the puntales (rung 5, step 4).
-4. When the owner closes the session, `agent-os-sessions test-ingest` prints the plan and writes nothing;
-   read it, then `--apply`: an answered question goes into its node in the owner's words, a rejected case
+4. While the owner tests and after, `agent-os-sessions test-ingest` prints the plan and writes nothing;
+   read it, then `--apply` (an open session of schema 2 is read as it goes, and again on every run): an
+   answered question goes into its node in the owner's words, a change the interpreter understood becomes one
+   keyed issue, a decision is kept for the next session in `understood.json`, a rejected case of schema 1
    becomes one keyed rework issue with the note quoted whole, an accepted case is recorded on the node as
-   `acceptances`. A worker commits the tree edits with `Node-Change: usage` and a body line
+   `acceptances`; the owner's text no item covers waits until the session closes. A worker commits the tree edits with `Node-Change: usage` and a body line
    `Test-Session: <id>`; as it changes the what, it merges on the owner's word, not the validator's.
 **Check.** The owner opens the panel from the header on any page and finds the comments box with no case
 chosen; the list starts with what the others depend on; collapsing and navigating keep the draft; a rejected
@@ -134,9 +136,8 @@ ticket from verdict to fix, the loop `test-ingest` automates for a session of sc
 one round of changes) as the panel above, with the file at `schema: 2` and a thread whose messages carry
 `role: owner`. The list came out wrong ("Register" seventh) because the `uc-*` nodes declared no
 `depends_on`; the host fixed it in PR #66 (step 2). The owner's web died during the test: a worker's smoke
-test killed it by pattern (`pkill -f`); step 3 is the consequence. Open: `test-ingest` reads schema 1 only, and
-names and skips a closed session of schema 2 (exit 1, it stays pending) until its reader lands in a later
-pull request; the verdicts on improvised answers are summarised in the plan and nothing is written from
+test killed it by pattern (`pkill -f`); step 3 is the consequence. `test-ingest` now reads schema 2, open or
+closed (`fix/test-session-ingest-v2`). Open: the verdicts on improvised answers are summarised in the plan and nothing is written from
 them yet; the interpreter chat is not built.
 **Baseline.** Session ticket 4.39 USD (worker and validator), the rebuilt one 10.15 (worker 5.48, validator
 4.67, one round of changes), the first rejection fixed for 2.40. Single measurements, as in rung 4.

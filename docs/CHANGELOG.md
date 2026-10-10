@@ -8,6 +8,21 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Test-session ingestion, schema 2 (no issue; branch `fix/test-session-ingest-v2`) -- `agent-os-sessions test-ingest`
+  now reads the chat the app writes (`schema: 2`: `comments[]`, `cases[].verdict` of `perfect`/`ok_with_improvements`/`needs_work`,
+  optional `items[]` from the feedback interpreter) and, as the owner said ("Directo, salvo decisiones",
+  `uc-open-a-test-session-for-a-branch`, `dec-a-test-session-happens-inside-the-app`): a `change` item becomes one keyed
+  issue, a `decision` and a `question_of_what` are not launched but kept for the next session, a withdrawn item is nothing,
+  `perfect` is recorded as the owner's acceptance, and what no item covers (a session with no `items`, or one the interpreter
+  could not read) is handled by the state of its case with the thread quoted, so no comment is lost. New
+  `<tree.test_sessions_dir>/understood.json` ("what I understood and where it went"), written by Agentos for the app to
+  read when the owner opens the next session (contract in `docs/AGENT_OS.md` §4.11). Schema 1 is unchanged; a schema above 2
+  is still named and left pending. ADR 2026-10-09 (a chat test session is ingested directly, except decisions).
+  On the owner's fifth word (no "Cerrar la sesión" button, closing by inactivity) an **open** schema 2 session is ingested
+  as it goes: items, kept decisions, answers and `perfect` count at once and are idempotent by their keys, the owner's text no
+  item covers waits (`waiting:` in the plan) until the session closes, an item withdrawn after launch names its issue, and
+  `understood.json` carries `status`/`opened_at` per block; a comment is a session and a position, so the thread of a case
+  crosses sessions without re-launching work.
 - Rollout stage 1l (no issue; branch `fix/rollout-stage1l`) -- worker slots on demand. The owner, seeing a host
   capped at five slots: "¿por qué has limitado a 5 slots?"; the web of puntales "necesitará muchos agentes ...
   no se deben limitar" (`docs/tree/fr-independent-work-runs-in-parallel.md`); quota is the only limit.
