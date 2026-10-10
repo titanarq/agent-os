@@ -205,7 +205,7 @@ def answer_main(argv: list[str], clock: Clock) -> int:
             if args.action is None or args.node_file is None:
                 raise PuntalRefused("--action and --node-file are required (`-` reads stdin)")
             request = build_request(args)
-        options = resolve_options(args=args, host_root=HOST_ROOT)
+        options = resolve_options(args=args, host_root=HOST_ROOT, action=request.action)
         if args.dry_run:
             print(describe_launch(request, options, dry_run_brief(request, options)))
             return EXIT_ANSWERED

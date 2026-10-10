@@ -68,7 +68,7 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 
 `interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
 `timeout_seconds` (60), `effort`, `max_thread_messages` (40). Model and per-invocation ceilings:
-`classes.interpreter` (`role: interpreter`, Sonnet 5.5 by default, no `fallback:`). Host paragraphs:
+`classes.interpreter` (`role: interpreter`, Haiku 5.5 by default (docs/adr/2026-10-10-puntals-and-mechanical-tasks-default-to-haiku-5-5.md), no `fallback:`). Host paragraphs:
 `project.prompt_extras.interpreter`. Logs, `runs.tsv` and `telemetry.jsonl` (the puntal's record, with
 `class: interpreter` and `action: interpret_feedback`, so cost per message is a query) live in
 `.cache/interpreter/` (`AGENT_CACHE_DIR` moves them). Tests put a fake `claude` first via

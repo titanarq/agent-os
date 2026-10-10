@@ -278,6 +278,13 @@ puntal:
   max_tool_calls: 12
   # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
   effort: ""
+  # The model of the actions that `classes.puntal.model` (Haiku in this example) answers badly:
+  # `{action: model}`, the key being the request's `action`. An action not named here runs on the
+  # class's model, and `puntal_task.sh --model` outranks both. The telemetry's `model` and
+  # `versions.model` record the effective one, so a host sees which actions needed the stronger
+  # model. Empty by default: the mechanism does not know a host's actions. Example:
+  #   action_models: {close_ticket: claude-sonnet-5-5}
+  action_models: {}
 
 # The feedback interpreter (Agentos v2): the agent behind a test session's comment box, a chat in
 # which the owner's messages are interpreted into items (`bin/interpreter_task.sh`, docs/FEEDBACK_INTERPRETER.md).
@@ -307,7 +314,7 @@ tree:
   # worker class below -- the config fails to load otherwise. Empty (the default) makes
   # `agent-os-tree compile` refuse until `--budget-class` says which: the mechanism does not know
   # a host's class names and does not guess one.
-  ticket_budget_class: mechanical-sonnet
+  ticket_budget_class: mechanical-haiku
   # Labels every compiled ticket carries besides its task type label (`project.labels.types`): a
   # marker for the tickets that came from the tree, the module they belong to. The initial
   # `status:*` label is not decided here -- `compile` only renders; creating the issues and the
@@ -368,8 +375,11 @@ quality:
 # `<!-- budget: <class> -->` line; a class with a `role:` field belongs to that role instead.
 # These numbers are a starting point, not a calibration: measure real runs and tune them.
 #
-# Two worker classes (a mechanical one and a less specified, more expensive one) and one class per
-# one-shot role, all on Claude Code with Sonnet (docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md).
+# Worker classes (a mechanical one on Haiku, the same on Sonnet for the issues that name it, and a
+# less specified, more expensive one on Sonnet) and one class per one-shot role, all on Claude Code:
+# Haiku 5.5 for the puntal, the interpreter and mechanical tasks, Sonnet 5.5 for every other role
+# (docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md, docs/adr/2026-10-10-puntals-and-
+# mechanical-tasks-default-to-haiku-5-5.md).
 # A worker class may declare two optional things, none of them here by default:
 #
 #   fallback: {backend, model, ceilings}   -- like a role's: when the class's own backend reads
@@ -395,10 +405,26 @@ quality:
 #       model: claude-opus-5-5
 #       after: [commit_cut, stage_failed]
 classes:
+  # Kept for the issues that already carry `<!-- budget: mechanical-sonnet -->`; a new mechanical
+  # task names `mechanical-haiku`.
   mechanical-sonnet:
-    description: small, fully specified change in one module with no design decision left to make
+    description: the same kind of change on Sonnet, for an issue that already names this class (a new one names mechanical-haiku)
     backend: claude
     model: claude-sonnet-5-5
+    max_context: 400000
+    max_cost_usd: 5.0
+    max_total_tokens: 80000000
+    commit_warn_turns: 25
+    commit_cut_turns: 90
+
+  # The same kind of change on Haiku 5.5, the default for it (docs/adr/2026-10-10-puntals-and-
+  # mechanical-tasks-default-to-haiku-5-5.md), with `mechanical-sonnet`'s ceilings. A task whose
+  # author does not want a weaker model's slips names `mechanical-sonnet` (or `complex-sonnet`)
+  # in its budget line instead.
+  mechanical-haiku:
+    description: small, fully specified change in one module with no design decision left to make (the default for such a task)
+    backend: claude
+    model: claude-haiku-5-5
     max_context: 400000
     max_cost_usd: 5.0
     max_total_tokens: 80000000
@@ -472,7 +498,7 @@ classes:
   puntal:
     role: puntal
     backend: claude
-    model: claude-sonnet-5-5
+    model: claude-haiku-5-5
     max_context: 30000
     max_cost_usd: 0.25
     max_total_tokens: 300000
@@ -485,7 +511,7 @@ classes:
   interpreter:
     role: interpreter
     backend: claude
-    model: claude-sonnet-5-5
+    model: claude-haiku-5-5
     max_context: 30000
     max_cost_usd: 0.25
     max_total_tokens: 300000
