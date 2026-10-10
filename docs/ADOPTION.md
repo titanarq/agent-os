@@ -1,7 +1,7 @@
 # Adopting Agentos
 
-Two documents, one per layer. Read the ladder if you are starting a product; read the substrate
-checklist for the GitHub, machine and config setup it rests on.
+Three documents in two layers. Read the ladder (two files) if you are starting a product; read the
+substrate checklist for the GitHub, machine and config setup it rests on.
 
 - **Starting a product with Agentos v2** -- the ladder below, written from the first host's real start
   (`proyecto_vector`, 05-09 October 2026), the first run of `docs/tree/uc-start-a-new-product.md` under
@@ -12,16 +12,17 @@ checklist for the GitHub, machine and config setup it rests on.
 
 ## The ladder
 
-| Rung | What | Document | First host: time / USD / rounds |
-|------|------|----------|----------------------------------|
-| 0 | Install: subtree, config, Apps and permissions, labels, venv, CI, paused epic | [start](adoption/v2-start-the-product.md) | 1 h 54 min / 0 / 1 PR |
-| 1 | The owner's goals and signed evaluators | [start](adoption/v2-start-the-product.md) | 1 h 34 min / 0 / 1 PR + 1 for the 4th goal |
-| 2 | The expert populates the tree | [start](adoption/v2-start-the-product.md) | ~10 min / 0.84 / 2 runs, 1 PR |
-| 3 | `compile` in waves, issues per wave | [start](adoption/v2-start-the-product.md) | a night of fixes / 0 / 3 renders |
-| 4 | Foundations: worker + validator by hand, one ticket at a time | [build](adoption/v2-build-the-product.md) | 5 h 25 min / 43.5 / 11 tickets, 15 rounds |
-| 5 | Slots in parallel | [build](adoption/v2-build-the-product.md) | 2 then 5 slots / not separate / - |
-| 6 | The test session | [build](adoption/v2-build-the-product.md) | in flight |
+| Rung | What | Document |
+|------|------|----------|
+| 0 | Install: subtree, config, Apps and permissions, labels, venv, CI, paused epic | [start](adoption/v2-start-the-product.md) |
+| 1 | The owner's goals and signed evaluators | [start](adoption/v2-start-the-product.md) |
+| 2 | The expert populates the tree | [start](adoption/v2-start-the-product.md) |
+| 3 | `compile` in waves, issues per wave | [start](adoption/v2-start-the-product.md) |
+| 4 | Foundations: worker + validator by hand, one ticket at a time | [build](adoption/v2-build-the-product.md) |
+| 5 | Slots in parallel | [build](adoption/v2-build-the-product.md) |
+| 6 | The test session | [build](adoption/v2-build-the-product.md) |
 
+The time, USD and rounds the first host measured for each rung are in that rung's **Baseline**.
 Elapsed from the owner's first goal (07-10 20:01) to the first real puntal answering a click on the real
 shell (09-10 about 16:35): about 44 h, most of it spent fixing the mechanism, not building the product.
 
@@ -46,18 +47,22 @@ two measures. Numbers from one run are not a distribution: say so when you quote
 
 ## Open edges (each rises to code or a doctor check, and the rung text then shrinks)
 
-Fixed so far (agent-os pull requests): #133/#134 adoption CI, #136 expert driver and prompt, #137 order and
-experiments in the slice, #138/#139 pause, review gate and trailer rules, #140 doctor probes the Apps'
-permissions and install templates, #141 build tickets and explicit `touches`, #142 foundations without
-inheritance. In flight: dispatch headroom and planner paging, first-class rework, quota cut, per-slot
-venv, `--slot` by `--issue`. Still open, no branch yet: `open-pr` `merge_failed` without a human state;
-a verification command naming a missing test; `touches` in the expert prompt; the review gate reading
-checks by REST and the doctor probing that call; the worker running the host's ratchet before the pull
-request; the tree doctor not checking `implementation` paths; the repeated evaluators paragraph in
-every ticket; slow `status`/`collect`; slots on demand.
+What is already fixed is in `docs/CHANGELOG.md` and `git log`; only what a reader can still trip over is
+listed here.
+
+- `open-pr` ending `merge_failed` writes BLOCKED without moving the issue to `status:blocked-on-human`.
+- A verification command that names a missing test leaves the worker without instruction.
+- `prompts/expert.md` does not tell the expert to declare `touches`.
+- The review gate reads a pull request's checks through GraphQL (`statusCheckRollup`), not REST, and the
+  doctor probes the permissions over REST, not that call.
+- The evaluators paragraph repeats in every ticket.
+- `status` and `collect` sometimes take over 100 s.
+- Slots are a fixed number, not on demand.
 
 ## Not yet exercised in the first host
 
-The planner running unattended, the guard and its timer, the notification topic, slots on demand, question
-sessions through `agent-os-sessions open`, the progress board, and a second product. No steps are written
-for them until a run exists.
+The planner running unattended, the guard and its timer (armed only by the owner; the doctor stays red on
+the notification topic and the timer on purpose), the notification topic, slots on demand, question
+sessions through `agent-os-sessions open`, the progress board (`agent-os-tree board sync`,
+`docs/AGENT_OS.md`), and a second product (the baseline that `goal-improves-with-every-product` compares
+against). No steps are written for them until a run exists.

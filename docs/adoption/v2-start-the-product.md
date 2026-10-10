@@ -22,7 +22,7 @@ epic that pauses everything. All of it lands in ONE pull request, merged by hand
    off until rung 3 has produced tickets.
 3. Create the epic named by `project.tracking_epic` and put `status:agents-paused` on it BEFORE anything
    else: the guard and the planner then stop, whatever is armed later. Never arm the timer in this rung.
-4. The planner's and the validator's Apps need Checks, Commit statuses and Actions (read) besides issues
+4. The planner's and the validator's Apps need Checks and Commit statuses (read) besides issues
    and pull requests (substrate step 14); the worker's App needs Contents push and pull-request create.
 5. `agent-os-doctor` must be green except the notification topic file and the guard timer, which are
    rung "guard" (not yet exercised).

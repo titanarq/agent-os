@@ -27,24 +27,26 @@ worker's), `dec-every-pull-request-gets-a-code-quality-review`, `fr-a-usable-pro
 6. Merge only when every check is SUCCESS and the head contains `origin/main`
    (`gh pr view <PR> --json headRefOid,statusCheckRollup,mergeable`; `git fetch`; `git merge-base
    --is-ancestor origin/main <head>`), as a merge commit: `gh pr merge <PR> --merge --match-head-commit
-   <sha>`; then `python -m agent_os.issues move <N> done`. A rejected pull request is reworked once with
-   the recipe below; a second rejection goes to a person (the shell took three rounds, each decided by one).
-7. Rework after `CHANGES_REQUESTED`: if `worker_task.sh claude resume --issue <N>` refuses because every
-   stage is done, append a stage with the reviewer's fixes to the issue's `## Stages` (`python -m
-   agent_os.issues update <N> --body-file <file>`) and run `resume --issue <N> --after manual --context
-   "<fixes>"`; check the event stream grows in two minutes.
+   <sha>`; then `python -m agent_os.issues move <N> done`. A rejected pull request is reworked once
+   (step 7); a second rejection goes to a person (the shell took three rounds, each decided by one).
+7. Rework after `CHANGES_REQUESTED`: `agent_os/bin/worker_task.sh claude resume --issue <N> --rework`
+   appends the stage "Address the changes requested on PR #<n>" to the issue's `## Stages` and launches
+   it with that review as context; check the event stream grows in two minutes.
 **Check.** Smoke the product with no spend after each ticket that touches the web (the host's run script,
 then `curl` its health route); the validator's verdict and the merge sha are on the issue.
 **First time.** The first worker (08-10, 0.59 USD) opened a pull request with CI red and the validator
 approved it -- fixed: `issues move review` now judges the checks, the validator asks for changes, and a
-malformed `Node-Change` trailer blocks `open-pr` (#138, #139). The worker does not run the host's
-quality ratchet before opening the pull request, so ratchet failures arrive as rework (open: #26 cost a
-second round). `open-pr` with `merge_failed` writes BLOCKED without moving the issue to
-`status:blocked-on-human` (open). Ticket nodes that name files a later ticket deleted are not caught by the
-tree doctor (open). `status` and `collect` sometimes take over 100 s (open). A pull request opened before
+malformed `Node-Change` trailer blocks `open-pr` (#138, #139). The worker did not run the host's quality
+ratchet before opening the pull request, so ratchet failures arrived as rework (#26 cost a second
+round) -- fixed: `open-pr` refuses a branch that fails the ratchet (agent-os#145). Ticket nodes that
+named files a later ticket deleted were not caught by the tree doctor -- fixed: it reports an
+`implementation` path that does not exist (agent-os#145). `open-pr` with `merge_failed` writes BLOCKED
+without moving the issue to `status:blocked-on-human` (open). `status` and `collect` sometimes take
+over 100 s (open). A pull request opened before
 the branch contains `origin/main` goes red against a moved main: the driver merges `origin/main` first,
 and the merge rule above is the guard.
-**Baseline.** Eleven tickets merged, 43.5 USD, serial from 11:53 to 13:22 (about 22 min per ticket),
+**Baseline.** Eleven tickets, 15 rounds in all, merged for 43.5 USD in 5 h 25 min of the first host's
+clock, serial from 11:53 to 13:22 (about 22 min per ticket),
 two slots from 16:02. Per ticket (worker + validator): wave 0 web up 1.45; event log 1.56; persistence 5.23;
 web skeleton 2.69; executor 3.26; register 1.65; log in and out 1.54; shell 13.22 over 3 rounds; progress
 signal 2.61; one-command tests 2.42 over 2 rounds; owner verdict 7.88 over 2 rounds. Eight were approved in
@@ -61,11 +63,14 @@ no code.
 **Why.** `fr-independent-work-runs-in-parallel`; `dec-dispatch-never-runs-two-tickets-on-the-same-code`.
 **How.**
 1. `project.backends.claude.slots: N` and `planner.max_parallel_issues: N`; `worker_task.sh claude init`
-   creates `<worktree>-2..N`. Give each slot an interpreter and `.env` of its own (below).
+   creates `<worktree>-2..N` and links `project.worktree_links` and `.env` into each; a stack whose editable
+   install must resolve to the slot's own code builds an interpreter per slot with
+   `project.worktree_setup_command`.
 2. Before each launch ask the gate: `python -m agent_os.product.dispatch start-gate <N> <live issues>`;
-   launch if it is 0, then `worker_task.sh claude start <N> --slot <S>`. With more than one slot every
-   subcommand except `start`, `branch`, `status`, `init` and `resume --issue` needs `--slot`. Ask the question after every finished
-   worker: does more fit? Free the slot when its worker ends, not when its pull request merges.
+   launch if it is 0, then `worker_task.sh claude start <N>`. With more than one slot, `start` and `branch`
+   pick a free slot themselves; `resume`, `collect`, `open-pr`, `stop` and `watch` take `--issue <N>` for
+   the slot that recorded it; `status` and `init` without one cover every slot. Ask the question after
+   every finished worker: does more fit? (`agent_os.product.dispatch headroom` answers it read-only.) Free the slot when its worker ends, not when its pull request merges.
 3. Merge with step 6 of rung 4, one pull request at a time; when another slot merged first, merge
    `origin/main` into the branch, wait for CI, then merge.
 4. Watch the shared quota: it belongs to the backend, so an exhausted window cuts every live slot.
@@ -73,11 +78,14 @@ no code.
 **Check.** `status` without `--slot` lists every slot; `start-gate` refuses two tickets whose `touches`
 overlap; each slot's worktree is clean before it starts.
 **First time.** `worktree_links` symlinks the root `.venv` into each slot, and `.gitignore` `.venv/`
-does not cover a symlink, so the worktree is dirty and the branch step refuses (open; first host's
-workaround: a virtualenv of its own per slot, built by hand). A quota cut with no events is recorded as
-`no_stage_commit` (open). `collect`, `open-pr`, `stop` and `watch` demand `--slot` although one run owns
-the issue (open). A rework after rejection needs the manual stage (rung 4, step 7) (open). The planner
-does not page by the cap, only records it (open). Slots are a fixed number, not on demand (open).
+does not cover a symlink, so the worktree was dirty and the branch step refused (first host's workaround:
+a virtualenv of its own per slot, built by hand) -- fixed: the driver's own links are not dirt
+(agent-os#146). A quota cut with no events was recorded as `no_stage_commit` -- fixed: it is a quota cut
+(#146). `collect`, `open-pr`, `stop` and `watch` demanded `--slot` although one run owns the issue --
+fixed: they take `--issue` (#146). A rework after rejection needed a hand-made stage -- fixed:
+`resume --rework` (#146). The planner did not page by the cap, only recorded it -- fixed: every run asks
+`dispatch headroom` whether more can start, and starts all of it (agent-os#144). Slots are a fixed number,
+not on demand (open).
 **Baseline.** Two slots from 16:02 (PR #30), five from 17:22 (PR #44); merges in the 17:18-17:33 window:
 three, against one per 22 minutes serial.
 **First host.** Five slots on one backend, `max_parallel_issues` 5, venvs `...-claude-2` to `-5`.
@@ -107,8 +115,7 @@ evidence and hardens the node).
    create, ...): the list is ordered by it, and a node without it falls back to file-name order.
 3. Keep the owner's web apart from the workers'. It runs from the main checkout, frozen while the owner
    tests; a newer version is offered on another port from a separate worktree over a copy of the owner's data
-   (a SQLite backup), never over the live file. A worker stops only what it launched, by PID (the rule that
-   `fix/rollout-stage1k` adds to `prompts/worker.md`). The quota is shared with the workers: park workers
+   (a SQLite backup), never over the live file. A worker stops only what it launched, by PID, never by pattern (`pkill -f`). The quota is shared with the workers: park workers
    first, never the puntales (rung 5, step 4).
 4. When the owner closes the session, `agent-os-sessions test-ingest` prints the plan and writes nothing;
    read it, then `--apply`: an answered question goes into its node in the owner's words, a rejected case
@@ -135,10 +142,3 @@ them yet; the interpreter chat is not built.
 4.67, one round of changes), the first rejection fixed for 2.40. Single measurements, as in rung 4.
 **First host.** The panel is `web/app/shell/sessions/` with its detail in `web/docs/sesion-de-pruebas.md`;
 the owner's web runs from the main checkout, the new versions on a second port.
-
-## Not yet exercised in the first host
-
-The planner running unattended, the guard and its timer (armed only by the owner; the doctor stays red on
-the notification topic and the timer on purpose), the notification topic, slots on demand (no fixed
-number), question sessions through `agent-os-sessions open`, the progress board (`agent-os-tree board
-sync`), a second product (the baseline that `goal-improves-with-every-product` compares against).
