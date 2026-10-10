@@ -1,18 +1,17 @@
-# Adopting the mechanism on a second host
+# The substrate checklist: adopting the mechanism in a host
 
 > This is the substrate checklist (v1): the guard, the planner, the workers and their GitHub and
 > machine setup. The ladder that starts a product with Agentos v2 -- goals, the expert, the tree,
-> the foundations, parallel slots -- is in [`../ADOPTION.md`](../ADOPTION.md); its first rung points
+> the foundations, parallel slots, the test session -- is in [`../ADOPTION.md`](../ADOPTION.md); its first rung points
 > back here for the steps it reuses.
 
-A numbered checklist, in the order a second host actually does it, for taking `agent_os/` as one
+A numbered checklist, in the order a host actually does it, for taking `agent_os/` as one
 directory (§4.1) and running it against a new project. Nothing here is edited inside `agent_os/`:
 every step either writes a file outside it or fills in `config/agents.yaml`
 (`agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md`).
 Placeholders: `<host>` is the new project's checkout root, `<org>/<repo>` its GitHub repository,
 `<remote>` the git remote the mechanism's own repository is added as
-(`git remote add agent-os https://github.com/titanarq/agent-os.git`), `<agent>` a backend or role
-identity (`qwen`, `claude`, `planner`, `validator`, `refiner`).
+(`git remote add agent-os https://github.com/titanarq/agent-os.git`).
 
 ## 1. Knowledge-layer prerequisites
 
@@ -38,7 +37,7 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    gitignored paths a fresh worktree should link from the main checkout, and/or
    `project.worktree_setup_command` to the bootstrap that builds them inside the worktree
    (`uv sync --frozen`, `npm ci`): the validator's throwaway worktree and each worker's `init` run
-   it, and a failing one refuses the run (agent-os#41). Set `project.lint_commands` to the
+   it, and a failing one refuses the run. Set `project.lint_commands` to the
    linters the validator should run on a PR's files; left empty, it runs none.
 5. A default branch named `main`. This is not a `project.*` key: `git worktree add`/`branch`/
    `open-pr` in `agent_os/bin/worker_task.sh` fetch and fork from the literal `origin/main`
@@ -61,12 +60,12 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    git subtree add --prefix=agent_os agent-os main --squash
    ```
    `titanarq/agent-os` is public, so this fetch — and every later `subtree pull` (step 25) —
-   needs no credential. Two cases do: `subtree push` (step 26) always, and every fetch when the
-   remote is a private fork or mirror. Then **git itself** has to present a GitHub credential for
-   an account that can write the repository (for a push) or read it (for a private fetch), and a
+   needs no credential. One case does: every fetch when the remote is a private fork or mirror (a fix
+   goes back as a pull request on `titanarq/agent-os`, step 26, not as a push from this host). Then
+   **git itself** has to present a GitHub credential for an account that can read it, and a
    `gh` login is not that by itself. A token in `GH_TOKEN`, a non-interactive
    `gh auth login --with-token`, or a "no" to the interactive login's "authenticate Git" question
-   all leave git with no credential helper for `github.com`, and the `https://` push or fetch
+   all leave git with no credential helper for `github.com`, and the `https://` fetch
    stops on an auth prompt. Point git at `gh`'s login once per machine, before the first such
    command:
    ```bash
@@ -139,7 +138,7 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     without the Workflows permission cannot push a **stale** branch: GitHub refuses to create a
     ref whose tree differs from the default branch under `.github/workflows/`, even when none of
     the branch's own commits touch a workflow — which is exactly the branch `open-pr` pushes
-    unmerged after a conflict with its base (agent-os#61). `open-pr` then writes
+    unmerged after a conflict with its base. `open-pr` then writes
     `BLOCKED reason=workflows_permission`, comments the refusal on the issue and moves it to
     `status:blocked-on-human`; resolving the conflict (merge `origin/<base>` into the branch,
     push, `open-pr` again) unblocks it. Granting the worker App Workflows (read/write) avoids it.
@@ -162,8 +161,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     an untracked file that refuses the next `start`. There is nothing to link by hand or to commit;
     a worktree is linked only to a `.venv` that already exists, so build it before `init`.
 17. **Binaries** — `gh` (authenticated with `repo`+`project` scopes), `git`, `python3.12`, the
-    backend CLI(s) a role runs (`claude`, `qwen`, or whichever the host configures), `curl`
-    (`agent_os/bin/notify.sh`), `ruff==0.16.4` (CI), `systemd --user`. Point
+    backend CLI a role runs (`claude`), `curl`
+    (`agent_os/bin/notify.sh`), `ruff` at the version `agent_os/bootstrap.sh` pins (CI), `systemd --user`. Point
     `project.executables` at any of these whose PATH the launching shell (a systemd user unit,
     typically) does not carry.
 18. **One worktree per backend** — a private host needs a git credential helper first, or the
@@ -189,7 +188,8 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     `.json`/`.pem` pairs from step 15, if not already placed there; `<host>/.env` at the repo root
     for any credential a worker's backend process needs — both are written by hand, nothing in the
     mechanism creates a credential.
-20. **`agent-os-install [--dry-run] [--force]`** — renders the systemd `--user` units
+20. **`agent-os-install [--dry-run] [--force]`**.
+    *Install:* renders the systemd `--user` units
     (`~/.config/systemd/user/<guard_unit>.{service,timer}` and `.service.d/override.conf`) from
     `agent_os/templates/systemd/*.tmpl` and `project.guard_unit`/`project.executables`, with
     `ExecStart=` on the interpreter from step 16 (never a `.venv` at the host root; install refuses
@@ -198,54 +198,50 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     they name the mechanism's own `agent_os/bin/*.sh` and `agent_os/.venv/bin/python -m agent_os.<module>`,
     so a host needs no `scripts/` wrapper for them),
     `.github/ISSUE_TEMPLATE/{task,bug}.md` and `.github/workflows/ci-agent-os.yml`, each only if
-    absent — and `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
+    absent. Never overwrites without `--force`, and never arms, restarts or reloads a unit — `--dry-run`
+    first shows every path it would touch and its diff against what is there. The
+    `.claude/agents/*.md` it renders are generated: `--force` rewrites them whole, so do not edit
+    them in place — set the `config/agents.yaml` key instead (the control plane's merge method is
+    `project.merge_method`: `merge`, `squash` or `rebase`, default `merge`).
+    *CI:* `.github/workflows/ci-host.yml`, rendered with `project.test_command`, which runs
     on every pull request with no path filter. Keep it unless your own CI already reports a check
     on every PR (then set `project.install_host_ci: false`): `ci-agent-os.yml` only fires on
     `agent_os/**` (and on a change to itself), and the control plane never merges a PR whose head
     SHA reports zero checks. For the same reason, never make `ci-agent-os.yml`'s job a required
     status check in branch protection: on a host-only PR it does not run, so it never reports. The
     rendered file is a starting point — add the setup your test command needs before its step.
-    It also carries a **`Node-Change` trailer step** (agent-os#116): every commit of a pull request
+    It also carries a **`Node-Change` trailer step**: every commit of a pull request
     that touches the product tree (`tree.root`, default `product/`) must end with exactly one
     `Node-Change: usage | rework | owner` trailer, or the step fails
     (`agent-os-tree trailers`, `docs/AGENT_OS.md` §4.6). The step runs on the mechanism's interpreter
     the ratchet's bootstrap step builds and on the full history that checkout fetches; a host
     with no tree yet passes it with nothing to check.
-    A host adopting this after a `subtree pull` needs no config change, but its own existing
-    `config/agents.yaml` keeps the models it names: the new defaults (Sonnet for every role, Opus
-    only for the `custodian` and `consolidator` keys of `project.agent_models`) apply to a host only
-    when it edits its config to match.
-    It also carries the **code-quality ratchet** (§4.8 of `AGENT_OS.md`): a step that bootstraps the
+    *Ratchet:* `ci-host.yml` also carries the **code-quality ratchet** (§4.8 of `AGENT_OS.md`): a step that bootstraps the
     mechanism's interpreter and runs `agent-os-quality --base origin/<base branch>`, failing a PR
     whose new files or folders break the limits in `quality:` or whose touched ones got worse. A
     host that sets `project.install_host_ci: false` copies those two steps into its own CI, with
     `fetch-depth: 0` on its checkout so the merge-base exists. Tune `quality:` (step 8) before
-    the first PR if the defaults (12 entries per folder, 300 lines per file) do not fit.
-    Never overwrites without `--force`, and never arms, restarts or reloads a unit — `--dry-run`
-    first shows every path it would touch and its diff against what is there. The
-    `.claude/agents/*.md` it renders are generated: `--force` rewrites them whole, so do not edit
-    them in place — set the `config/agents.yaml` key instead (the control plane's merge method is
-    `project.merge_method`: `merge`, `squash` or `rebase`, default `merge`).
+    the first PR if the defaults in `config.example.yaml` do not fit.
 21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: `gh auth status`
     scopes, the labels that do not autocreate, the Project v2 `Status` field and its six options,
     each App's secrets, whether the planner's and the validator's Apps may read CI checks (they are
     probed with their own installation tokens, which mints or reuses the cached one), each
     `project.executables` entry, each worktree, the notify topic file, the
     guard timer's `is-active`, and a workflow that reports a check on a host-only PR — one line per
-    check, exit 1 on any failure. The guard-timer check is expected red until step 22 arms the
-    timer. It never calls `agent_guard.py check` or any other trigger a
+    check, exit 1 on any failure. The guard-timer check is expected red until the owner arms the
+    timer (step 22). It never calls `agent_guard.py check` or any other trigger a
     role reacts to, so running it costs nothing.
 
-(`agent-os-guard`, `agent-os-issues`, `agent-os-lib`, `agent-os-install`, `agent-os-doctor` are the
-five console scripts `agent_os/pyproject.toml`'s `[project.scripts]` installs into
-`agent_os/.venv/bin/`; the drivers themselves — `worker_task.sh`, `agent_task.sh`,
-`planner_task.sh`, `notify.sh`, `worker_progress.sh` — are shell scripts under `agent_os/bin/`,
-with no console-script equivalent.)
+(The console scripts are the `[project.scripts]` of `agent_os/pyproject.toml`, installed into
+`agent_os/.venv/bin/`; the drivers are the shell scripts under `agent_os/bin/`, with no console-script
+equivalent.)
 
 ## 5. The first real run (§6)
 
-22. Arm the guard timer — the one step nothing above does for you:
-    `systemctl --user enable --now <guard_unit>.timer`.
+22. **The owner arms the guard timer; no agent and no procedure does.** It is the one step nothing above
+    does for you, and it is taken on the owner's word, once everything above is green. What the owner
+    runs: `systemctl --user enable --now <guard_unit>.timer`. Until then the guard does not tick, and
+    `agent-os-doctor` stays red on that one check on purpose.
 23. Before moving any issue to `status:ready` for the first time: create the three labels that do
     not autocreate (step 12); make sure every issue meant for the trial is actually a Project item
     with a `Status` value set (an item can exist with no Status, or not be on the board at all);
@@ -259,7 +255,7 @@ with no console-script equivalent.)
     `agent_os/bin/worker_task.sh <backend> watch` (tail the event stream),
     `journalctl --user -u <guard_unit>.service -f` (tick output), and
     `.cache/<role>/runs.tsv` (cost as it accrues).
-    **A host whose work comes from a product tree** (agent-os#117) sets `tree.dispatch_by_node:
+    **A host whose work comes from a product tree** sets `tree.dispatch_by_node:
     true` in `config/agents.yaml` once its tickets exist (`agent-os-tree compile`, each carries its
     node address): from then on the guard leaves out any ready issue with no `<!-- node: <id> -->`
     line or with an open dependency, and `worker_task.sh start` refuses one that shares code with a
@@ -275,25 +271,19 @@ with no console-script equivalent.)
     `project.role_apps.expert`, else the planner's, and it needs the permissions the workers have
     (Contents push, Pull requests create). It is launched by hand: nothing runs it unattended.
 
-    **Optional, once the host has a product tree (`tree.root`): the progress board.** Run
-    `gh auth refresh -s project` (the token behind `gh` needs the `project` scope), optionally set
-    the `board:` section of `config/agents.yaml` (`owner`, `number` or `title`; the defaults are the
-    authenticated user and a Project titled `Agentos progress board`), preview with
-    `agent-os-tree board sync --dry-run`, then run `agent-os-tree board sync` (idempotent; run it
-    again whenever the tree changes, or from a host's CI). The owner orders the backlog by filling
-    the Project's `Order` number field by hand; `agent-os-tree board order [--out FILE]` reads that
-    order back for the planner.
-
 ## 6. Pulling improvements, and sending one back
 
 25. **Pull** whatever the mechanism gained elsewhere since the last sync:
-    `git subtree pull --prefix=agent_os <remote> main --squash`, then re-run step 16
+    `git subtree pull --prefix=agent_os <remote> main --squash` on a branch of the host's own (step 26),
+    then re-run step 16
     (`bash agent_os/bootstrap.sh`) so the new code and the interpreter agree, then step 21
     (`agent-os-doctor`) to confirm nothing the pull touched needs a new config key this host has
     not filled in yet.
-26. **Send one back** — a fix or a generic improvement made while running this host belongs in the
-    shared mechanism, not stranded here: commit it under `agent_os/` on a branch, then
-    `git subtree push --prefix=agent_os <remote> <branch>` and open a pull request against the
-    split repository's own `main`. A host-specific decision stays in `config/agents.yaml` or a
-    host-owned file it names (step 9) instead — nothing that only makes sense for one project goes
-    back through this door.
+26. **Send one back** — a defect or a generic improvement found while running this host is fixed in
+    `titanarq/agent-os`, never in this host's `agent_os/`: reproduce it with a failing test in a checkout
+    of that repository and open the fix there as a pull request (its `AGENTS.md`, "Hosts consume this
+    repository…"). Once it is merged, this host brings it in with step 25's
+    `git subtree pull --prefix=agent_os <remote> main --squash` on a branch of its own, and that branch
+    is merged with a merge commit, never a squash: a squash drops the `git-subtree-dir:` metadata the
+    next pull needs. A host-specific decision stays in `config/agents.yaml` or a host-owned file it
+    names (step 9) instead — nothing that only makes sense for one project goes back through this door.
