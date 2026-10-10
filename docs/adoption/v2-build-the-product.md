@@ -29,18 +29,19 @@ worker's), `dec-every-pull-request-gets-a-code-quality-review`, `fr-a-usable-pro
    --is-ancestor origin/main <head>`), as a merge commit: `gh pr merge <PR> --merge --match-head-commit
    <sha>`; then `python -m agent_os.issues move <N> done`. A rejected pull request is reworked once with
    the recipe below; a second rejection goes to a person (the shell took three rounds, each decided by one).
-7. Rework after `CHANGES_REQUESTED`: if `worker_task.sh claude resume --issue <N>` refuses because every
-   stage is done, append a stage with the reviewer's fixes to the issue's `## Stages` (`python -m
-   agent_os.issues update <N> --body-file <file>`) and run `resume --issue <N> --after manual --context
-   "<fixes>"`; check the event stream grows in two minutes.
+7. Rework after `CHANGES_REQUESTED`: `worker_task.sh claude resume --issue <N> --rework` appends the
+   stage `Address the changes requested on PR #<n>` to the issue's `## Stages` and launches it with the
+   newest settling review as context (a plain `resume` refuses a run whose every stage is done); check
+   the event stream grows in two minutes. The planner's prompt says the same, and counts two such
+   stages as the attempts before a person decides.
 **Check.** Smoke the product with no spend after each ticket that touches the web (the host's run script,
 then `curl` its health route); the validator's verdict and the merge sha are on the issue.
 **First time.** The first worker (08-10, 0.59 USD) opened a pull request with CI red and the validator
 approved it -- fixed: `issues move review` now judges the checks, the validator asks for changes, and a
 malformed `Node-Change` trailer blocks `open-pr` (#138, #139). The worker does not run the host's
 quality ratchet before opening the pull request, so ratchet failures arrive as rework (open: #26 cost a
-second round). `open-pr` with `merge_failed` writes BLOCKED without moving the issue to
-`status:blocked-on-human` (open). Ticket nodes that name files a later ticket deleted are not caught by the
+second round). `open-pr` with `merge_failed` wrote BLOCKED without moving the issue to
+`status:blocked-on-human` -- fixed: it comments what was in the way and moves it, like the other endings. Ticket nodes that name files a later ticket deleted are not caught by the
 tree doctor (open). `status` and `collect` sometimes take over 100 s (open). A pull request opened before
 the branch contains `origin/main` goes red against a moved main: the driver merges `origin/main` first,
 and the merge rule above is the guard.

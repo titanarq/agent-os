@@ -390,7 +390,7 @@ def test_a_busy_verdict_file_is_left_for_the_next_fold_rather_than_waited_on(tmp
     with lock_path.open("a") as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         lines = agent_guard.fold_role_quota_observations(main=tmp_path, now=now)
-    assert lines == [f"{ROLE_BACKEND}: verdict file busy -- role observation left for next fold"]
+    assert lines == [f"{ROLE_BACKEND}: verdict file busy -- observation left for next fold"]
     assert not _verdict_file(tmp_path).exists()
 
 
