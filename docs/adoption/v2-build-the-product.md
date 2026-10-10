@@ -85,27 +85,57 @@ three, against one per 22 minutes serial.
 
 ## Rung 6 - The test session
 
-**What.** The owner opens a test session for a branch inside the running product: it shows what changed
-since the last session and the cases to try, ordered by exposure; the owner accepts, rejects or retries
-each improvised answer, and the puntales ask their pending questions in context.
-**Why.** `dec-a-test-session-happens-inside-the-app`; `uc-open-a-test-session-for-a-branch`;
-`dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check` (what the owner accepts is kept as evidence and
-hardens the node).
-**How.** Build, as ordinary tickets of rung 4, the owner's verdict (accept/reject/retry per response) and
-the test-session page; then hand the owner one command that starts the product with test data, a list of
-what to try, and where each verdict is recorded. Answers go back into nodes by pull request
-(`agent-os-sessions answers/apply`, `verify-answer`).
-**Check.** A verdict recorded on a real puntal answer is recorded where the verdict ticket says and appears in the
-node's history; the owner can run it without help.
-**Ingesting a closed session.** The app writes the closed session to `tree.test_sessions_dir` (set it in
-`config/agents.yaml` to where the product writes; contract in `docs/AGENT_OS.md` §4.11) and never touches the tree.
-`agent-os-sessions test-ingest` prints what each closed session would change (read it: answers, acceptances, rework
-tickets, the verdicts of the improvised answers); `--apply` writes the answers and acceptances into the working
-tree, opens one rework issue per rejected case and remembers the session. Commit the tree edits on a branch with
-`Node-Change: usage`, open the pull request with `Test-Session: <id>` in its body and merge it on the owner's word;
-move the rework issues to `ready` as any ticket. Run it again freely: nothing is repeated.
-**First time / baseline.** In flight when this was written: the session ticket's pull request was open
-(PR #47) and its worker done; the owner had not yet tested. No baseline.
+**What.** A session the owner opens from the running product itself, whatever branch it is on, not one opened
+for a branch. A "Test session" button in the app's header collapses and expands a side panel that keeps its
+state (chosen case, half-written comment, scroll) across collapsing and navigating; the app's own pages are
+not altered. At the top of the panel, always, even with nothing to try, one comments box with a state
+dropdown beside it (perfect, ok with improvements, needs work, none); below it a "this screen only" checkbox,
+on by default, the use cases to try prioritized by what the others depend on, and the guide of the chosen
+one. The puntales' pending questions are answered in the same panel, in context. The box will be a chat
+with the feedback interpreter (a later pull request, not described here as done); until then it records the
+owner's message in the session file.
+**Why.** `uc-open-a-test-session-for-a-branch`; `dec-a-test-session-happens-inside-the-app` (both rewritten
+on the owner's word of 09-10 after the first test, below); `fr-the-owner-is-asked-only-in-sessions-they-open`;
+`dec-a-soft-product-decision-is-the-refiners-and-a-hard-one-the-owners` (the order of trying is a how, decided
+by Agentos); `dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check` (what the owner accepts is kept as
+evidence and hardens the node).
+**How.**
+1. Build it as tickets of rung 4, after the owner's verdict on an improvised answer: the panel and its header
+   button in the shell, the session file the app writes when the owner closes the session
+   (`<tree.test_sessions_dir>/<id>.json`, the contract of `docs/AGENT_OS.md` section 4.11), and one command
+   that starts the product with test data.
+2. When the expert compiles the tree, give every `uc-*` node the `depends_on` of its use (register, sign in,
+   create, ...): the list is ordered by it, and a node without it falls back to file-name order.
+3. Keep the owner's web apart from the workers'. It runs from the main checkout, frozen while the owner
+   tests; a newer version is offered on another port from a separate worktree over a copy of the owner's data
+   (a SQLite backup), never over the live file. A worker stops only what it launched, by PID (the rule that
+   `fix/rollout-stage1k` adds to `prompts/worker.md`). The quota is shared with the workers: park workers
+   first, never the puntales (rung 5, step 4).
+4. When the owner closes the session, `agent-os-sessions test-ingest` prints the plan and writes nothing;
+   read it, then `--apply`: an answered question goes into its node in the owner's words, a rejected case
+   becomes one keyed rework issue with the note quoted whole, an accepted case is recorded on the node as
+   `acceptances`. A worker commits the tree edits with `Node-Change: usage` and a body line
+   `Test-Session: <id>`; as it changes the what, it merges on the owner's word, not the validator's.
+**Check.** The owner opens the panel from the header on any page and finds the comments box with no case
+chosen; the list starts with what the others depend on; collapsing and navigating keep the draft; a rejected
+case ends as an issue and then a pull request that names the owner's words; `test-ingest` without `--apply`
+exits 0 on a closed session of schema 1.
+**First time.** The first session (schema 1, per branch, PR #47 of the host; worker and validator 4.39 USD)
+was opened for a branch with no cases and no questions; the owner closed it in 35 s and found nowhere to
+comment. That is what rewrote the two tree nodes above in the owner's words (agent-os PR #147). The owner's
+first rejection (20:09, "create an ad") went by hand from rejection to issue #62 to PR #63, merged: a single
+ticket from verdict to fix, the loop `test-ingest` automates for a session of schema 1. The session was rebuilt (issue #64, PR #65,
+one round of changes) as the panel above, with the file at `schema: 2` and a thread whose messages carry
+`role: owner`. The list came out wrong ("Register" seventh) because the `uc-*` nodes declared no
+`depends_on`; the host fixed it in PR #66 (step 2). The owner's web died during the test: a worker's smoke
+test killed it by pattern (`pkill -f`); step 3 is the consequence. Open: `test-ingest` reads schema 1 only, and
+names and skips a closed session of schema 2 (exit 1, it stays pending) until its reader lands in a later
+pull request; the verdicts on improvised answers are summarised in the plan and nothing is written from
+them yet; the interpreter chat is not built.
+**Baseline.** Session ticket 4.39 USD (worker and validator), the rebuilt one 10.15 (worker 5.48, validator
+4.67, one round of changes), the first rejection fixed for 2.40. Single measurements, as in rung 4.
+**First host.** The panel is `web/app/shell/sessions/` with its detail in `web/docs/sesion-de-pruebas.md`;
+the owner's web runs from the main checkout, the new versions on a second port.
 
 ## Not yet exercised in the first host
 

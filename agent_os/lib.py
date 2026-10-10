@@ -143,7 +143,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
-from agent_os.product.config import BoardConfig, TreeConfig
+from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
@@ -286,7 +286,9 @@ class TaskClass(Strict):
     # stand-in for one UI action: its three ceilings bind ONE invocation, not an issue
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
-    role: Literal["worker", "validator", "refiner", "expert", "planner", "puntal"] = "worker"
+    role: Literal[
+        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter"
+    ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
     backend: str
@@ -343,11 +345,14 @@ class TaskClass(Strict):
 
     @model_validator(mode="after")
     def a_puntal_declares_no_fallback(self) -> TaskClass:
-        # The puntal driver confines the backend with the flags of one CLI dialect and substitutes
-        # nothing: a click that cannot be answered on its own backend fails fast, which is what a
-        # person waiting for it needs. A declaration nothing would read is a config written wrong.
-        if self.role == "puntal" and self.fallback is not None:
-            raise ValueError("fallback is not supported on a puntal class: it never substitutes")
+        # The puntal driver (and the interpreter, which runs on its turn runner) confines the
+        # backend with the flags of one CLI dialect and substitutes nothing: a click that cannot be
+        # answered on its own backend fails fast, which is what a person waiting for it needs. A
+        # declaration nothing would read is a config written wrong.
+        if self.role in ("puntal", "interpreter") and self.fallback is not None:
+            raise ValueError(
+                f"fallback is not supported on a {self.role} class: it never substitutes"
+            )
         return self
 
     @property
@@ -950,41 +955,6 @@ class PlannerConfig(Strict):
     reconcile_closed_lookback_days: int = 30
 
 
-class PuntalConfig(Strict):
-    """How a puntal (Agentos v2) reaches the app it stands in for and how long it may take
-    (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
-    cannot-write-code.md). Every key is optional, but the driver refuses to run without a
-    persistence command and, on its default path, without an executor command."""
-
-    # The app's persistence API: the command (shell-split) behind `./state get tickets T-1` and the
-    # pre-helper's reads. `--persistence-command` and `PUNTAL_PERSISTENCE_COMMAND` outrank it.
-    persistence_command: str = ""
-    # A text file (relative to the host's root) describing its subcommands, rendered at
-    # `__PERSISTENCE_API__` in both paths' contracts (the fast one, with no tool, reads it).
-    persistence_api_file: str = ""
-    # The app's EXECUTOR: the command (shell-split) that applies a plan's operations atomically
-    # (agent_os/product/puntal/fast/executor.py). Empty makes the fast path refuse unless the caller
-    # asks for the plan alone. `--executor-command` and `PUNTAL_EXECUTOR_COMMAND` outrank it.
-    executor_command: str = ""
-    # The words a node's declared read may start with: subcommands that change nothing.
-    read_subcommands: list[str] = ["get", "list"]
-    executor_timeout_seconds: int = 30  # the executor is on the click's critical path: cut after
-    # A model turn's process group is killed after this many seconds: a SAFETY for a person waiting
-    # on a click, not a budget (spend is bounded by the class's ceilings).
-    timeout_seconds: int = 90
-    # The slow path's loop guard: most tool calls before the driver cuts it.
-    max_tool_calls: int = 12
-    # `claude --effort`. Empty leaves the CLI's own default.
-    effort: str = ""
-
-    @field_validator("timeout_seconds", "max_tool_calls", "executor_timeout_seconds")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be at least 1")
-        return value
-
-
 class AgentsConfig(Strict):
     project: ProjectConfig
     # Every section after `project:` is optional, so a config that predates it still loads; an absent
@@ -992,6 +962,7 @@ class AgentsConfig(Strict):
     mechanism: MechanismConfig = MechanismConfig()
     planner: PlannerConfig = PlannerConfig()
     puntal: PuntalConfig = PuntalConfig()
+    interpreter: InterpreterConfig = InterpreterConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
     board: BoardConfig = BoardConfig()
