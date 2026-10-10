@@ -6,6 +6,8 @@ lives here, one subpackage or module per subsystem (see
 
 - `agent_os.product.tree` -- the product tree and decision ledger: schemas, doctor, slices, tickets.
 - `agent_os.product.puntal` -- the one-shot driver that answers a live UI action: a package.
+- `agent_os.product.interpreter` -- the agent behind a test session's comment box (a chat): interprets
+  the owner's message into a reply and items (`docs/FEEDBACK_INTERPRETER.md`).
 - `agent_os.product.records` -- what every v2 log shares: JSON-lines append and the versions a
   record carries.
 """

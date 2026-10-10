@@ -8,6 +8,15 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Feedback interpreter (no issue; branch `fix/feedback-interpreter`) -- the agent behind a test session's comment
+  box, which is a chat: `bin/interpreter_task.sh interpret` (`python -m agent_os.product.interpreter`) reads the
+  thread, the owner's message and the case, and answers one JSON envelope with a short `reply` (or ONE question,
+  `needs_answer`) and the items it adds or corrects (`change` / `decision` / `question_of_what`, tied to a node),
+  one per thing a message holds. One no-tool model turn through the puntal's own turn runner, observer and
+  telemetry; one retry on an invalid answer, then a clean `not_run`/`invalid_output` envelope. New: class
+  `interpreter` (`role: interpreter`), `interpreter:` config section (`reply_language`, `timeout_seconds`,
+  `effort`, `max_thread_messages`), `prompts/interpreter.md` with golden, `docs/FEEDBACK_INTERPRETER.md` (contract,
+  session-file schema 2 `items[]`) and an ADR. `PuntalConfig` moved to `agent_os/product/config.py` (lib.py shrinks).
 - Ruff pinned (no issue; branch `fix/ruff-0-17`) -- `bootstrap.sh` and the dev group install `ruff==0.17.0` instead of the latest, and `[tool.ruff.lint] extend-select = ["DTZ"]` keeps the naive-datetime rules the guard's `noqa: DTZ00x` directives answer to; release 0.17 had dropped them from its default and turned `ruff check` red (RUF100) on every pull request.
 - Onboarding rung 6 (no issue; branch `docs/onboarding-rung6`) -- `docs/adoption/v2-build-the-product.md` rung 6 now describes the test session the first v2 host really ran on 2026-10-09 (the header button and side panel of `dec-a-test-session-happens-inside-the-app`, the order given by `depends_on`, the owner's web kept apart from the workers', `agent-os-sessions test-ingest`) with its first-time findings and cost; the interpreter chat and the schema 2 reader are named as not built.
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
