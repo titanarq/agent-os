@@ -154,13 +154,16 @@ project:
   #             it also picks the command line the drivers launch it with. Unknown fails at load.
   #   quota:    the detector whose `exhausted` verdict cuts a live run (claude_rate_limit), or
   #             `none` -- the verdict is recorded and nothing is cut on it.
-  #   slots:    how many workers may run on it at once, each in a worktree and on a branch of its
-  #             own (default 1). Slot 1 is `worktree` and `.cache/worker_<name>.*`, exactly as a
-  #             backend without this key; slot N is `<worktree>-N` and `.cache/worker_<name>-N.*`
-  #             (`worker_task.sh <name> init` creates every missing one). The quota verdict and
-  #             the App stay the backend's, shared by its slots: an exhausted window cuts every
-  #             live slot. `planner.max_parallel_issues` still caps workers across every slot of
-  #             every backend, and two of them never share a `module:` label.
+  #   slots:    how many worker slots `init` precreates, each a worktree and a branch of its own
+  #             (default 1). A floor, never a limit: when a dispatch finds every slot busy the
+  #             driver makes the next one (`<worktree>-N`), so a host never has to guess how many
+  #             workers it will need at once. Slot 1 is `worktree` and `.cache/worker_<name>.*`,
+  #             exactly as a backend without this key; slot N is `<worktree>-N` and
+  #             `.cache/worker_<name>-N.*` (`worker_task.sh <name> init` creates every missing
+  #             precreated one). The quota verdict and the App stay the backend's, shared by its
+  #             slots: an exhausted window cuts every live slot and stops new ones from being made.
+  #             Two running issues never share a `module:` label, and the start gate keeps two off
+  #             the same code, whatever the number of slots.
   # DEPRECATED, for one release: `worktrees:` + `worker_apps:` (+ `executables:` for the command)
   # in place of this section still load, with one warning, and are ignored when this is present.
   backends:
@@ -225,9 +228,10 @@ planner:
   # `WIP: cut by guard` commits since a branch's fork point at or above which a relaunch is
   # refused: a run that has been cut this many times is not making progress.
   relaunch_cap: 3
-  # How many issues may have a worker alive at once, across every slot of every backend. Enforced
-  # by the worker driver, not by the planner.
-  max_parallel_issues: 1
+  # How many issues may have a worker alive at once, across every slot of every backend. Absent
+  # (the default) means no cap: the quota is the only limit. A host that wants a ceiling anyway
+  # sets it, and the worker driver enforces it, not the planner.
+  # max_parallel_issues: 4
   # How far back the tick looks for a closed issue still carrying a state label.
   reconcile_closed_lookback_days: 30
   # Whether the tick may ever write `refine_pending`, i.e. whether the planner may launch the
@@ -274,6 +278,21 @@ puntal:
   max_tool_calls: 12
   # `claude --effort` (low, medium, high, xhigh, max). Empty leaves the CLI's own default.
   effort: ""
+
+# The feedback interpreter (Agentos v2): the agent behind a test session's comment box, a chat in
+# which the owner's messages are interpreted into items (`bin/interpreter_task.sh`, docs/FEEDBACK_INTERPRETER.md).
+# One model turn with no tool per message; its model and per-invocation ceilings are `classes.interpreter`.
+# Every key is optional and these are the defaults.
+interpreter:
+  # The language of its `reply`. Empty: the language the owner's latest message is written in. A
+  # name such as `Spanish` fixes it whatever the owner writes.
+  reply_language: ""
+  # Kills the run's process group after this many seconds (a safety for an owner waiting in a chat).
+  timeout_seconds: 60
+  # `claude --effort`. Empty leaves the CLI's own default.
+  effort: ""
+  # The most recent thread messages the brief carries; the new message and the items always go whole.
+  max_thread_messages: 40
 
 # The product tree and the decision ledger (`agent-os-tree`, docs/AGENT_OS.md §4.6). Every key is
 # optional; the values below are the defaults except `ticket_budget_class`, which has none.
@@ -452,6 +471,19 @@ classes:
   # as for the planner. Its logs and `runs.tsv` are `.cache/puntal/`.
   puntal:
     role: puntal
+    backend: claude
+    model: claude-sonnet-5-5
+    max_context: 30000
+    max_cost_usd: 0.25
+    max_total_tokens: 300000
+    commit_warn_turns: 6
+    commit_cut_turns: 12
+
+  # The feedback interpreter's class: one chat message per invocation, so a small context and a low
+  # ceiling, like the puntal's. No `fallback:` (refused at load). Its logs and `runs.tsv` are
+  # `.cache/interpreter/`.
+  interpreter:
+    role: interpreter
     backend: claude
     model: claude-sonnet-5-5
     max_context: 30000

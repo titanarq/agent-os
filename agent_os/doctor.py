@@ -228,11 +228,11 @@ def check_executables(project: ProjectConfig) -> Check:
 def check_worktrees(project: ProjectConfig, root: pathlib.Path) -> Check:
     """Every worker slot's worktree (#90): slot 1 is the backend's `worktree`, and a backend with
     `slots: N` needs `<worktree>-2` .. `<worktree>-N` as well -- `worker_task.sh <backend> init`
-    creates every one of them that is missing. Named by the slot's key, the backend's own name
-    for slot 1."""
+    creates every one of them that is missing -- and the slots the driver made on demand are named
+    too, found where it puts them. Named by the slot's key, the backend's own name for slot 1."""
     worktrees = {
         worker_slot_key(name, slot): worker_slot_worktree(project.backends[name], slot)
-        for name, slot in worker_slots(project)
+        for name, slot in worker_slots(project, root)
     }
     if not worktrees:
         return Check("worktrees exist", True, "none configured")
