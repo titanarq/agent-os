@@ -41,7 +41,6 @@ def _render(step: IssueStep, plan: ChatSessionPlan, tree: Tree, settings: Rework
     return render_change_ticket(
         step.subject,
         node,
-        session_id=plan.session.id,
         node_file=node_file,
         budget_class=settings.budget_class,
         task_classes=settings.task_classes,

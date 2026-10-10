@@ -103,6 +103,24 @@ def test_the_turn_has_no_tool_and_the_telemetry_is_the_puntals_shape(tmp_path, e
     assert record["labels"]["role"] == "interpreter" and record["cost_usd"] is not None
 
 
+def test_the_envelope_carries_the_tokens_and_the_latency_the_host_records_in_its_own_line(
+    tmp_path, environment
+):
+    play_answers(tmp_path, environment, model_answer(items=[item()]))
+    envelope = envelope_of(interpret(environment, request_json()))
+    record = json.loads((tmp_path / "cache" / "telemetry.jsonl").read_text().splitlines()[-1])
+    assert envelope["usage"]["total_tokens"] > 0
+    assert envelope["usage"] == record["usage"]
+    assert envelope["latency_s"] == {"total": record["latency_s"]["total"]}
+    assert envelope["latency_s"]["total"] is not None
+
+
+def test_a_refusal_has_no_usage_and_no_latency_because_nothing_ran(tmp_path, environment):
+    envelope = envelope_of(interpret(environment, json.dumps({"message": {"text": ""}})))
+    assert envelope["outcome"] == "not_run"
+    assert envelope["usage"] is None and envelope["latency_s"] is None
+
+
 def test_a_model_that_fails_leaves_a_not_ok_envelope_for_the_host_to_note(tmp_path, environment):
     environment["FAKE_PUNTAL_FAULT"] = "crash"
     completed = interpret(environment, request_json())
