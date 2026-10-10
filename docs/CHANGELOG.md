@@ -18,6 +18,11 @@ that closed several small issues at once name them all. This file starts on 2026
   `<tree.test_sessions_dir>/understood.json` ("what I understood and where it went"), written by Agentos for the app to
   read when the owner opens the next session (contract in `docs/AGENT_OS.md` §4.11). Schema 1 is unchanged; a schema above 2
   is still named and left pending. ADR 2026-10-09 (a chat test session is ingested directly, except decisions).
+  On the owner's fifth word (no "Cerrar la sesión" button, closing by inactivity) an **open** schema 2 session is ingested
+  as it goes: items, kept decisions, answers and `perfect` count at once and are idempotent by their keys, the owner's text no
+  item covers waits (`waiting:` in the plan) until the session closes, an item withdrawn after launch names its issue, and
+  `understood.json` carries `status`/`opened_at` per block; a comment is a session and a position, so the thread of a case
+  crosses sessions without re-launching work.
 - Test-session design in the tree (no issue; branch `docs/test-session-design`) -- on the owner's word of 2026-10-09
   after the first test, `uc-open-a-test-session-for-a-branch` (id kept, title now "Open a test session from the app")
   and `dec-a-test-session-happens-inside-the-app` say the session opens from a "Test session" header button

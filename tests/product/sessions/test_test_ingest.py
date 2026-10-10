@@ -153,7 +153,7 @@ def test_a_second_run_finds_nothing_to_ingest(host, capsys):
     ingest(tmp_path, "--apply")
     capsys.readouterr()
     assert ingest(tmp_path, "--apply") == 0
-    assert "no closed test session is waiting" in capsys.readouterr().out
+    assert "no test session is waiting" in capsys.readouterr().out
     assert len(tracker.opened) == 1
 
 
@@ -173,7 +173,7 @@ def test_an_open_session_is_ignored(host, capsys):
     tmp_path, tracker = host
     (tmp_path / "sessions" / "a.json").write_text(json.dumps(session_document(status="open")))
     assert ingest(tmp_path, "--apply") == 0
-    assert "no closed test session is waiting" in capsys.readouterr().out and tracker.opened == []
+    assert "no test session is waiting" in capsys.readouterr().out and tracker.opened == []
 
 
 def test_a_node_the_tree_lacks_is_a_problem_and_the_session_stays_pending(host, capsys):

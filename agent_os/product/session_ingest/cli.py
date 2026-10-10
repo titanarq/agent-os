@@ -1,11 +1,12 @@
-"""`agent-os-sessions test-ingest`: the closed test sessions of the owner, carried into the tree and
-the backlog.
+"""`agent-os-sessions test-ingest`: the test sessions of the owner, carried into the tree and the
+backlog.
 
     agent-os-sessions test-ingest [--root DIR] [--sessions-dir DIR] [--session ID] [--apply]
-        # default: print the plan of every closed session not yet ingested, write nothing
+        # default: print the plan of every session still to ingest, write nothing: the closed ones not
+        #          yet ingested, and the open ones of schema 2 (the chat), read again on every run
         # --apply: write the answers and the acceptances into the working tree, open the issues
         #          (rework or changes), write `understood.json` for the app, and remember the session
-        #          as ingested (a pull request carries the tree)
+        #          as ingested once it is closed (a pull request carries the tree)
         # --session ID: plan (or apply) that one session again, ingested or not
 
 This module owns the command's arguments and its run; `agent_os.product.sessions.cli` registers it
@@ -40,7 +41,7 @@ from agent_os.product.session_ingest.render import render_plan
 from agent_os.product.session_ingest.rework_ticket import ReworkTicketError
 from agent_os.product.session_ingest.session_file import (
     SessionFileError,
-    read_closed_sessions,
+    read_sessions,
 )
 from agent_os.product.sessions.writeback import WritebackError
 from agent_os.product.tree.loader import load_tree
@@ -54,7 +55,7 @@ class IngestRefused(Exception):
 
 def add_parser(sub, *, handler) -> None:
     parser = sub.add_parser(
-        "test-ingest", help="carry the closed test sessions into the tree and the backlog"
+        "test-ingest", help="carry the test sessions into the tree and the backlog"
     )
     parser.add_argument("--root", help="the tree directory (default: `tree.root`)")
     parser.add_argument("--sessions-dir", help="default: `tree.test_sessions_dir`")
@@ -91,11 +92,12 @@ def _ticket_settings(config: lib.AgentsConfig) -> ReworkTicketSettings:
 
 
 def _sessions_to_ingest(sessions: list, already: set[str], only: str | None) -> list:
+    """An open session is never in `already`: the registry only remembers a closed one."""
     if only is None:
         return [session for session in sessions if session.id not in already]
     chosen = [session for session in sessions if session.id == only]
     if not chosen:
-        raise IngestRefused(f"no closed test session {only!r} in the sessions directory")
+        raise IngestRefused(f"no test session {only!r} in the sessions directory")
     return chosen
 
 
@@ -131,13 +133,13 @@ def run_test_ingest(
     tree_root: pathlib.Path,
 ) -> int:
     try:
-        sessions, file_problems = read_closed_sessions(_sessions_directory(args, config))
+        sessions, file_problems = read_sessions(_sessions_directory(args, config))
     except SessionFileError as error:
         raise IngestRefused(f"{error} (key `tree.test_sessions_dir`)") from error
     pending = _sessions_to_ingest(sessions, ingested_session_ids(cache), args.session)
     problems = list(file_problems)
     if not pending:
-        print("no closed test session is waiting to be ingested")
+        print("no test session is waiting to be ingested")
     tracker = build_tracker()
     feedback_file = run_dir_for(host_root()) / FEEDBACK_FILE
     written_files: list[pathlib.Path] = []
@@ -163,7 +165,7 @@ def run_test_ingest(
         written_files.extend(applied.written_files)
         if applied.understood_file:
             print(f"wrote {applied.understood_file} (the app reads it; not part of the tree)")
-        if not plan.problems:
+        if not plan.problems and session.closed_at is not None:
             record_ingested(
                 cache,
                 session=session.id,

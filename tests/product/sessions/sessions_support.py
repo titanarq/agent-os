@@ -14,6 +14,9 @@ import stat
 import yaml
 from conftest import EXAMPLE_CONFIG
 
+from agent_os.product.session_ingest import cli as ingest_cli
+from agent_os.product.sessions.cli import main
+
 OWNER_LOGIN = "the-owner"
 TREE_ROOT = "product"
 SESSION = "ts-20261010-101500-abc123"
@@ -176,3 +179,38 @@ def chat_document(comments, cases, *, session_id=SESSION, **fields) -> dict:
         ],
         **fields,
     }
+
+
+def build_chat_host(tmp_path: pathlib.Path, monkeypatch):
+    """A host with a tree (goal, requirement, four use cases), an empty sessions directory, a config
+    and a fake tracker: `(root, tracker, config path, sessions directory)`."""
+    root = tmp_path / TREE_ROOT
+    write_node(root, "goal-a", "goal")
+    write_node(
+        root,
+        "fr-a",
+        "functional-requirement",
+        parent="goal-a",
+        experiments=[what_question(QUESTION, "No cap.")],
+    )
+    for node_id in ("uc-ok", "uc-bad", "uc-mid", "uc-skip"):
+        write_node(root, node_id, "use-case", parent="fr-a", state="improvised")
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    config = config_file(
+        tmp_path, ticket_budget_class="mechanical-qwen", test_sessions_dir=str(sessions)
+    )
+    tracker = ChatTracker()
+    monkeypatch.setattr(ingest_cli, "build_tracker", lambda: tracker)
+    monkeypatch.setenv("WORKER_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("AGENT_CACHE_DIR", str(tmp_path / "puntal"))
+    monkeypatch.setenv("AGENT_OS_HOST_ROOT", str(tmp_path))
+    return tmp_path, tracker, config, sessions
+
+
+def ingest(host, *argv) -> int:
+    return main(["test-ingest", *argv], config_path=host[2])
+
+
+def write_session(host, document: dict, name="a.json") -> None:
+    (host[3] / name).write_text(json.dumps(document), encoding="utf-8")

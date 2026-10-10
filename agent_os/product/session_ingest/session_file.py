@@ -1,4 +1,5 @@
-"""A test session file, as the app writes it when the owner closes the session.
+"""A test session file, as the app writes it: when the owner closes the session (schema 1), and as
+the owner sends each message, closed only by inactivity (schema 2).
 
 `<tree.test_sessions_dir>/<id>.json`; the keys are the contract of `docs/AGENT_OS.md` §4.11. A file
 that does not have them is reported by name and skipped, never guessed at: ingesting a half-read
@@ -56,7 +57,7 @@ class ClosedSession:
 if TYPE_CHECKING:
     from agent_os.product.session_ingest.chat.model import ChatSession
 
-    AnyClosedSession = ClosedSession | ChatSession
+    AnySession = ClosedSession | ChatSession
 
 
 def text_of(document: dict, key: str, where: str) -> str:
@@ -133,18 +134,20 @@ def schema_readers() -> dict:
     return {1: _read_schema_1, 2: read_schema_2}
 
 
-def parse_closed_session(document, source: str) -> AnyClosedSession | None:
-    """The session, or None when it is still open: an open session is the owner's work in progress
-    and is read by nobody, whatever its schema. A closed one that breaks the contract, or is written
-    in a schema this version does not read, raises `SessionFileError`."""
+def parse_session(document, source: str) -> AnySession | None:
+    """The session, or None for an open one of schema 1: that owner closes it with a button and
+    reads nobody while it is open. An open session of schema 2 is the chat in progress and is read
+    (`ChatSession.closed_at` is None): ingestion is incremental, and the app has no button that
+    closes it. A closed one that breaks the contract, or is written in a schema this version does
+    not read, raises `SessionFileError`."""
     if not isinstance(document, dict):
         raise SessionFileError(f"{source}: not a JSON object")
     status = text_of(document, "status", source)
-    if status == "open":
-        return None
-    if status != "closed":
+    if status not in ("open", "closed"):
         raise SessionFileError(f"{source}: status {status!r} is neither open nor closed")
     schema = document.get("schema", 1)
+    if status == "open" and schema != 2:
+        return None
     readers = schema_readers()
     reader = readers.get(schema) if isinstance(schema, int) else None
     if reader is None:
@@ -156,21 +159,22 @@ def parse_closed_session(document, source: str) -> AnyClosedSession | None:
     return reader(document, source)
 
 
-def read_closed_sessions(
+def read_sessions(
     directory: pathlib.Path,
-) -> tuple[list[AnyClosedSession], list[str]]:
-    """Every closed session of the directory, oldest closing first, and one line per file that could
-    not be read. A directory that does not exist is an error, not an empty answer: the key that
-    names it is wrong, or the product never wrote a session, and either is for the owner to know."""
+) -> tuple[list[AnySession], list[str]]:
+    """Every session of the directory that can be ingested (closed, or open in schema 2), oldest
+    opening first, and one line per file that could not be read. A directory that does not exist is
+    an error, not an empty answer: the key that names it is wrong, or the product never wrote a
+    session, and either is for the owner to know."""
     if not directory.is_dir():
         raise SessionFileError(f"no test sessions directory at {directory}")
-    sessions: list[AnyClosedSession] = []
+    sessions: list[AnySession] = []
     problems: list[str] = []
     for path in sorted(directory.glob("*.json")):
         if path.name == UNDERSTOOD_FILE_NAME:
             continue
         try:
-            session = parse_closed_session(json.loads(path.read_text(encoding="utf-8")), path.name)
+            session = parse_session(json.loads(path.read_text(encoding="utf-8")), path.name)
         except json.JSONDecodeError as error:
             problems.append(f"{path.name}: not JSON ({error})")
         except SessionFileError as error:
@@ -178,5 +182,5 @@ def read_closed_sessions(
         else:
             if session is not None:
                 sessions.append(session)
-    sessions.sort(key=lambda session: (session.closed_at, session.id))
+    sessions.sort(key=lambda session: (session.opened_at, session.id))
     return sessions, problems

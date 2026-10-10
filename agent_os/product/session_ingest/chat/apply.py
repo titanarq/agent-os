@@ -1,4 +1,4 @@
-"""Carries out the plan of one closed chat session: the tree edits, the issues, the file for the app.
+"""Carries out the plan of one chat session, open or closed: the tree edits, the issues, the file for the app.
 
 Every ticket is rendered and validated before anything is written or opened, so a missing budget
 class never leaves half a session behind; every step is idempotent (see `plan`), so a run that stops
@@ -66,7 +66,7 @@ def apply_chat_plan(
     applied = write_tree_edits(
         tree,
         session_id=plan.session.id,
-        closed_on=plan.session.closed_at.date(),
+        closed_on=plan.session.acceptance_date,
         answers=plan.answers,
         acceptances=plan.acceptances,
     )

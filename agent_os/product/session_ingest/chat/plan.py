@@ -1,4 +1,4 @@
-"""What ingesting one closed chat session would do, decided without changing anything.
+"""What ingesting one chat session, open or closed, would do, decided without changing anything.
 
 The owner's words are split by the interpreter into items (`docs/FEEDBACK_INTERPRETER.md`); each item
 points at the messages it came from (`from_messages`). From there:
@@ -12,6 +12,14 @@ points at the messages it came from (`from_messages`). From there:
   message the interpreter could not read) is never dropped: by the last state of its case, `needs_work`
   returns as rework and `ok_with_improvements` as a change, each quoting the thread of the case, and a
   comment on no case as one general change that says no interpreter read it.
+
+An open session is read as it stands, again on every run (the app has no button that closes it), so
+what is launched must stay right when more messages arrive: an item is keyed by its own id and so
+is launched once, wherever it came from; but an issue by the state of a case quotes the thread of the
+case once and is keyed by the case, so a message added afterwards would never reach it, and it would
+duplicate an item that arrives later. So in an open session that text **waits** (the plan says what)
+and is handled as above when the session closes. A `perfect` is accepted at once, on the day the
+session opened.
 
 A step already done (the answer written, the acceptance recorded, the issue opened) says so and is
 not repeated; a step that cannot be done (a node the tree lacks) is a problem, never dropped.
@@ -56,6 +64,8 @@ class ChatSessionPlan:
     issues: list[IssueStep] = field(default_factory=list)
     kept_for_next_session: list[Item] = field(default_factory=list)
     withdrawn: list[Item] = field(default_factory=list)
+    withdrawn_after_launch: list[tuple[Item, int]] = field(default_factory=list)
+    waiting: list[str] = field(default_factory=list)
     no_change_named: list[str] = field(default_factory=list)
     not_tried: list[str] = field(default_factory=list)
     verdicts: list[ActionVerdicts] = field(default_factory=list)
@@ -100,6 +110,13 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
         is_rework=False,
     )
     plan.issues.append(IssueStep("item", subject, lookup(key)))
+
+
+def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, lookup) -> None:
+    if plan.session.is_open:
+        plan.waiting.append(subject.title)
+    else:
+        plan.issues.append(IssueStep(origin, subject, lookup(subject.key)))
 
 
 def _case_subject(session: ChatSession, node: str, kind: str, thread: list[int]) -> TicketSubject:
@@ -151,12 +168,10 @@ def _plan_case(plan: ChatSessionPlan, tree: Tree, node: str, covered: set[int], 
         else:
             plan.acceptances.append(step)
     elif verdict == "needs_work" and (uncovered_text or not interpreted):
-        subject = _case_subject(session, node, "rework", thread)
-        plan.issues.append(IssueStep("rework", subject, lookup(subject.key)))
+        _launch_or_wait(plan, "rework", _case_subject(session, node, "rework", thread), lookup)
     elif verdict != "needs_work" and uncovered_text:
-        subject = _case_subject(session, node, "change", thread)
-        plan.issues.append(IssueStep("case change", subject, lookup(subject.key)))
-    elif verdict == "ok_with_improvements" and not interpreted:
+        _launch_or_wait(plan, "case change", _case_subject(session, node, "change", thread), lookup)
+    elif verdict == "ok_with_improvements" and not interpreted and not session.is_open:
         plan.no_change_named.append(node)
 
 
@@ -182,7 +197,7 @@ def _plan_general_comments(plan: ChatSessionPlan, covered: set[int], lookup: Iss
         node_id=None,
         is_rework=False,
     )
-    plan.issues.append(IssueStep("general", subject, lookup(subject.key)))
+    _launch_or_wait(plan, "general", subject, lookup)
 
 
 def plan_chat_session(
@@ -206,6 +221,9 @@ def plan_chat_session(
     for item in items:
         if item.withdrawn:
             plan.withdrawn.append(item)
+            launched = find_issue(change_key(session.id, f"item.{item.id}"))
+            if item.kind == "change" and launched is not None:
+                plan.withdrawn_after_launch.append((item, launched))
         elif item.kind == "change":
             _item_step(plan, tree, item, find_issue)
         else:

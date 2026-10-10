@@ -4,7 +4,8 @@ quedó"; `docs/tree/uc-open-a-test-session-for-a-branch.md`).
 
 Agentos is the only writer and the app only reads; one JSON object, written whole each time:
 
-    {"schema": 1, "sessions": [{"session": "<id>", "closed_at": "<ISO-8601>", "ingested_at": "<UTC>",
+    {"schema": 1, "sessions": [{"session": "<id>", "status": "open" | "closed",
+      "opened_at": "<ISO-8601>", "closed_at": "<ISO-8601>" | null, "ingested_at": "<UTC>",
       "decisions": [<entry>], "questions": [<entry>], "changes": [<change>]}]}
 
     <entry>  = {"id": "item-2", "summary": "...", "node": "uc-x" | null, "page": "/p" | null,
@@ -16,10 +17,12 @@ Agentos is the only writer and the app only reads; one JSON object, written whol
 - `questions` are the interpreter's `question_of_what`: open until the owner answers;
 - `changes` were launched, each with the issue that carries it.
 
-One block per session, oldest closing first; a second ingestion of a session replaces its block, so
-the file is idempotent by effect. The block is for the first session the owner opens after
-`closed_at`: what the owner says about it there is a message of that session like any other. The
-file is not a session, and the session reader passes it by (`session_file.UNDERSTOOD_FILE_NAME`).
+One block per session, oldest opening first; a second ingestion of a session replaces its block, so
+the file is idempotent by effect. An open session is ingested as it goes (the app has no button that
+closes it), so its block is rewritten on every run, with `status` `open` and `closed_at` null, until
+the session closes. The block is for the next session the owner opens: what the owner says about it
+there is a message of that session like any other. The file is not a session, and the session reader
+passes it by (`session_file.UNDERSTOOD_FILE_NAME`).
 """
 
 from __future__ import annotations
@@ -52,7 +55,11 @@ def _entry(item: Item) -> dict:
 def session_block(plan: ChatSessionPlan, issues_by_key: dict[str, int], ingested_at: str) -> dict:
     return {
         "session": plan.session.id,
-        "closed_at": plan.session.closed_at.isoformat(timespec="seconds"),
+        "status": "open" if plan.session.is_open else "closed",
+        "opened_at": plan.session.opened_at.isoformat(timespec="seconds"),
+        "closed_at": (
+            plan.session.closed_at.isoformat(timespec="seconds") if plan.session.closed_at else None
+        ),
         "ingested_at": ingested_at,
         "decisions": [_entry(i) for i in plan.kept_for_next_session if i.kind == "decision"],
         "questions": [
@@ -90,16 +97,27 @@ def _read(path: pathlib.Path) -> dict:
     return document
 
 
+def _without_ingestion_time(block: dict) -> dict:
+    return {key: value for key, value in block.items() if key != "ingested_at"}
+
+
 def write_session_block(directory: pathlib.Path, block: dict) -> pathlib.Path | None:
     """Puts the block in the file, replacing the same session's earlier one; None when the session
-    left nothing to show, so that an empty block never lands in front of the owner."""
+    left nothing to show (so that an empty block never lands in front of the owner) or when the file
+    already says the same: an open session is ingested on every run, and the file is rewritten only
+    when something in it changed."""
     if not (block["decisions"] or block["questions"] or block["changes"]):
         return None
     path = directory / UNDERSTOOD_FILE_NAME
     document = _read(path)
+    earlier = next(
+        (row for row in document["sessions"] if row.get("session") == block["session"]), None
+    )
+    if earlier is not None and _without_ingestion_time(earlier) == _without_ingestion_time(block):
+        return None
     others = [row for row in document["sessions"] if row.get("session") != block["session"]]
     document["sessions"] = sorted(
-        [*others, block], key=lambda row: (str(row.get("closed_at")), str(row.get("session")))
+        [*others, block], key=lambda row: (str(row.get("opened_at")), str(row.get("session")))
     )
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(

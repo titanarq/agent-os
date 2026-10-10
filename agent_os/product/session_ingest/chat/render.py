@@ -20,7 +20,12 @@ def _item_line(label: str, item: Item, ending: str) -> str:
 
 def render_chat_plan(plan: ChatSessionPlan) -> list[str]:
     session = plan.session
-    lines = [f"session {session.id} (chat, closed {session.closed_at:%Y-%m-%d})"]
+    when = (
+        f"open since {session.opened_at:%Y-%m-%d}"
+        if session.is_open
+        else (f"closed {session.closed_at:%Y-%m-%d}")
+    )
+    lines = [f"session {session.id} (chat, {when})"]
     for step in plan.answers:
         verb = "answered" if step.already_written else "write answer"
         lines.append(
@@ -47,7 +52,21 @@ def render_chat_plan(plan: ChatSessionPlan) -> list[str]:
                 "default answer): open until the owner answers it when the next session opens"
             )
         lines.append(_item_line(item.kind.replace("_", " "), item, ending))
-    lines.extend(_item_line("withdrawn", item, " -- nothing") for item in plan.withdrawn)
+    launched_before = {item.id: number for item, number in plan.withdrawn_after_launch}
+    for item in plan.withdrawn:
+        number = launched_before.get(item.id)
+        ending = (
+            f" -- already launched as #{number}: the owner withdrew it afterwards, close that issue "
+            "if no one has started it"
+            if number
+            else " -- nothing"
+        )
+        lines.append(_item_line("withdrawn", item, ending))
+    lines.extend(
+        f"  waiting: {title} -- the session is open: it is launched when it closes, unless an item "
+        "covers its messages meanwhile"
+        for title in plan.waiting
+    )
     lines.extend(
         f"  ok with improvements: {node} -- no change named, nothing to launch"
         for node in plan.no_change_named

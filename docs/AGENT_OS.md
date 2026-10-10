@@ -1403,14 +1403,14 @@ object, written whole each time, id `ts-<YYYYMMDD>-<HHMMSS>-<6 hex>`.
 
 | key | content |
 |---|---|
-| `schema` | optional integer, the version of this contract; absent means 1, the one in this table (schema 2 is below). The reader has one parser per schema (1 and 2) and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
+| `schema` | optional integer, the version of this contract; absent means 1, the one in this table (schema 2 is below). The reader has one parser per schema (1 and 2) and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored unless it is schema 2, which is read as it goes (below) |
 | `id`, `branch`, `branch_title` | the session and the requirement of the tree it tests |
 | `status`, `opened_at`, `closed_at` | `open` or `closed`; ISO-8601 moments **with a UTC offset** (a moment without one cannot be placed against the feedback log) |
 | `commit`, `since`, `changes`, `changes_problem` | where the repository stood when it opened, the previous session of the branch, and what changed; ingestion does not read them |
 | `cases` | `[{node, title, state, verdict, note}]`, `verdict` one of `accept`, `reject`, `not_tried` |
 | `questions` | `[{node, question, default_answer, date, answer}]`; `answer` is `null` when the owner did not answer, and then the default stands |
 
-**The command** reads the closed sessions not yet ingested and, by default, **prints the plan and writes
+**The command** reads the sessions to ingest (the closed ones not yet ingested, and the open ones of schema 2) and, by default, **prints the plan and writes
 nothing**; `--apply` carries it out; `--session ID` plans or applies one session again; `--sessions-dir` and
 `--root` override the keys. A file that breaks the contract is named on stderr and skipped (exit 1 at the end);
 a missing directory is refused naming `tree.test_sessions_dir`. Per session:
@@ -1441,7 +1441,7 @@ idempotent on its own, so losing it costs a longer plan and no duplicate.
 
 | key | content |
 |---|---|
-| `schema`, `id`, `status`, `opened_at`, `closed_at` | `2`; the rest as above (the id needs no `branch`: a session is not tied to one) |
+| `schema`, `id`, `status`, `opened_at`, `closed_at` | `2`; the rest as above (the id needs no `branch`: a session is not tied to one); `closed_at` is `null` while `status` is `open` |
 | `cases` | `[{node, title, state, verdict}]`, `verdict` one of `perfect`, `ok_with_improvements`, `needs_work` (the last state the owner gave that case in the session) or `not_tried` |
 | `comments` | the thread, in the order sent: `[{role, text, state, case, page, at}]`; `role` `owner` or `agent`, `text` a string (empty when only a state was given), `state` `perfect`, `ok_with_improvements`, `needs_work` or `null`, `case` the node or `null`, `page` and `at` free text |
 | `questions` | as above (the host writes only the answered ones) |
@@ -1465,21 +1465,37 @@ A closed session without the `items` key (closed before the interpreter was conn
 
 A node the tree lacks (a case, or the node of a `change` item) is a `problem:` line and the session stays pending.
 
+**An open session is ingested as it goes.** The app has no button that closes a session: it opens when the owner unfolds the
+panel and closes by itself after two hours without a message, and each message is in the file the moment it is sent. So
+Agentos reads an open schema 2 session on every run, and the run is idempotent (every effect has its own key; an open session
+is never put in the registry of ingested ones, which remembers a closed one only). What counts at once: a `change` item
+(launched once, keyed by its id, however many runs see it), a `decision` or `question_of_what` (kept in `understood.json`),
+an answered question, and a `perfect` (accepted on the day the session **opened**, the date of the owner's first word). What
+**waits** is the owner's text that no item covers: an issue by the state of a case quotes the thread of the case once and is
+keyed by the case, so a message added later would never reach it and an item arriving later would duplicate it. The plan
+prints it as `waiting:` and it is handled as above when the session closes (a session that never closes keeps it waiting; a
+host that closes by inactivity does not have that case). An item withdrawn after it was launched is not a problem: the plan
+says `already launched as #N` so that the owner or the planner closes that issue by hand. The thread of a case spans
+sessions in the app; **a comment is a session and a position**, an item's `from_messages` are positions in its own session's
+file, and every key carries the session, so a later session never re-launches an earlier one's work.
+
 **What the app shows when the owner opens the next session** is `<tree.test_sessions_dir>/understood.json`
 (`chat/understood.py`; the session reader passes it by name). Agentos is its only writer and the app only reads it; a
 single JSON object written whole by atomic replace, `{"schema": 1, "sessions": [block, ...]}`, one block per ingested
-session that left something to show, oldest `closed_at` first (a second ingestion replaces the session's block):
+session that left something to show, oldest `opened_at` first (a second ingestion replaces the session's block, and leaves the
+file alone when nothing in it changed):
 
 ```json
-{"session": "ts-20261010-101500-abc123", "closed_at": "2026-10-10T10:15:00+02:00", "ingested_at": "2026-10-10T08:20:00Z",
+{"session": "ts-20261010-101500-abc123", "status": "closed", "opened_at": "2026-10-10T10:00:00+02:00",
+ "closed_at": "2026-10-10T10:15:00+02:00", "ingested_at": "2026-10-10T08:20:00Z",
  "decisions": [{"id": "item-3", "summary": "...", "node": "uc-x", "page": null, "from_messages": [3]}],
  "questions": [{"id": "item-4", "summary": "...", "node": null, "page": "/p", "from_messages": [3]}],
  "changes":   [{"origin": "item", "summary": "...", "node": "uc-x", "issue": 101}]}
 ```
 
 `decisions` await the owner's confirmation or correction, `questions` stay open until the owner answers, `changes` were
-launched (`origin` `item`, `rework`, `case change` or `general`; `issue` the number that carries it). The host paints "what
-I understood and where it went" from the blocks whose `closed_at` precedes the opening of the session, once each (what it has
+launched (`origin` `item`, `rework`, `case change` or `general`; `issue` the number that carries it). `status` is `open` and `closed_at` `null` for a session still in progress. The host paints "what
+I understood and where it went" from the blocks of the sessions before the one it is opening, once each (what it has
 shown it remembers itself, in its own session file), and looks a `from_messages` position up in that session's own file for
 the words. What the owner says about a block is a message of the new session like any other. The file is not part of the
 tree and is not committed. The decision: `docs/adr/2026-10-09-a-chat-test-session-is-ingested-directly-except-decisions.md`.

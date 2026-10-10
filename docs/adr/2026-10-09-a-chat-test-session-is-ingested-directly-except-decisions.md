@@ -1,4 +1,4 @@
-# A chat test session is ingested directly, except decisions, and its result is left for the next session
+# A chat test session is ingested directly, except decisions, as it goes, and its result is left for the next session
 
 Date: 2026-10-09. Amends `2026-10-09-a-closed-test-session-is-ingested-by-a-command-that-plans-first.md` (its points 4 and 8:
 what a verdict becomes, and the reader per schema). Tree: `docs/tree/uc-open-a-test-session-for-a-branch.md` (mechanism,
@@ -6,6 +6,8 @@ what a verdict becomes, and the reader per schema). Tree: `docs/tree/uc-open-a-t
 `fr-the-owner-is-asked-only-in-sessions-they-open`, `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`,
 `dec-a-soft-product-decision-is-the-refiners-and-a-hard-one-the-owners`, `dec-a-question-session-is-a-github-issue`,
 `dec-tests-harden-they-do-not-build`, `dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check`.
+The owner's fifth word of the same day (no "Cerrar la sesión" button, the session closes by inactivity, the chat thread
+is per case) is point 8.
 
 ## Context
 
@@ -58,6 +60,24 @@ that way today. The reader of the first ADR named and skipped such a file.
 7. **Plan by default, `--apply` to act, idempotent by effect** as in the first ADR. Answers of schema 2 are the same edit as
    schema 1 (`writeback.answer_question`) and the tree edits stay in the working tree for a worker to carry on a pull request
    marked `Test-Session: <id>`; the file for the app is not part of the tree and is not committed.
+8. **The session is ingested as it goes: an open session is read, and nothing waits for a close that has no button.** The
+   owner said the panel needs no "Cerrar la sesión": it opens by itself when it is unfolded and closes after two hours
+   without a message, and each message sent is already in the file. So the reader reads an open schema 2 session
+   (`closed_at` is `null`; schema 1 keeps ignoring an open one, its owner closes it with a button) on every run, and the
+   command never records it as ingested (the registry remembers a closed session only). What is safe to do while the chat
+   goes on is done at once, because it is idempotent by its own key: an item's change (one issue per item id), the kept
+   decisions and questions, an answered question, a `perfect` (accepted on the day the session opened). What is **not** safe
+   waits, and the plan says so (`waiting:`): the owner's text that no item covers. An issue by the state of a case quotes
+   the case's thread once and is keyed by the case, so a message added later would never reach it, and an item that the
+   interpreter produces later would duplicate it; it is launched when the session closes, as in point 4. An item withdrawn
+   after its issue was opened is not undone by Agentos (an issue may be in work): the plan names the issue (`#N`) so the
+   owner or the planner closes it. `understood.json` carries `status` and `opened_at` (`closed_at` `null` while open), is
+   ordered by `opened_at` and is rewritten only when a block changed.
+9. **The thread of a case crosses sessions; a comment is a session and a position.** The app keeps one chat per case across
+   sessions and shows its history, but each message lives in the file of the session it was sent in, and an item's
+   `from_messages` are positions in that file. Every key already carries the session id, so two sessions on one case never
+   collide and a later one never re-launches an earlier one's work; the thread quoted in a ticket is that session's own
+   messages of the case.
 
 ## Rejected alternatives
 
@@ -74,4 +94,6 @@ that way today. The reader of the first ADR named and skipped such a file.
 The interpreter's items stop pointing at the right messages (a `from_messages` that does not match what the ticket quotes);
 the owner confirms decisions in the next session and nothing turns the confirmation into a change of the what (the step after
 this one: the owner's word on a decision becomes a tree edit through the validator of `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`);
-the app needs the file to say a decision was already shown; a host whose sessions directory cannot hold a file of Agentos.
+the app needs the file to say a decision was already shown; a host whose sessions directory cannot hold a file of Agentos; a host that leaves a session open for days (the text that no item
+covers would wait that long: the fix is the host closing by inactivity, or this command reading the idle time); a `perfect`
+followed by `needs_work` in one open session (the acceptance is recorded once and Agentos does not take it back).

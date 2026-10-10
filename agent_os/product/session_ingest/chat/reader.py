@@ -98,10 +98,11 @@ def read_schema_2(document: dict, source: str) -> ChatSession:
         if "items" in document
         else None
     )
+    is_closed = text_of(document, "status", source) == "closed"
     return ChatSession(
         id=session_id,
         opened_at=moment_of(document, "opened_at", source),
-        closed_at=moment_of(document, "closed_at", source),
+        closed_at=moment_of(document, "closed_at", source) if is_closed else None,
         cases=tuple(_case(row, source) for row in _objects(document, "cases", source)),
         comments=comments,
         questions=tuple(

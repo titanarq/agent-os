@@ -1,4 +1,4 @@
-"""A closed test session of schema 2, read: the thread, the cases, and what the interpreter made of it."""
+"""A test session of schema 2, read: the thread, the cases, and what the interpreter made of it."""
 
 from __future__ import annotations
 
@@ -45,13 +45,24 @@ class Item:
 
 @dataclass(frozen=True)
 class ChatSession:
-    """`items` is None when the file has no `items` key: the session was closed before the chat was
-    connected to the interpreter, which is not the same as an interpreter that found nothing."""
+    """`items` is None when the file has no `items` key: the chat was not connected to the interpreter,
+    which is not the same as an interpreter that found nothing. `closed_at` is None while the session
+    is open: the app has no button that closes it, so ingestion reads it as the owner goes on."""
 
     id: str
     opened_at: datetime.datetime
-    closed_at: datetime.datetime
+    closed_at: datetime.datetime | None
     cases: tuple[ChatCase, ...]
     comments: tuple[Comment, ...]
     questions: tuple[Question, ...]
     items: tuple[Item, ...] | None
+
+    @property
+    def is_open(self) -> bool:
+        return self.closed_at is None
+
+    @property
+    def acceptance_date(self) -> datetime.date:
+        """The day the owner's `perfect` counts as given: the day the session ended, or opened while
+        it has not ended (a session that lasts past midnight is accepted on the day it began)."""
+        return (self.closed_at or self.opened_at).date()
