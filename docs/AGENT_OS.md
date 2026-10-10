@@ -1455,8 +1455,13 @@ A closed session without the `items` key (closed before the interpreter was conn
 `commit`, `since`, `changes` and `changes_problem` are not read. Per session, **directly, except decisions** (the owner's word):
 
 - a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
-  configures it, else the bug label), with `<!-- node: -->` when the item has a node, the interpreter's reading **and** the
-  messages of `from_messages` quoted whole, and `<!-- key: test-change.<session>.item.<id> -->`;
+  configures it, else the bug label), with `<!-- node: -->` when the item has a node and `<!-- key: test-change.<session>.item.<id> -->`.
+  The seven headings are the validator's, so the worker is told what is work and what is background by the first words of
+  three of them: `## Objective` opens with "Task" and holds the interpreter's reading of the item, the only work; `## Context`
+  opens with "Context -- background, not part of the task" and holds the session, the node and the messages of
+  `from_messages` quoted whole; `## Not included` lists, by summary and each marked "tracked separately, NOT part of this
+  task", every other item not withdrawn that was read from the same messages (changes, decisions, questions of what)
+  (`docs/adr/2026-10-10-an-issue-from-a-test-session-keeps-its-task-apart-from-its-context.md`);
 - a `decision` is **not launched**, and a `question_of_what` neither (it is not a question-session issue: it has no node
   question and no default answer): both are kept for the next session in `understood.json`; a withdrawn item is nothing;
 - an owner message **no item names** is never lost, whatever the reason (no `items`, `items: []`, a message the interpreter

@@ -18,6 +18,10 @@ WHERE YOU WORK
   branch, and a run stopped with everything committed loses nothing.
 - The brief file is a copy; the issue is the source. Report on the issue, not on the copy, and if
   the brief and the issue disagree, the issue wins.
+- In an issue opened from a test session, `Objective` opens with "Task": that is the work, and the
+  only work. `Context` opens with "Context -- background, not part of the task": it is background
+  even where it quotes the owner, so never build what only it mentions. `Not included` names what
+  is tracked separately.
 
 NODE-CHANGE TRAILER -- WHEN A COMMIT TOUCHES THE PRODUCT TREE
 Any commit that changes a file under the product tree (`__TREE_ROOT__/`) ends its message with
