@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from agent_os.product.session_ingest.chat.model import ChatSession, Comment, Item
-from agent_os.product.session_ingest.chat.ticket import TicketSubject, change_key
+from agent_os.product.session_ingest.chat.ticket import OtherItem, TicketSubject, change_key
 from agent_os.product.session_ingest.feedback_summary import ActionVerdicts, summarize_verdicts
 from agent_os.product.session_ingest.plan import (
     AcceptanceStep,
@@ -88,6 +88,18 @@ def _one_safe_line(text: str) -> str:
     return " ".join(text.split()).replace("<!--", "&lt;!--").replace("-->", "--&gt;")
 
 
+def _read_from_the_same_messages(
+    session: ChatSession, positions: list[int], *, apart_from: str | None = None
+) -> tuple[OtherItem, ...]:
+    """The items, not withdrawn, that the interpreter read from any of these messages: what an issue
+    quoting them must say it does not do."""
+    return tuple(
+        OtherItem(item.kind, _one_safe_line(item.summary))
+        for item in session.items or ()
+        if item.id != apart_from and not item.withdrawn and set(item.from_messages) & set(positions)
+    )
+
+
 def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLookup) -> None:
     if item.node is not None and item.node not in tree.nodes:
         plan.problems.append(
@@ -101,13 +113,17 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
         key=key,
         title=f"{summary} (test session {plan.session.id}, {item.id})",
         summary=summary,
-        objective=(
+        task=summary,
+        origin=(
             f"The owner asked for this in test session `{plan.session.id}`{where}, as the "
-            f"interpreter of the feedback read it: {summary}"
+            "interpreter of the feedback read it."
         ),
         messages=_thread_text(plan.session, list(item.from_messages)),
         node_id=item.node,
         is_rework=False,
+        others=_read_from_the_same_messages(
+            plan.session, list(item.from_messages), apart_from=item.id
+        ),
     )
     plan.issues.append(IssueStep("item", subject, lookup(key)))
 
@@ -122,10 +138,14 @@ def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, 
 def _case_subject(session: ChatSession, node: str, kind: str, thread: list[int]) -> TicketSubject:
     rework = kind == "rework"
     verdict = "needs work" if rework else "ok with improvements"
-    objective = (
+    origin = (
         f"The owner gave `{node}` the state `{verdict}` in test session `{session.id}`, and no "
-        "interpreter read what they wrote: the whole thread of the case follows. "
-        + ("Make it do what the owner expected." if rework else "Make the changes the text names.")
+        "interpreter read what they wrote: the whole thread of the case is quoted below."
+    )
+    task = (
+        "Make it do what the owner expected, as the thread says."
+        if rework
+        else "Make the changes the owner's text names."
     )
     title = (
         f"Rework `{node}`: needs work in test session {session.id}"
@@ -136,10 +156,12 @@ def _case_subject(session: ChatSession, node: str, kind: str, thread: list[int])
         key=rework_key(session.id, node) if rework else change_key(session.id, f"case.{node}"),
         title=title,
         summary=title,
-        objective=objective,
+        task=task,
+        origin=origin,
         messages=_thread_text(session, thread),
         node_id=node,
         is_rework=rework,
+        others=_read_from_the_same_messages(session, thread),
     )
 
 
@@ -188,14 +210,18 @@ def _plan_general_comments(plan: ChatSessionPlan, covered: set[int], lookup: Iss
         key=change_key(session.id, "general"),
         title=f"Changes the owner asked for in general, in test session {session.id}",
         summary="Comments on no particular case, not interpreted",
-        objective=(
+        task=(
+            "Work out what the thread asks for, do what is a change, and say on this issue what "
+            "you left out and why."
+        ),
+        origin=(
             f"The owner commented in test session `{session.id}` on no particular case, and no "
-            "interpreter read it: the thread follows, whole. Work out what it asks for, do what is "
-            "a change, and say on this issue what you left out and why."
+            "interpreter read it: the whole thread is quoted below."
         ),
         messages=_thread_text(session, thread),
         node_id=None,
         is_rework=False,
+        others=_read_from_the_same_messages(session, thread),
     )
     _launch_or_wait(plan, "general", subject, lookup)
 
