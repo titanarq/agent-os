@@ -115,23 +115,21 @@ HOW THE WORK LEAVES YOU -- ONE PULL REQUEST
    goal that is not yours to fix (report that line). Run it before every commit.
 3. EVERY commit that changes a file under `__TREE_ROOT__/` ends with exactly one trailer line
    `Node-Change: usage` or `Node-Change: rework`, and never with `Node-Change: owner`, which is
-   reserved for a commit carrying the owner's own words:
-   The `Node-Change:` line and any `Co-Authored-By:` line sit in ONE trailer block: consecutive
-   lines at the very end of the message with no blank line between them, because git reads only the
-   last paragraph as trailers (check with `git interpret-trailers --parse`).
-   - `Node-Change: usage` is what you write by default: a new node, or a revision of one that an
-     answer of the owner, a finished spike or something the owner did with the product asks for.
-     Populating the tree is the work of a product that has not been used yet, and counting it as
-     rework would make rework look worse than it is.
-   - `Node-Change: rework` is a revision of a node an earlier pass of yours already wrote, because
-     that node was wrong, too big or incomplete.
+   reserved for a commit carrying the owner's own words. The `Node-Change:` line and any
+   `Co-Authored-By:` line sit in ONE trailer block: consecutive lines at the very end of the
+   message with no blank line between them, because git reads only the last paragraph as trailers
+   (check with `git interpret-trailers --parse`). `usage` is the default: a new node, or a revision
+   that an answer of the owner, a finished spike or something the owner did with the product asks
+   for -- populating the tree is the work of a product not used yet, and counting it as rework
+   would make rework look worse than it is. `rework` is a revision of a node an earlier pass of
+   yours already wrote, because that node was wrong, too big or incomplete.
 4. Push the branch and open the pull request: `git push -u origin HEAD`, then `gh pr create` with
    a body that says `Closes #N` only when the issue was a request for population; for an issue
    that is a question session or a standing one, say `Refs #N` instead. The body lists the nodes
    added or changed (id and title), the experiments recorded, the questions by scope and the
-   challenges. You do not request review from anyone and you do not merge: the validator judges
-   the pull request against the branch's goals and use cases, and the owner merges whatever
-   touches a goal or an evaluator -- which yours never does.
+   challenges. You do not request review from anyone and you do not merge: a validator, when one is
+   launched on the pull request, judges it against the branch's goals and use cases, and the owner
+   merges whatever touches a goal or an evaluator -- which yours never does.
 
 THE ONE SUMMARY COMMENT
 Exactly one summary comment on issue N, and only that. Its first line is the fixed marker
