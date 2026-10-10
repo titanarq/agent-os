@@ -50,14 +50,14 @@ Fixed so far (agent-os pull requests): #133/#134 adoption CI, #136 expert driver
 experiments in the slice, #138/#139 pause, review gate and trailer rules, #140 doctor probes the Apps'
 permissions and install templates, #141 build tickets and explicit `touches`, #142 foundations without
 inheritance. In flight: dispatch headroom and planner paging, first-class rework, quota cut, per-slot
-venv, `--slot` by `--issue`. Still open, no branch yet: `open-pr` `merge_failed` without a human state;
-a verification command naming a missing test; `touches` in the expert prompt; the review gate reading
+venv, `--slot` by `--issue`. Still open, no branch yet:
+a verification command naming a missing test; the review gate reading
 checks by REST and the doctor probing that call; the worker running the host's ratchet before the pull
 request; the tree doctor not checking `implementation` paths; the repeated evaluators paragraph in
-every ticket; slow `status`/`collect`; slots on demand.
+every ticket; slow `status`/`collect`. Slots on demand are in flight (stage 1l, no fixed number of slots).
 
 ## Not yet exercised in the first host
 
-The planner running unattended, the guard and its timer, the notification topic, slots on demand, question
+The planner running unattended, the guard and its timer, the notification topic, slots on demand (made but not yet seen in a first host), question
 sessions through `agent-os-sessions open`, the progress board, and a second product. No steps are written
 for them until a run exists.

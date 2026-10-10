@@ -23,6 +23,49 @@ that closed several small issues at once name them all. This file starts on 2026
   item covers waits (`waiting:` in the plan) until the session closes, an item withdrawn after launch names its issue, and
   `understood.json` carries `status`/`opened_at` per block; a comment is a session and a position, so the thread of a case
   crosses sessions without re-launching work.
+- Rollout stage 1l (no issue; branch `fix/rollout-stage1l`) -- worker slots on demand. The owner, seeing a host
+  capped at five slots: "¿por qué has limitado a 5 slots?"; the web of puntales "necesitará muchos agentes ...
+  no se deben limitar" (`docs/tree/fr-independent-work-runs-in-parallel.md`); quota is the only limit.
+  A fixed number of slots was itself the error: when `worker_task.sh <backend> branch|start` finds every slot
+  alive it now MAKES the next one (worktree `<worktree>-N`, `.cache/worker_<backend>-N.*`, the host's
+  `worktree_links`, setup command and mechanism venv, through the same function `init` uses) and goes on in it,
+  instead of refusing with "every slot is busy" (a one-slot backend: "a run is alive"); a free slot is always
+  reused first, and nothing is deleted. `project.backends.<name>.slots` is optional and now means how many `init`
+  precreates (a floor); `planner.max_parallel_issues` is optional and absent or `null` means no cap (it
+  defaulted to 1), a host that sets it keeps it. What still stops a new slot, writing nothing: that cap, and the
+  backend's `exhausted` quota verdict (workers park, puntales never do); `python -m agent_os.product.dispatch
+  new-slot <backend>` answers for the driver. Slots are found on disk (`<worktree>-N` holding a worktree), through
+  one derivation (`agent_os.product.dispatch.slots`, re-exported by `agent_os.lib`) that the driver, the guard, the
+  doctor, `planner_task.sh` and `worker_progress.sh` share; `dispatch headroom` no longer has a per-backend slot
+  ceiling. `start` of an issue an alive slot already runs is refused. `bin/worker/worker_slot_selection.sh` takes
+  the slot-picking out of `worker_task.sh` (which shrinks); `prompts/planner.md` stays at 300 lines. ADR
+  `2026-10-09-worker-slots-are-created-on-demand.md` amends `2026-09-26-...slots-of-its-own.md` and
+  `2026-09-15-...cap-enforced-by-the-driver.md`. Host follow-up: none -- after `git subtree pull` a host with
+  `slots: 5` and `max_parallel_issues: 5` keeps both, and gets the sixth slot only if it deletes the cap.
+- Rollout stage 1k (no issue; branch `fix/rollout-stage1k`) -- four edges of the first v2 host, each reproduced
+  by a test that failed first. D: `open-pr` whose merge of the base never started (`BLOCKED reason=merge_failed`,
+  no unmerged paths: an untracked file in the way, no committer identity) left the issue in `doing` with no
+  comment; it now comments what was in the way (`git status --porcelain`) and what unblocks it and moves the
+  issue to `blocked-on-human`, like the other endings, and the three endings share one `hand_the_issue_to_the_human`
+  (`bin/worker/worker_publication_refusals.sh`). E: `prompts/expert.md` tells the expert to declare `touches:` on
+  every node that compiles to a ticket and to split a node, or order it with `depends_on:`, when two independent ones
+  would touch the same code -- two tickets of the host depended on the same code undeclared and ran at once; golden
+  `expert.md` changed by exactly that bullet (read diff by diff). F: the planner prompt described the manual rework
+  route (paste the review into `--after manual --context`), which fails for a run whose every stage is committed; it now
+  says `resume --issue N --rework`, that the driver appends the stage and hands over the review, and that two such
+  stages are the attempts before `blocked-on-human` (the driver counts only cuts, so the planner reads the stages);
+  neutral on lines (the file stays at the 300-line ratchet) and golden `planner.md` changed by exactly those
+  sentences. G: the quota verdict was persisted by the guard's tick for a live worker and by the fold of role logs,
+  and nothing wrote it when `stage-exit` itself read the refusal of a run relaunched into the wall (it dies before any
+  tick) -- the next launch read a stale `allowed` and probed the wall again. `stage-exit` now records `exhausted`
+  through `record_quota_observation` (extracted from the fold; `agent_os.product.tracker.quota_verdict`); only a
+  refusal is recorded, and it lapses by the existing TTL (`mechanism.quota_verdict_ttl_minutes`). A worker class with
+  no `fallback:` is still not refused at launch over an exhausted verdict.
+  H (added while the branch was open): a worker's smoke test ran `pkill -f "python -m app"` and killed the owner's
+  own web, another process on another port in the main checkout. `prompts/worker.md` and `prompts/validator.md` now say
+  that a process you start is stopped by the PID you kept, never by pattern (`pkill`, `pgrep -f | xargs kill`,
+  `killall`, `fuser -k`), and that a port you did not open is never used, freed or stopped; goldens `worker.md` and
+  `validator.md` changed by exactly those paragraphs (read diff by diff).
 - Feedback interpreter (no issue; branch `fix/feedback-interpreter`) -- the agent behind a test session's comment
   box, which is a chat: `bin/interpreter_task.sh interpret` (`python -m agent_os.product.interpreter`) reads the
   thread, the owner's message and the case, and answers one JSON envelope with a short `reply` (or ONE question,

@@ -48,6 +48,18 @@ WHAT YOU DO
   product must exist early (`fr-a-usable-product-exists-early`): nothing waits for a complete
   specification, so populate the first branch that makes the product usable before the rest, and
   leave the rest for a later run.
+- DECLARE WHAT EACH NODE TOUCHES. Every node that compiles to a ticket (a pending leaf) carries
+  `touches:`, the paths under the host's root it will create or change (a directory covers what is
+  under it; `touches: []` only when it truly touches no code). Dispatch never runs two tickets on
+  the same code (`dec-dispatch-never-runs-two-tickets-on-the-same-code`) and compares exactly
+  these paths; without them it guesses from the prose, and a node that names no path collides
+  with nothing, so two tickets on the same code run at once and the second conflicts or redoes the
+  first. Write the paths as a plan, before the code exists, and never a narrower path than the
+  node will really change: hiding a collision costs a conflict, declaring it costs only order.
+  Independent work runs in parallel (`fr-independent-work-runs-in-parallel`), so when two
+  independent nodes would touch the same code, split one of them until each owns its own files; if
+  the shared code is real (a schema, a router), put it in a node of its own that the others
+  `depends_on:`, or order the two with `depends_on:`.
 - On the FIRST run of a product (the tree has goals and almost nothing under them) follow
   `uc-start-a-new-product`: read the owner's goals and evaluators, populate the foundations and
   the first requirements and use cases under each goal, and record the questions the owner has to

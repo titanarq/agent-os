@@ -89,7 +89,9 @@ without a default.
 **First time.** The driver ran without a worktree of its own and the prompt fixed the language of the
 tree, though the host's tree is in another one -- fixed (#136): it refuses without a worktree and the
 language is the host's. The expert chose the stack as a how and the owner was still asked to confirm it.
-`prompts/expert.md` still says nothing about `touches` (open).
+`prompts/expert.md` said nothing about `touches` -- fixed: the expert declares it on every node that
+compiles to a ticket and splits nodes that would touch the same code (two tickets on the same code, declared
+nowhere, ran at once in the host).
 **Baseline.** Two runs, 17 and 7 turns, 0.84 USD, about 10 minutes of runs; merged the same night after
 the owner's answers. 39 nodes, 5 foundations, 3 open spikes, 3 what questions.
 **First host.** Python 3.12 + Flask, fpdf2, qrcode, zxing-cpp, pytest, bcrypt; all web code under `web/`
