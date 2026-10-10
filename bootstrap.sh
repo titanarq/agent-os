@@ -10,6 +10,8 @@
 #
 # The dev dependencies are named here rather than installed as a group: they are declared as a PEP
 # 735 `[dependency-groups]`, not as an extra, so `-e ".[dev]"` would fail on "no such extra".
+# ruff is pinned to the exact version CI lints with: unpinned, release 0.17 changed its default rule
+# set overnight and turned every pull request red at once.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -18,7 +20,7 @@ base=${AGENT_OS_BOOTSTRAP_PYTHON:-python3}
 
 [ -x "$venv/bin/python" ] || "$base" -m venv "$venv"
 "$venv/bin/python" -m pip install --quiet --upgrade pip
-"$venv/bin/python" -m pip install --quiet -e "$here" pytest ruff
+"$venv/bin/python" -m pip install --quiet -e "$here" pytest "ruff==0.17.0"
 
 echo "agent_os interpreter: $venv/bin/python"
 "$venv/bin/python" -c 'import agent_os; print("agent_os:", agent_os.__file__)'

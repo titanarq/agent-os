@@ -33,7 +33,7 @@ agent-os-doctor = "agent_os.doctor:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.6",
+    "ruff==0.17.0",  # keep equal to the pin in bootstrap.sh
 ]
 
 # Matches the host project's own configuration on purpose: a file that moves between the two trees
@@ -42,10 +42,12 @@ dev = [
 line-length = 100
 target-version = "py312"
 
+# ruff is pinned (bootstrap.sh, the dev group above), so its default rule set -- the one every file
+# here is linted against -- changes only when the pin does. DTZ is added on top because the guard
+# keeps naive datetimes on purpose to match `progress.log`, each one carrying its own `noqa`: 0.17
+# dropped DTZ001/005/006/007 from the default and those directives, with nothing left to
+# suppress, turned RUF100 red on every pull request.
 [tool.ruff.lint]
-# ruff 0.17 stopped enabling the naive-datetime rules (DTZ) by default, which 0.16 did, so the
-# `# noqa: DTZ...` directives in the guard turned into RUF100 errors on a fresh install: naming the
-# rule keeps the same lint result on both.
 extend-select = ["DTZ"]
 
 [tool.pytest.ini_options]
