@@ -122,7 +122,8 @@ evidence and hardens the node).
    tests; a newer version is offered on another port from a separate worktree over a copy of the owner's data
    (a SQLite backup), never over the live file. A worker stops only what it launched, by PID, never by pattern (`pkill -f`). The quota is shared with the workers: park workers
    first, never the puntales (rung 5, step 4).
-4. While the owner tests and after, `agent-os-sessions test-ingest` prints the plan and writes nothing;
+4. While the owner tests and after, `agent_os/.venv/bin/agent-os-sessions test-ingest` (the mechanism's
+   interpreter, substrate step 16, never the host's root `.venv`) prints the plan and writes nothing;
    read it, then `--apply` (an open session of schema 2 is read as it goes, and again on every run): an
    answered question goes into its node in the owner's words, a change the interpreter understood becomes one
    keyed issue, a decision is kept for the next session in `understood.json`, a rejected case of schema 1

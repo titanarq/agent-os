@@ -70,7 +70,7 @@ TELEMETRY_FIELDS = (
 )
 
 
-def _rounded(value: float | None) -> float | None:
+def rounded_seconds(value: float | None) -> float | None:
     return None if value is None else round(value, 4)
 
 
@@ -102,8 +102,8 @@ def _turn_summary(number: int, turn: TurnRun) -> dict:
         "kind": turn.kind,
         "outcome": turn.outcome,
         "outcome_detail": turn.outcome_detail,
-        "started_at_s": _rounded(turn.started_s),
-        "ended_at_s": _rounded(turn.ended_s),
+        "started_at_s": rounded_seconds(turn.started_s),
+        "ended_at_s": rounded_seconds(turn.ended_s),
         "total_tokens": turn_usage(turn.observer)["total_tokens"],
         "cost_usd": turn_cost(turn.observer),
         "num_turns": result.get("num_turns"),
@@ -118,7 +118,7 @@ def _tool_call_rows(turns: list[TurnRun]) -> list[dict]:
         {
             "name": call.name,
             "command": call.input.get("command") if call.name == PERSISTENCE_TOOL else None,
-            "at_s": _rounded(call.first_seen_s),
+            "at_s": rounded_seconds(call.first_seen_s),
             "violation": call.violation,
             "is_error": call.is_error,
             "result_chars": call.result_chars,
@@ -173,16 +173,16 @@ def build_record(
         "outcome_detail": trace.outcome_detail,
         "exit_code": last.run.exit_code,
         "latency_s": {
-            "total": _rounded(trace.answered_at_s),
-            "python_startup": _rounded(clock.overhead_before_python_s),
-            "pre_helper": _rounded(trace.pre_helper_s),
-            "launch_overhead": _rounded(trace.spawned_at_s),
-            "first_event": _rounded(first_observer.first_event_s),
-            "first_message": _rounded(first_observer.first_message_s),
-            "first_tool_call": _rounded(first_observer.first_tool_call_s),
-            "first_text_delta": _rounded(first_observer.first_text_delta_s),
-            "final_answer_first_delta": _rounded(last.observer.final_answer_first_delta_s()),
-            "executor": _rounded(trace.executor_s),
+            "total": rounded_seconds(trace.answered_at_s),
+            "python_startup": rounded_seconds(clock.overhead_before_python_s),
+            "pre_helper": rounded_seconds(trace.pre_helper_s),
+            "launch_overhead": rounded_seconds(trace.spawned_at_s),
+            "first_event": rounded_seconds(first_observer.first_event_s),
+            "first_message": rounded_seconds(first_observer.first_message_s),
+            "first_tool_call": rounded_seconds(first_observer.first_tool_call_s),
+            "first_text_delta": rounded_seconds(first_observer.first_text_delta_s),
+            "final_answer_first_delta": rounded_seconds(last.observer.final_answer_first_delta_s()),
+            "executor": rounded_seconds(trace.executor_s),
             "backend_reported": {
                 "duration_ms": last_result.get("duration_ms"),
                 "duration_api_ms": last_result.get("duration_api_ms"),
