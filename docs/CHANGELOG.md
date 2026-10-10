@@ -6,6 +6,10 @@ first. Every entry names the task issue and the pull request that closed it; ent
 that closed several small issues at once name them all. This file starts on 2026-09-21, the day
 #508 moved the mechanism into `agent_os/` — nothing from before that date describes this directory.
 
+New entries do not go in this file: each branch writes its own note in
+`docs/changelog/unreleased/<branch-name-with-hyphens>.md` (see that folder's README), so parallel
+pull requests never conflict here. The notes are folded into the Unreleased section below when a release is published.
+
 ## Unreleased
 
 - Ruff pinned (no issue; branch `fix/ruff-0-17`) -- `bootstrap.sh` and the dev group install `ruff==0.17.0` instead of the latest, and `[tool.ruff.lint] extend-select = ["DTZ"]` keeps the naive-datetime rules the guard's `noqa: DTZ00x` directives answer to; release 0.17 had dropped them from its default and turned `ruff check` red (RUF100) on every pull request.
