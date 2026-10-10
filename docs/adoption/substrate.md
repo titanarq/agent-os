@@ -60,12 +60,12 @@ The mechanism reads a project's own knowledge layer at several points (the worke
    git subtree add --prefix=agent_os agent-os main --squash
    ```
    `titanarq/agent-os` is public, so this fetch — and every later `subtree pull` (step 25) —
-   needs no credential. Two cases do: `subtree push` (step 26) always, and every fetch when the
-   remote is a private fork or mirror. Then **git itself** has to present a GitHub credential for
-   an account that can write the repository (for a push) or read it (for a private fetch), and a
+   needs no credential. One case does: every fetch when the remote is a private fork or mirror (a fix
+   goes back as a pull request on `titanarq/agent-os`, step 26, not as a push from this host). Then
+   **git itself** has to present a GitHub credential for an account that can read it, and a
    `gh` login is not that by itself. A token in `GH_TOKEN`, a non-interactive
    `gh auth login --with-token`, or a "no" to the interactive login's "authenticate Git" question
-   all leave git with no credential helper for `github.com`, and the `https://` push or fetch
+   all leave git with no credential helper for `github.com`, and the `https://` fetch
    stops on an auth prompt. Point git at `gh`'s login once per machine, before the first such
    command:
    ```bash
@@ -274,13 +274,16 @@ equivalent.)
 ## 6. Pulling improvements, and sending one back
 
 25. **Pull** whatever the mechanism gained elsewhere since the last sync:
-    `git subtree pull --prefix=agent_os <remote> main --squash`, then re-run step 16
+    `git subtree pull --prefix=agent_os <remote> main --squash` on a branch of the host's own (step 26),
+    then re-run step 16
     (`bash agent_os/bootstrap.sh`) so the new code and the interpreter agree, then step 21
     (`agent-os-doctor`) to confirm nothing the pull touched needs a new config key this host has
     not filled in yet.
-26. **Send one back** — a fix or a generic improvement made while running this host belongs in the
-    shared mechanism, not stranded here: commit it under `agent_os/` on a branch, then
-    `git subtree push --prefix=agent_os <remote> <branch>` and open a pull request against the
-    split repository's own `main`. A host-specific decision stays in `config/agents.yaml` or a
-    host-owned file it names (step 9) instead — nothing that only makes sense for one project goes
-    back through this door.
+26. **Send one back** — a defect or a generic improvement found while running this host is fixed in
+    `titanarq/agent-os`, never in this host's `agent_os/`: reproduce it with a failing test in a checkout
+    of that repository and open the fix there as a pull request (its `AGENTS.md`, "Hosts consume this
+    repository…"). Once it is merged, this host brings it in with step 25's
+    `git subtree pull --prefix=agent_os <remote> main --squash` on a branch of its own, and that branch
+    is merged with a merge commit, never a squash: a squash drops the `git-subtree-dir:` metadata the
+    next pull needs. A host-specific decision stays in `config/agents.yaml` or a host-owned file it
+    names (step 9) instead — nothing that only makes sense for one project goes back through this door.
