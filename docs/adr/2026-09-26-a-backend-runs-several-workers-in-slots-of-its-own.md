@@ -4,6 +4,9 @@
 - Status: accepted
 - Modules: workers
 - Issue: agent-os#90
+- Amended by: `2026-10-09-worker-slots-are-created-on-demand.md` -- `slots:` is a floor the driver
+  goes past, not a ceiling: with every slot busy `start` and `branch` make the next one instead of
+  refusing, and the "every slot is busy" refusal below no longer exists
 
 ## Context
 `planner.max_parallel_issues` counts workers "across every backend", but the real ceiling was one

@@ -142,12 +142,12 @@ BACKENDS: tuple[str, ...] = tuple(
 BACKEND_WORKTREES = {
     name: str((HOST_ROOT / PROJECT.backends[name].worktree).resolve()) for name in BACKENDS
 }
-# A backend runs as many workers at once as its `slots:` says (#90, agent_os/docs/adr/2026-09-26-a-
-# backend-runs-several-workers-in-slots-of-its-own.md). Slot 1 IS the backend as it always was --
-# `BACKEND_WORKTREES`, `worker_<backend>.*` -- so only the other slots' worktrees are kept here.
+# A backend runs as many workers at once as it has slots: the `slots:` its config precreates plus the
+# ones the driver made on demand (#90, agent_os/docs/adr/2026-10-09-worker-slots-are-created-on-
+# demand.md). Slot 1 IS the backend as it always was -- `BACKEND_WORKTREES`, `worker_<backend>.*`.
 EXTRA_SLOT_WORKTREES: dict[tuple[str, int], str] = {
     (name, slot): str(worker_slot_worktree_path(name, slot, main=HOST_ROOT, project=PROJECT))
-    for name, slot in worker_slots(PROJECT)
+    for name, slot in worker_slots(PROJECT, HOST_ROOT)
     if slot > 1
 }
 
@@ -2535,8 +2535,8 @@ def write_seen_dispatchable(issues: list[int], *, main: Path = HOST_ROOT) -> Non
     path.write_text(json.dumps(sorted(issues)))
 
 
-def _occupied_worker_slots(*, main: Path) -> tuple[int, int]:
-    """(workers alive right now, `planner.max_parallel_issues`) -- the SAME cap
+def _occupied_worker_slots(*, main: Path) -> tuple[int, int | None]:
+    """(workers alive right now, `planner.max_parallel_issues`, None for no cap) -- the SAME cap
     `worker_task.sh start` refuses a dispatch against
     (agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md, #374), read
     with the SAME `_is_alive` reading `tick`'s own `any_alive` below already uses, so a
@@ -2584,7 +2584,7 @@ def _write_new_dispatchable_event_if_gained(
         return EventOutcome()
     listed = ", ".join(f"#{number}" for number in gained[:10])
     occupied, cap = _occupied_worker_slots(main=main)
-    if occupied >= cap:
+    if cap is not None and occupied >= cap:
         return EventOutcome(
             f"{len(gained)} issue(s) became dispatchable ({listed}) but {occupied} worker(s) "
             f"already running (>= planner.max_parallel_issues={cap}) -- no planner pass; a slot "

@@ -16,10 +16,13 @@ verification:
 - judge: 'Merge conflicts between work done in parallel: few.'
 - judge: 'No dispatchable work waits for another run to finish without a reason.'
 mechanism: |-
-  Stage 1, already in the substrate. A backend runs several workers at once in slots of its own
-  (`project.backends.<name>.slots`, one worktree and one set of run files per slot), and
-  `planner.max_parallel_issues` caps the workers alive across every slot of every backend; both
-  default to one, so a host that wants parallelism raises them. The start gate
+  Stage 1, already in the substrate. A backend runs several workers at once in slots of its own (one
+  worktree and one set of run files per slot), and a number of slots is never a limit: when a dispatch
+  finds every slot busy the driver makes the next one and goes on in it, reusing a free slot first
+  (`project.backends.<name>.slots` only says how many `init` precreates). `planner.max_parallel_issues`
+  is optional and absent means no cap; a host that wants a ceiling sets it and it counts the workers
+  alive across every slot of every backend. What stops a new slot is that cap, if set, and a backend's
+  exhausted quota: workers park, puntales never do. The start gate
   (`python -m agent_os.product.dispatch start-gate`, called by `worker_task.sh start`) refuses, writing
   nothing, a ticket whose dependencies still have an open ticket or whose touched paths overlap those
   of a running ticket: what is independent starts together, and what shares code or order never does,
@@ -27,7 +30,7 @@ mechanism: |-
   (dec-dispatch-never-runs-two-tickets-on-the-same-code). The tickets `compile` renders carry the
   dependencies and touched paths that gate reads, so a wave is exactly the set of tickets with no open
   dependency and no overlap. What waits does so for a reason that is written down -- an open
-  dependency, overlapping code, a shared `module:` label, the cap the host configured -- and never
+  dependency, overlapping code, a shared `module:` label, a cap the host configured -- and never
   because another run happens to be unfinished.
 
   Whoever plans asks, every run. The planner on each of its runs, and the control that supervises it
@@ -47,7 +50,7 @@ mechanism: |-
   `planner.max_parallel_issues`) never counts or delays a puntal, and no puntal waits for another,
   because each action is one headless process of its own (dec-puntales-run-as-headless-processes).
   The only thing they share is the account's quota.
-implementation: '`agent_os/product/dispatch/` (rules.py, touched_code.py, the start gate), `agent_os/product/dispatch/headroom/` (the question every planning run asks), `prompts/planner.md` (EVERY RUN, ASK YOURSELF), `tests/product/puntal/contract/test_puntal_never_asks_the_worker_cap.py` (a puntal never reads the worker cap), `bin/worker_task.sh` (slots, the cap), `planner.max_parallel_issues` and `project.backends.<name>.slots` in `config/agents.yaml`, `docs/adr/2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`, `docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md`. Nothing measures the four evaluators yet: they wait for the vector, and the planner''s `headroom: waits only for the cap` comments are what the fourth will count.'
+implementation: '`agent_os/product/dispatch/` (rules.py, touched_code.py, the start gate), `agent_os/product/dispatch/headroom/` (the question every planning run asks), `prompts/planner.md` (EVERY RUN, ASK YOURSELF), `tests/product/puntal/contract/test_puntal_never_asks_the_worker_cap.py` (a puntal never reads the worker cap), `bin/worker_task.sh` and `bin/worker/worker_slot_selection.sh` (slots made on demand, the cap), `agent_os/product/dispatch/slots/` (which slots exist and when one more is made), `planner.max_parallel_issues` and `project.backends.<name>.slots` in `config/agents.yaml`, `docs/adr/2026-10-09-worker-slots-are-created-on-demand.md`, `docs/adr/2026-09-26-a-backend-runs-several-workers-in-slots-of-its-own.md`, `docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md`. Nothing measures the four evaluators yet: they wait for the vector, and the planner''s `headroom: waits only for the cap` comments are what the fourth will count.'
 state: implemented
 ---
 Agentos does at the same time whatever does not depend on anything else, so the owner waits for the

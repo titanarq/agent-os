@@ -8,6 +8,25 @@ that closed several small issues at once name them all. This file starts on 2026
 
 ## Unreleased
 
+- Rollout stage 1l (no issue; branch `fix/rollout-stage1l`) -- worker slots on demand. The owner, seeing a host
+  capped at five slots: "¿por qué has limitado a 5 slots?"; the web of puntales "necesitará muchos agentes ...
+  no se deben limitar" (`docs/tree/fr-independent-work-runs-in-parallel.md`); quota is the only limit.
+  A fixed number of slots was itself the error: when `worker_task.sh <backend> branch|start` finds every slot
+  alive it now MAKES the next one (worktree `<worktree>-N`, `.cache/worker_<backend>-N.*`, the host's
+  `worktree_links`, setup command and mechanism venv, through the same function `init` uses) and goes on in it,
+  instead of refusing with "every slot is busy" (a one-slot backend: "a run is alive"); a free slot is always
+  reused first, and nothing is deleted. `project.backends.<name>.slots` is optional and now means how many `init`
+  precreates (a floor); `planner.max_parallel_issues` is optional and absent or `null` means no cap (it
+  defaulted to 1), a host that sets it keeps it. What still stops a new slot, writing nothing: that cap, and the
+  backend's `exhausted` quota verdict (workers park, puntales never do); `python -m agent_os.product.dispatch
+  new-slot <backend>` answers for the driver. Slots are found on disk (`<worktree>-N` holding a worktree), through
+  one derivation (`agent_os.product.dispatch.slots`, re-exported by `agent_os.lib`) that the driver, the guard, the
+  doctor, `planner_task.sh` and `worker_progress.sh` share; `dispatch headroom` no longer has a per-backend slot
+  ceiling. `start` of an issue an alive slot already runs is refused. `bin/worker/worker_slot_selection.sh` takes
+  the slot-picking out of `worker_task.sh` (which shrinks); `prompts/planner.md` stays at 300 lines. ADR
+  `2026-10-09-worker-slots-are-created-on-demand.md` amends `2026-09-26-...slots-of-its-own.md` and
+  `2026-09-15-...cap-enforced-by-the-driver.md`. Host follow-up: none -- after `git subtree pull` a host with
+  `slots: 5` and `max_parallel_issues: 5` keeps both, and gets the sixth slot only if it deletes the cap.
 - Rollout stage 1k (no issue; branch `fix/rollout-stage1k`) -- four edges of the first v2 host, each reproduced
   by a test that failed first. D: `open-pr` whose merge of the base never started (`BLOCKED reason=merge_failed`,
   no unmerged paths: an untracked file in the way, no committer identity) left the issue in `doing` with no
