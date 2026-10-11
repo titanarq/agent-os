@@ -91,6 +91,18 @@ class PuntalConfig(Strict):
     max_tool_calls: int = 12
     # `claude --effort`. Empty leaves the CLI's own default.
     effort: str = ""
+    # The model of the actions that the class's own model (`classes.puntal.model`) answers badly:
+    # `{action: model}`, where the key is the `action` of the request. An action not named here runs
+    # on the class's model; `--model` outranks both. The telemetry records the effective model.
+    action_models: dict[str, str] = {}
+
+    @field_validator("action_models")
+    @classmethod
+    def every_model_named(cls, value: dict[str, str]) -> dict[str, str]:
+        empty = sorted(action for action, model in value.items() if not model.strip())
+        if empty:
+            raise ValueError(f"names no model for {empty}: remove the action to use the class's")
+        return value
 
     @field_validator("timeout_seconds", "max_tool_calls", "executor_timeout_seconds")
     @classmethod

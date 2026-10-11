@@ -27,7 +27,8 @@ WHAT YOU READ, IN THIS ORDER
    (validator, refiner, planner) is that role's own ceiling, never a work budget for a task or bug
    and is not listed.
 
-- `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: small, fully specified change in one module with no design decision left to make
+- `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: the same kind of change on Sonnet, for an issue that already names this class (a new one names mechanical-haiku)
+- `mechanical-haiku` -- backend claude, model claude-haiku-5-5: small, fully specified change in one module with no design decision left to make (the default for such a task)
 - `complex-sonnet` -- backend claude, model claude-sonnet-5-5: any other task or bug -- cross-module work, or one that needs judgement
 
    EVERY worker task goes to a Sonnet class: `mechanical-sonnet` when the change is

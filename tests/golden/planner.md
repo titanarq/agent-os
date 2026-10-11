@@ -58,7 +58,8 @@ WHAT YOU MAY DO
   backend, and `branch` then `start` for the same issue land on the same free slot by themselves.
   The worker classes the config defines, with the backend and model each one runs on today:
 
-- `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: small, fully specified change in one module with no design decision left to make
+- `mechanical-sonnet` -- backend claude, model claude-sonnet-5-5: the same kind of change on Sonnet, for an issue that already names this class (a new one names mechanical-haiku)
+- `mechanical-haiku` -- backend claude, model claude-haiku-5-5: small, fully specified change in one module with no design decision left to make (the default for such a task)
 - `complex-sonnet` -- backend claude, model claude-sonnet-5-5: any other task or bug -- cross-module work, or one that needs judgement
 
 - Launch a one-shot role: `agent_os/bin/agent_task.sh validator <pr>` (see LAUNCH THE VALIDATOR
