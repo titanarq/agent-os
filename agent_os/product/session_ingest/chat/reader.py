@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
+from agent_os.product.interpreter.constants import ITEM_KINDS, ITEM_STATUSES, VERDICTS
 from agent_os.product.session_ingest.chat.model import (
     CASE_VERDICTS,
     COMMENT_STATES,
-    ITEM_KINDS,
-    ITEM_STATUSES,
     ROLES,
-    VERDICTS,
     ChatCase,
     ChatSession,
     Comment,

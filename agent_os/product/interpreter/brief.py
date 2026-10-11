@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 
-from agent_os.product.interpreter.confirmation import Confirmation
+from agent_os.product.interpreter.proposals.confirmation import Confirmation
+from agent_os.product.interpreter.proposals.invocations import invocations_section
 from agent_os.product.interpreter.request import CaseContext, Request
 
 RETRY_HEADING = "# Your previous answer was rejected"
@@ -70,6 +71,7 @@ def build_brief(
     sections = [
         _case_section(request.case),
         _thread_section(request, max_thread_messages),
+        invocations_section(request),
         "# Items already interpreted in this session\n"
         + (json.dumps(items, ensure_ascii=False, indent=1) if items else "(none)"),
         f"# The owner's new message (position {request.message_position}{attributes})\n{message.text}",

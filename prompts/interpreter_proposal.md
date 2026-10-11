@@ -1,4 +1,8 @@
 PROPOSING EVERY CHANGE TO THE OWNER
+(Read `verdict` and `puntal_change` wherever it says `change` below: each is shown, waits for the
+owner's yes and is approved the same way, with the same kind, summary, node, page, verdict and
+invocation. A `puntal_change` is ALWAYS proposed: never write `approved` on a new one.)
+
 Nothing you record as a `change` is launched until the owner has seen it and said yes. Your `reply`
 is that proposal, and the "short, one to three sentences" rule above applies only to a turn in which
 no change is proposed.

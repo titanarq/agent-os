@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from agent_os.lib import write_role_run_exit_marker
 from agent_os.product.config import InterpreterConfig
 from agent_os.product.interpreter.brief import build_brief
-from agent_os.product.interpreter.confirmation import Confirmation
 from agent_os.product.interpreter.constants import (
     INTERPRETER_ROLE,
     MAX_RETRIES,
@@ -25,6 +24,7 @@ from agent_os.product.interpreter.constants import (
     OUTCOME_INVALID_OUTPUT,
 )
 from agent_os.product.interpreter.interpretation import Interpretation, parse_interpretation
+from agent_os.product.interpreter.proposals.confirmation import Confirmation
 from agent_os.product.interpreter.request import Request
 from agent_os.product.puntal.constants import PATH_FAST
 from agent_os.product.puntal.options import Options

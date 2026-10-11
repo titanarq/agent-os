@@ -10,6 +10,8 @@ import pathlib
 
 from agent_os.product.interpreter.constants import (
     KIND_CHANGE,
+    KIND_PUNTAL_CHANGE,
+    KIND_VERDICT,
     MAX_LISTED_USE_CASES,
     MAX_REPLY_CHARS,
     PROPOSAL_REPLY_CHARS_PER_ITEM,
@@ -20,6 +22,10 @@ from agent_os.product.interpreter.constants import (
 )
 from agent_os.product.interpreter.items import Item
 from agent_os.product.interpreter.request import CaseContext, Request
+
+# The kinds that wait for the owner's yes: the work a `change` launches, the record a `verdict`
+# writes and the issue a `puntal_change` opens.
+PROPOSABLE_KINDS = (KIND_CHANGE, KIND_VERDICT, KIND_PUNTAL_CHANGE)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -56,11 +62,13 @@ def confirmation_from_tree(case: CaseContext | None, tree_root: pathlib.Path) ->
 
 
 def _same_proposal(item: Item, previous: Item) -> bool:
-    return (item.kind, item.summary, item.node, item.page) == (
+    return (item.kind, item.summary, item.node, item.page, item.verdict, item.invocations) == (
         previous.kind,
         previous.summary,
         previous.node,
         previous.page,
+        previous.verdict,
+        previous.invocations,
     )
 
 
@@ -68,14 +76,14 @@ def _bound_status(item: Item, previous: Item | None) -> tuple[str | None, str | 
     """`(status, retry reason)` for one item the model returned."""
     if item.withdrawn:
         return (previous.status if previous else None), None
-    if item.kind != KIND_CHANGE:
+    if item.kind not in PROPOSABLE_KINDS:
         reason = (
-            "`approved` is only for a `change` item" if item.status == STATUS_APPROVED else None
+            "`approved` is only for a `change`, `verdict` or `puntal_change` item"
+            if item.status == STATUS_APPROVED
+            else None
         )
         return None, reason
-    unchanged = (
-        previous is not None and previous.kind == KIND_CHANGE and _same_proposal(item, previous)
-    )
+    unchanged = previous is not None and _same_proposal(item, previous)
     if unchanged and previous.status == STATUS_APPROVED:
         return STATUS_APPROVED, None
     if item.status != STATUS_APPROVED:
@@ -87,7 +95,7 @@ def _bound_status(item: Item, previous: Item | None) -> tuple[str | None, str | 
         )
     if not unchanged:
         return STATUS_PROPOSED, (
-            "`approved` on an item whose kind, summary, node or page changed: "
+            "`approved` on an item whose kind, summary, node, page, verdict or invocation changed: "
             "a correction is `proposed` again"
         )
     return STATUS_APPROVED, None
@@ -114,13 +122,33 @@ def bind_items(
     return bound, problems
 
 
+def bind_items_without_confirmation(
+    items: list[Item], request: Request
+) -> tuple[list[Item], list[str]]:
+    """The key is off: a new `verdict` is born `approved` and a `change` is left as the model wrote
+    it, but a `puntal_change` is bound as ever, because it reaches Agentos's own method and the key
+    never meant to loosen that."""
+    carried = {item.id: item for item in request.items}
+    bound, problems = [], []
+    for item in items:
+        if item.kind == KIND_PUNTAL_CHANGE:
+            status, reason = _bound_status(item, carried.get(item.id))
+            if reason:
+                problems.append(f"{item.id}: {reason}")
+            item = dataclasses.replace(item, status=status)
+        elif item.kind == KIND_VERDICT and not item.withdrawn:
+            item = dataclasses.replace(item, status=STATUS_APPROVED)
+        bound.append(item)
+    return bound, problems
+
+
 def proposed_after_this_turn(items: list[Item], request: Request) -> list[Item]:
     standing = {item.id: item for item in request.items}
     standing.update({item.id: item for item in items})
     return [
         item
         for item in standing.values()
-        if item.kind == KIND_CHANGE and not item.withdrawn and item.status == STATUS_PROPOSED
+        if item.kind in PROPOSABLE_KINDS and not item.withdrawn and item.status == STATUS_PROPOSED
     ]
 
 

@@ -42,6 +42,8 @@ STATUS_APPROVED = "approved"
 ITEM_STATUSES = (STATUS_PROPOSED, STATUS_APPROVED)
 
 QUESTION_MARKS = ("?", "？", "¿")
+# The part of an invocation's answer the brief shows: enough to tell two answers apart.
+MAX_INVOCATION_ANSWER_CHARS = 600
 MAX_REPLY_CHARS = 1200
 # A proposal names the task, the case and the page of every proposed change, so the reply grows by
 # this much per proposed change (the part said once for all fits the base limit).
