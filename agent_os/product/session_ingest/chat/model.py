@@ -10,6 +10,7 @@ from agent_os.product.session_ingest.session_file import Question
 COMMENT_STATES = ("perfect", "ok_with_improvements", "needs_work")
 CASE_VERDICTS = (*COMMENT_STATES, "not_tried")
 ITEM_KINDS = ("change", "decision", "question_of_what")
+ITEM_STATUSES = ("proposed", "approved")
 ROLES = ("owner", "agent")
 
 
@@ -41,6 +42,7 @@ class Item:
     page: str | None
     from_messages: tuple[int, ...]
     withdrawn: bool
+    status: str | None = None
 
 
 @dataclass(frozen=True)

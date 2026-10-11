@@ -6,6 +6,7 @@ from agent_os.product.session_ingest.chat.model import (
     CASE_VERDICTS,
     COMMENT_STATES,
     ITEM_KINDS,
+    ITEM_STATUSES,
     ROLES,
     ChatCase,
     ChatSession,
@@ -77,6 +78,9 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
     withdrawn = row.get("withdrawn", False)
     if not isinstance(withdrawn, bool):
         raise SessionFileError(f"{where}: item {row.get('id')!r}: `withdrawn` is not true or false")
+    status = _optional_text(row, "status", where)
+    if status is not None:
+        _one_of(status, ITEM_STATUSES, "item status", where)
     return Item(
         text_of(row, "id", where),
         kind,
@@ -85,6 +89,7 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
         _optional_text(row, "page", where),
         tuple(positions),
         withdrawn,
+        status,
     )
 
 
