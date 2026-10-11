@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from agent_os.product.session_ingest.chat.model import ChatSession, Comment, Item
 from agent_os.product.session_ingest.chat.proposals import HeldText, is_awaiting_approval
 from agent_os.product.session_ingest.chat.ticket import OtherItem, TicketSubject, change_key
+from agent_os.product.session_ingest.chat.verdicts import VerdictStep, verdict_step_for
 from agent_os.product.session_ingest.feedback_summary import ActionVerdicts, summarize_verdicts
 from agent_os.product.session_ingest.plan import (
     AcceptanceStep,
@@ -73,6 +74,7 @@ class ChatSessionPlan:
     no_change_named: list[str] = field(default_factory=list)
     not_tried: list[str] = field(default_factory=list)
     verdicts: list[ActionVerdicts] = field(default_factory=list)
+    verdict_steps: list[VerdictStep] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
 
@@ -135,6 +137,17 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
         ),
     )
     plan.issues.append(IssueStep("item", subject, lookup(key)))
+
+
+def _verdict_item(plan: ChatSessionPlan, item: Item, feedback_file: pathlib.Path) -> None:
+    if is_awaiting_approval(item, confirm_before_dispatch=plan.confirm_before_dispatch):
+        plan.proposals.append(item)
+        return
+    step = verdict_step_for(plan.session.id, item, feedback_file=feedback_file)
+    if isinstance(step, str):
+        plan.problems.append(step)
+    else:
+        plan.verdict_steps.append(step)
 
 
 def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, lookup) -> None:
@@ -268,6 +281,8 @@ def plan_chat_session(
                 plan.withdrawn_after_launch.append((item, launched))
         elif item.kind == "change":
             _item_step(plan, tree, item, find_issue)
+        elif item.kind == "verdict":
+            _verdict_item(plan, item, feedback_file)
         else:
             plan.kept_for_next_session.append(item)
     nodes = dict.fromkeys(

@@ -13,6 +13,16 @@ _ORIGIN_WORDS = {
     "general": "general change (no case, nothing interpreted it)",
 }
 
+_KEPT_ENDINGS = {
+    "decision": " -- not launched: the owner confirms it when the next session opens",
+    "question_of_what": (
+        " -- not launched, no question-session issue (it has no node question with a default "
+        "answer): open until the owner answers it when the next session opens"
+    ),
+    "puntal_change": " -- not launched: this version does not open the issue of a puntal change yet",
+    "answer": " -- nothing to do: the host wrote the answer into the session's questions",
+}
+
 
 def _item_line(label: str, item: Item, ending: str) -> str:
     return f"  {label}: {item.id}: {item.summary}{ending}"
@@ -43,15 +53,14 @@ def render_chat_plan(plan: ChatSessionPlan) -> list[str]:
         lines.append(
             f"  issue: {_ORIGIN_WORDS[step.origin]}{about}{existing}: {step.subject.summary}"
         )
+    for step in plan.verdict_steps:
+        recorded = " (already recorded)" if step.already_recorded else ""
+        lines.append(
+            f"  verdict: {step.verdict} on invocation {step.invocation_id} -> "
+            f"record it in feedback.jsonl{recorded}: {step.item.summary}"
+        )
     for item in plan.kept_for_next_session:
-        if item.kind == "decision":
-            ending = " -- not launched: the owner confirms it when the next session opens"
-        else:
-            ending = (
-                " -- not launched, no question-session issue (it has no node question with a "
-                "default answer): open until the owner answers it when the next session opens"
-            )
-        lines.append(_item_line(item.kind.replace("_", " "), item, ending))
+        lines.append(_item_line(item.kind.replace("_", " "), item, _KEPT_ENDINGS[item.kind]))
     lines.extend(
         _item_line("proposed", item, " -- waiting for the owner's word in the chat")
         for item in plan.proposals

@@ -1436,7 +1436,8 @@ a missing directory is refused naming `tree.test_sessions_dir`. Per session:
 - a case **not tried** is left alone;
 - the **verdicts on improvised answers** that `feedback.jsonl` holds inside the session's window
   (`opened_at`..`closed_at`: the two files have no other join) are summarised per action and node (accepted,
-  rejected with the note, retried) inside the plan, as input; nothing is written from them yet.
+  rejected with the note, retried) inside the plan, as input; a verdict the chat recorded (schema 2, below) belongs to the
+  session in its `key`, whatever moment it was written, and counts once.
 
 A step already done is shown as such and not repeated; a step that cannot be done (a node the tree lacks, a
 question the node does not carry open, or already answered with other words) is a `problem:` line, exit 1, and the
@@ -1462,6 +1463,11 @@ A closed session without the `items` key (closed before the interpreter was conn
   `understood.json`, and the raw-text fallbacks below are **held** (`held: ... -- no interpreter read it`, listed under `held`),
   never launched. With the key false the status is ignored and what follows is the whole rule. Schema 1 is unchanged
   (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`, `chat/proposals.py`);
+- a `verdict` item, `approved` and not withdrawn, is **recorded in `feedback.jsonl`** against its one invocation: the record
+  `puntal_task.sh feedback` writes (`versions`, `action`, `node` copied from the invocation's telemetry, which sits beside that
+  file) plus `key: chat-verdict.<session>.<item>`, so a second run adds nothing (`already recorded`). A `proposed` one waits like a
+  `change` (`proposals` in `understood.json`); one naming no invocation of the telemetry, or not exactly one, is a `problem:` line.
+  `puntal_change` and `answer` items are not acted on here yet (`puntal_change`: #183; `answer`: the host writes it);
 - a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
   configures it, else the bug label), with `<!-- node: -->` when the item has a node and `<!-- key: test-change.<session>.item.<id> -->`.
   The seven headings are the validator's, so the worker is told what is work and what is background by the first words of
