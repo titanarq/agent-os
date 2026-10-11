@@ -312,7 +312,7 @@ def test_main_writes_a_host_ci_workflow_that_runs_the_configured_test_command(tm
     result = _run_install(environment)
     assert result.returncode == 0, result.stdout + result.stderr
     workflow = host_root / ".github" / "workflows" / "ci-host.yml"
-    assert "run: scripts/test.sh\n" in workflow.read_text()
+    assert '--command "scripts/test.sh"' in workflow.read_text()
 
 
 def test_main_leaves_a_hosts_own_differing_ci_workflow_alone_without_force(tmp_path):
