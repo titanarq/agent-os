@@ -34,6 +34,7 @@ agent-os-doctor = "agent_os.doctor:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.5",  # the suite runs with -n 6 (CI, bin/dev/run_suite.sh)
     "ruff==0.17.0",  # keep equal to the pin in bootstrap.sh
 ]
 
