@@ -6,6 +6,7 @@ import dataclasses
 
 from agent_os.product.interpreter.constants import (
     ITEM_KINDS,
+    ITEM_ORIGINS,
     ITEM_STATUSES,
     KIND_ANSWER,
     KIND_VERDICT,
@@ -26,6 +27,7 @@ class Item:
     from_messages: tuple[int, ...]
     withdrawn: bool = False
     status: str | None = None
+    origin: str | None = None
     invocations: tuple[str, ...] = ()
     verdict: str | None = None
     note: str | None = None
@@ -38,7 +40,7 @@ class Item:
             "from_messages": list(self.from_messages),
             "invocations": list(self.invocations),
         }
-        for optional in ("status", "verdict", "note", "question", "answer_text"):
+        for optional in ("status", "origin", "verdict", "note", "question", "answer_text"):
             if document[optional] is None:
                 del document[optional]
         if not self.invocations:
@@ -81,10 +83,17 @@ def _kind_specific_problems(
 
 
 def parse_item(
-    raw: object, *, where: str, message_count: int, id_of_new: str | None
+    raw: object,
+    *,
+    where: str,
+    message_count: int,
+    id_of_new: str | None,
+    require_origin: bool = False,
 ) -> tuple[Item | None, list[str]]:
     """An item from a JSON object. `id_of_new` is the id given when the object carries none.
-    `message_count` bounds `from_messages`, which are positions in the whole thread."""
+    `message_count` bounds `from_messages`, which are positions in the whole thread. The model's
+    own items need an `origin` unless they are withdrawn; the ones a host stored earlier may have
+    none (`require_origin` is false for them)."""
     if not isinstance(raw, dict):
         return None, [f"{where}: must be an object"]
     problems: list[str] = []
@@ -117,6 +126,11 @@ def parse_item(
     status = raw.get("status")
     if status is not None and status not in ITEM_STATUSES:
         problems.append(f"{where}: `status` must be one of {list(ITEM_STATUSES)} when present")
+    origin = raw.get("origin")
+    if origin is None and require_origin and withdrawn is not True:
+        problems.append(f"{where}: `origin` is required, one of {list(ITEM_ORIGINS)}")
+    elif origin is not None and origin not in ITEM_ORIGINS:
+        problems.append(f"{where}: `origin` must be one of {list(ITEM_ORIGINS)}")
     invocations = _invocation_ids(raw, problems, where)
     verdict = _optional_text(raw, "verdict", problems, where)
     note = _optional_text(raw, "note", problems, where)
@@ -136,6 +150,7 @@ def parse_item(
         from_messages=tuple(sorted(set(sources))),
         withdrawn=withdrawn,
         status=status,
+        origin=origin,
         invocations=invocations,
         verdict=verdict,
         note=note,

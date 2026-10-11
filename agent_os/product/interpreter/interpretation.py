@@ -15,7 +15,7 @@ from agent_os.product.interpreter.items import Item, parse_item
 from agent_os.product.interpreter.proposals.confirmation import (
     Confirmation,
     bind_items,
-    bind_items_without_confirmation,
+    detected_this_turn,
     proposal_problems,
     proposed_after_this_turn,
     reply_limit,
@@ -46,10 +46,10 @@ def _next_item_number(request: Request) -> int:
 def parse_interpretation(
     text: str, request: Request, confirmation: Confirmation | None = None
 ) -> tuple[Interpretation | None, list[str]]:
-    """`(interpretation, [])` or `(None, reasons)`. With a `confirmation` (the key is on) the items'
-    status, node and the reply as a proposal are bound by code too. An object that is not JSON, a reply that is not
-    short, a question that asks nothing, an item that points at nothing: every reason is returned so
-    that the one retry can fix them all."""
+    """`(interpretation, [])` or `(None, reasons)`. The items' status (from their origin), their node
+    and the reply as a proposal are bound by code too. An object that is not JSON, a reply that is
+    not short, a question that asks nothing, an item that points at nothing: every reason is
+    returned so that the one retry can fix them all."""
     stripped = text.strip()
     fence = FENCE_RE.match(stripped)
     try:
@@ -93,6 +93,7 @@ def parse_interpretation(
             where=where,
             message_count=request.message_position + 1,
             id_of_new=f"{ITEM_ID_PREFIX}{number}",
+            require_origin=True,
         )
         problems += item_problems
         if item is not None:
@@ -104,15 +105,14 @@ def parse_interpretation(
     if isinstance(needs_answer, bool):
         problems += ask_problems(request, items, needs_answer)
     problems += invocation_problems(items, request)
-    if confirmation is None:
-        items, binding_problems = bind_items_without_confirmation(items, request)
-        problems += binding_problems
-    if confirmation is not None and isinstance(reply, str) and isinstance(needs_answer, bool):
-        items, binding_problems = bind_items(items, request, confirmation)
+    items, binding_problems = bind_items(items, request, confirmation)
+    problems += binding_problems
+    if isinstance(reply, str) and isinstance(needs_answer, bool):
         proposed = proposed_after_this_turn(items, request)
-        limit = reply_limit(len(proposed))
-        problems += binding_problems + proposal_problems(
-            proposed, reply, needs_answer, confirmation
+        detected = detected_this_turn(items, request)
+        limit = reply_limit(len(proposed) + len(detected))
+        problems += proposal_problems(
+            proposed, detected, reply, needs_answer, confirmation or Confirmation(())
         )
     if isinstance(reply, str) and len(reply) > limit:
         problems.append(f"`reply` must be short (at most {limit} characters)")

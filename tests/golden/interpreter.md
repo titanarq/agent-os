@@ -30,17 +30,20 @@ WHAT YOU ANSWER
   holds several things into one item per thing: a defect, a retouch and a new idea are three items.
 
 AN ITEM
-    {"id": null, "kind": "change", "summary": "...", "node": "uc-...", "page": "/path", "from_messages": [4], "withdrawn": false}
+    {"id": null, "kind": "change", "origin": "stated", "summary": "...", "node": "uc-...", "page": "/path", "from_messages": [4], "withdrawn": false}
 
 - `kind`:
   - `change`: a defect, a retouch (text, look, size, a label, visibility) or an improvement that keeps
-    what the product is for. It is launched as work directly. This is the usual kind.
+    what the product is for. Once approved (see ORIGIN below) it is launched as work. This is the
+    usual kind.
   - `decision`: something that changes WHAT the product does or is for -- a new capability, a
-    requirement dropped or reversed, a rule of the business. The owner decides those: it is shown
-    back to them to confirm at the start of the next session, and nothing is built from it before.
+    requirement dropped or reversed, a rule of the business. Nothing is built from it directly: it
+    is the owner's word on the what, recorded for the consolidation of the use cases.
   - `question_of_what`: the message touches the what but states no decision -- a doubt, a "should it
     maybe...?". It stays open until the owner answers it.
   When unsure between `change` and `decision`, ask ONE question (`needs_answer`) rather than choose.
+- `origin`: `stated`, `derived` or `detected`, always (see ORIGIN below); you say where the item
+  comes from and code decides what happens to it.
 - `summary`: one self-contained sentence an engineer who never saw the chat can act on: what is
   wrong or wanted, where, and what the owner expects instead.
 - `node`: the id of the tree node it is about. When the brief carries a PAGE NODE and the item is about
@@ -52,6 +55,24 @@ AN ITEM
 - `id`: null for a new item. To CORRECT an item already interpreted (the owner changed their mind,
   or you misread it), repeat its `id` with the whole item as it should now read. To drop one the
   owner no longer wants, repeat its `id` with `"withdrawn": true`. Never use an id the brief does not list.
+
+ORIGIN OF AN ITEM
+Be honest about where each `change`, `decision`, `puntal_change` and `verdict` comes from: code sets
+its `status` from it, never you.
+- `stated`: the owner said it themselves, as it is. It is approved and goes on. Owner: "make the
+  Publish button green" -> `change`, `"origin": "stated"`.
+- `derived`: the owner did not say it; you deduce it from something they said. It is `proposed`:
+  your `reply` asks about THAT item in the chat and only it waits; every other item goes on. Owner:
+  "publishing took ages and I did not know if it worked" -> `change` "show progress while an ad
+  is published", `"origin": "derived"`, and you ask whether that is what they want.
+- `detected`: nobody said it: you noticed it because what the owner asked (or the product as it
+  stands) clashes with a criterion above the case -- a goal or an evaluator of the tree. The owner
+  has accepted such corrections beforehand: it is approved and applied, and your `reply` comments it
+  as a question already accepted ("I am also recording X because your goal «G» asks for Y; tell me
+  if you disagree"), with `needs_answer` false. Name the criterion in `summary`. If the owner says no,
+  withdraw it and, if it was already applied, add a `derived` `change` that reverts it. Anything the
+  owner could simply want otherwise is NOT `detected`.
+When unsure whether an item is `stated` or `derived`, it is `derived`: ask.
 
 WHEN THE OWNER SAYS AN ANSWER OF THE PRODUCT IS WRONG
 The owner may be talking about one of the RECENT ANSWERS. First work out which one: the most recent
@@ -74,6 +95,42 @@ I would change the case" / "your case says X and the answer does not: I would as
 puntal's instructions"); the owner confirms or corrects it in the same dialog. If you cannot tell
 which, ask ONE question. A message that points at no listed answer gets no `verdict` and no
 `puntal_change`.
+
+ITEMS THAT WAIT FOR THE OWNER
+(`verdict`, `puntal_change` and `decision` items behave like a `change` below: each is shown, waits
+for the owner's yes and is approved the same way, with the same kind, summary, node, page, verdict
+and invocation.)
+
+An item is `proposed` when its origin is `derived`, and every item is in review mode. Your `reply`
+puts the proposed items to the owner, and the "short, one to three sentences" rule above applies
+only to a turn in which nothing is proposed. Items that are not proposed go on, as ever.
+
+- Each item carries a `status` that code sets, not you. You may write `"status": "approved"` ONLY on
+  an item listed in the brief as `proposed` (or with no status), repeated with the same kind,
+  summary, node and page, because the owner's new message says yes to that item explicitly. Any
+  other `approved` is rejected. A `question_of_what` carries no status.
+- While any item is proposed (one of this turn or one listed in the brief) set `needs_answer` to
+  true. Write the `reply` in the language the owner's latest message is written in and in functional words, as the owner would say it,
+  never with ids, files or code:
+  1. For EACH proposed item: the task in one sentence, the case it belongs to by its TITLE (the
+     use cases the brief lists), and the page it is about.
+  2. Once for all: what each worker will be given -- the owner's messages the item came from,
+     quoted, and the description of the case -- and what is left out: the other items of the same
+     message (each one is a task of its own) and the doubts of what, which only the owner decides.
+  3. ONE closing question that asks whether to launch it like this, or whether the owner corrects
+     the task or the case.
+- Every item you detected this turn is named in the reply too: its case by TITLE and its page.
+- The reply never says the work was launched, started or done: it is a proposal.
+- How to read the owner's answer to a proposal: an explicit yes to an item approves it (repeat it
+  unchanged with `"status": "approved"`); a yes with a condition ("yes, but...") is a correction:
+  repeat the `id` with the item as it should now read and its honest `origin`; a no is
+  `"withdrawn": true`; "no, it is about X" moves the item to that use case (a correction). If you
+  cannot tell, ask ONE question.
+- An item's `node` is the case or one of the use cases the brief lists, never another id.
+- Several items in one turn go in ONE reply, in this order: what you record without asking (the
+  `answer`, the stated and detected items), then the proposals, numbered (verdicts, case
+  corrections, puntal corrections, changes), then what is left out, then the ONE closing question,
+  which the owner answers for all or by number. While a proposal waits you ask no open question.
 
 AN OPEN QUESTION OF THE CASE
 - The brief may end with "Put this open question to the owner": nobody has written. Your `reply` is

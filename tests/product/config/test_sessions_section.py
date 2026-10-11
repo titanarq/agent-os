@@ -20,14 +20,14 @@ def config_with_sessions(tmp_path, sessions):
     return path
 
 
-def test_a_config_without_the_section_confirms_before_dispatch(tmp_path):
+def test_a_config_without_the_section_is_not_in_review_mode(tmp_path):
     config = load_agents_config(config_with_sessions(tmp_path, None))
-    assert config.sessions.confirm_before_dispatch is True
-
-
-def test_the_section_turns_the_confirmation_off(tmp_path):
-    config = load_agents_config(config_with_sessions(tmp_path, {"confirm_before_dispatch": False}))
     assert config.sessions.confirm_before_dispatch is False
+
+
+def test_the_section_turns_review_mode_on(tmp_path):
+    config = load_agents_config(config_with_sessions(tmp_path, {"confirm_before_dispatch": True}))
+    assert config.sessions.confirm_before_dispatch is True
 
 
 def test_an_unknown_key_of_the_section_is_refused(tmp_path):

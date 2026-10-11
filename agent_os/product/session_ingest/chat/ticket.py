@@ -23,7 +23,8 @@ from agent_os.issues import prefixed_title
 from agent_os.lib import TaskClass, validate_issue_body
 from agent_os.product.dispatch.markers import render_marker_lines
 from agent_os.product.dispatch.touched_code import touched_paths_of
-from agent_os.product.session_ingest.chat.model import ChatSession
+from agent_os.product.interpreter.constants import ORIGIN_DERIVED, ORIGIN_DETECTED
+from agent_os.product.session_ingest.chat.model import ChatSession, Item
 from agent_os.product.session_ingest.rework_ticket import (
     ReworkTicketError,
     quoted_owner_words,
@@ -86,6 +87,27 @@ def one_safe_line(text: str) -> str:
     """The interpreter's words are a model's output: one line, with no comment delimiter, so that
     they can neither open a section of the ticket nor forge a marker line."""
     return " ".join(text.split()).replace("<!--", "&lt;!--").replace("-->", "--&gt;")
+
+
+def item_origin_sentence(item: Item, session_id: str, where: str) -> str:
+    """Why the issue exists, by the item's origin: said by the owner, derived from what they said
+    and then approved, or detected by Agentos against a criterion above the case and applied under
+    the owner's standing pre-acceptance."""
+    if item.origin == ORIGIN_DETECTED:
+        return (
+            f"Agentos detected this in test session `{session_id}`{where}: it clashes with a "
+            "criterion above the case (a goal or an evaluator), and the owner has pre-accepted "
+            "such corrections. The interpreter of the feedback read it as follows."
+        )
+    if item.origin == ORIGIN_DERIVED:
+        return (
+            f"The interpreter of the feedback derived this from what the owner said in test "
+            f"session `{session_id}`{where}, and the owner approved it in the chat."
+        )
+    return (
+        f"The owner asked for this in test session `{session_id}`{where}, as the interpreter of "
+        "the feedback read it."
+    )
 
 
 def read_from_the_same_messages(

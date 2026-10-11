@@ -315,9 +315,11 @@ interpreter:
 
 # The owner's test sessions as a whole, read by the feedback interpreter and by `test-ingest`.
 sessions:
-  # true: a change born from a test session is proposed to the owner and launched only once approved
-  # (an item's `status`, docs/FEEDBACK_INTERPRETER.md). false: launched as soon as it is interpreted.
-  confirm_before_dispatch: true
+  # true: review mode, which the owner switches on when they ask for a review of everything: every
+  # item of a test session is proposed to the owner and launched only once approved (an item's
+  # `status`, docs/FEEDBACK_INTERPRETER.md). false (the default): the item's `origin` decides, and
+  # only an item the interpreter derived (not stated, not detected) waits for the owner's yes.
+  confirm_before_dispatch: false
   # `owner/name` of the repository where a `puntal_change` item of the chat (a correction of the
   # puntal's instructions) opens its issue: the repository of the mechanism. Empty: such an item is
   # held and listed in `understood.json`, nothing is opened.

@@ -35,6 +35,9 @@ class CaseContext:
     title: str
     description: str
     verification: tuple[str, ...] = ()
+    # The goal and requirement above the node, nearest first, a line each (type, id, title and the
+    # start of the description): what a `detected` item may clash with.
+    criteria_above: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -142,7 +145,20 @@ def case_from_tree(case_id: str, tree_root: pathlib.Path) -> CaseContext:
         else f"command: {entry.command}" + (f" (proves: {entry.expects})" if entry.expects else "")
         for entry in node.verification
     )
-    return CaseContext(node.id, node.title, node.description, lines)
+    return CaseContext(node.id, node.title, node.description, lines, _criteria_above(tree, node))
+
+
+MAX_CRITERION_CHARS = 400
+
+
+def _criteria_above(tree, node) -> tuple[str, ...]:
+    criteria, seen, parent = [], {node.id}, tree.nodes.get(node.parent or "")
+    while parent is not None and parent.id not in seen:
+        seen.add(parent.id)
+        said = " ".join(parent.description.split())[:MAX_CRITERION_CHARS]
+        criteria.append(f"{parent.type} {parent.id}: {parent.title}. {said}")
+        parent = tree.nodes.get(parent.parent or "")
+    return tuple(criteria)
 
 
 def _required_text(raw: dict, key: str, where: str) -> str:

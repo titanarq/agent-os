@@ -25,6 +25,7 @@ from agent_os.product.puntal.stream.events import Ceilings
 from agent_os.product.puntal.stream.launch import backend_executable_for
 
 PROPOSAL_RULES_PATH = PROMPTS_DIR / "interpreter_proposal.md"
+REVIEW_MODE_RULES_PATH = PROMPTS_DIR / "interpreter_review_mode.md"
 OWNERS_LANGUAGE = "the language the owner's latest message is written in"
 
 
@@ -48,7 +49,7 @@ def resolve_options(
     timeout_seconds: int = 0,
     telemetry_file: str | None = None,
 ) -> tuple[Options, InterpreterConfig, pathlib.Path, bool]:
-    """`(options, interpreter config, tree root, whether a change is proposed to the owner first)`."""
+    """`(options, interpreter config, tree root, whether review mode is on: every item is proposed to the owner first)`."""
     try:
         config = load_agents_config()
         class_name, task_class = load_role_class(INTERPRETER_ROLE)
@@ -63,13 +64,14 @@ def resolve_options(
             f"'{backend.stream}': its confinement here is the {SUPPORTED_STREAM} CLI's"
         )
     settings = config.interpreter
-    confirm = config.sessions.confirm_before_dispatch
+    review_mode = config.sessions.confirm_before_dispatch
     try:
         contract = render_prompt(
             INTERPRETER_ROLE,
             {
                 # First: the section it fills carries `__REPLY_LANGUAGE__` itself.
-                "PROPOSAL_RULES": PROPOSAL_RULES_PATH.read_text() if confirm else "",
+                "REVIEW_MODE_RULES": REVIEW_MODE_RULES_PATH.read_text() if review_mode else "",
+                "PROPOSAL_RULES": PROPOSAL_RULES_PATH.read_text(),
                 "REPLY_LANGUAGE": settings.reply_language.strip() or OWNERS_LANGUAGE,
             },
             prompt_extras_path(INTERPRETER_ROLE, config.project),
@@ -104,4 +106,4 @@ def resolve_options(
         path=PATH_FAST,
         plan_only=True,
     )
-    return options, settings, host_root / config.tree.root, confirm
+    return options, settings, host_root / config.tree.root, review_mode

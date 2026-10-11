@@ -13,7 +13,7 @@ groups:
       - tests/product/puntal/test_puntal_shell_api.py
       - tests/product/puntal/test_puntal_task.py
   - id: interpreter
-    covers: [agent_os/product/interpreter, bin/interpreter_task.sh, prompts/interpreter.md, prompts/interpreter_proposal.md]
+    covers: [agent_os/product/interpreter, bin/interpreter_task.sh, prompts/interpreter.md, prompts/interpreter_proposal.md, prompts/interpreter_review_mode.md]
     tests: [tests/product/puntal/interpreter]
   - id: quality-ratchet
     covers: [agent_os/quality]

@@ -6,8 +6,8 @@ rules). It never changes a prompt: it opens ONE issue, keyed by session and item
 behaviour, reproduce it as a case of the replay battery and change the prompt only if the battery says so
 (`docs/tree/dec-a-method-change-is-judged-by-evidence-from-the-products.md`). The context carries the owner's
 words, the action, node, outcome and `versions` of each invocation it points at (read from the puntal's
-telemetry) and the description of the case. It is always proposed first, whatever `sessions.confirm_before_dispatch`
-says, and with no `sessions.mechanism_repository` it is held: listed in `understood.json`, nothing opened.
+telemetry) and the description of the case. Like any item it waits while it is `proposed` (a derived one, or
+any in review mode), and with no `sessions.mechanism_repository` it is held: listed in `understood.json`, nothing opened.
 """
 
 from __future__ import annotations
@@ -82,10 +82,15 @@ class PuntalChangeOutcome:
 
 
 def decide_puntal_change(
-    session: ChatSession, tree: Tree, item: Item, *, repository: str, feedback_file: pathlib.Path
+    session: ChatSession,
+    tree: Tree,
+    item: Item,
+    *,
+    repository: str,
+    feedback_file: pathlib.Path,
+    confirm_before_dispatch: bool,
 ) -> PuntalChangeOutcome:
-    # Always proposed first: the key `sessions.confirm_before_dispatch` never loosens this item.
-    if is_awaiting_approval(item, confirm_before_dispatch=True):
+    if is_awaiting_approval(item, confirm_before_dispatch=confirm_before_dispatch):
         return PuntalChangeOutcome(proposals=[item])
     if not repository:
         return PuntalChangeOutcome(held=[item])

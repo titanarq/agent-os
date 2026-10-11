@@ -21,7 +21,7 @@ from agent_os.product.interpreter.brief import build_brief
 from agent_os.product.interpreter.constants import OUTCOME_EXIT_STATUS, InterpreterRefused
 from agent_os.product.interpreter.envelope import refusal_envelope, success_envelope
 from agent_os.product.interpreter.options import resolve_options
-from agent_os.product.interpreter.proposals.confirmation import confirmation_from_tree
+from agent_os.product.interpreter.proposals.confirmation import confirmation_for
 from agent_os.product.interpreter.request import Request, parse_request
 from agent_os.product.interpreter.run import interpret, telemetry_request
 from agent_os.product.puntal.cli import release_stdout
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     request = None
     try:
-        options, settings, default_tree_root, confirm = resolve_options(
+        options, settings, default_tree_root, review_mode = resolve_options(
             host_root=HOST_ROOT,
             model=args.model,
             timeout_seconds=args.timeout,
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         tree_root = pathlib.Path(args.tree_root) if args.tree_root else default_tree_root
         request = parse_request(_read_request_text(args.request), tree_root=tree_root)
-        confirmation = confirmation_from_tree(request.case, tree_root) if confirm else None
+        confirmation = confirmation_for(request.case, tree_root, review_mode=review_mode)
     except InterpreterRefused as refusal:
         return _refuse(str(refusal), request)
     if args.dry_run:
