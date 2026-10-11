@@ -110,7 +110,10 @@ A new module of the package, fully testable without network or real backend.
   with the owner's evaluators, six use cases, and functional requirements that were seventeen at
   first, sixteen once the owner removed the autonomy requirement of goal C, and nineteen after the
   final cross-check added three (2026-10-06), and twenty once the owner added parallelism under the
-  first goal (`fr-independent-work-runs-in-parallel`, 2026-10-09). Every requirement and use case now
+  first goal (`fr-independent-work-runs-in-parallel`, 2026-10-09). On 2026-10-09 the owner also asked
+  for a global goal of efficiency linked to self-improvement: `goal-efficient-with-what-it-spends`
+  (a fifth goal, with six pending requirements after the owner's three points of 2026-10-10)
+  carries six evaluators that the owner signed on 2026-10-11. Every requirement and use case now
   carries its mechanism.
 - The Phases 2-5 that followed here were written on 2026-10-04, before the owner's discussion of
   Agentos's global goals (2026-10-05/06), which added most of the pieces below. They are **replaced
