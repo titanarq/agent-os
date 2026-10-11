@@ -14,6 +14,14 @@ name: host-tests
 
 on:
   pull_request:
+  push:
+    # The default branch: edit it if yours differs. A push only runs the tests when the four-hour
+    # clock is due, so the last merge of a session is checked within the interval.
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   tests:
@@ -35,12 +43,48 @@ jobs:
       # touched one never gets worse than on the base branch. The mechanism's own directory is
       # skipped: it only ever changes through a `git subtree pull`.
       - name: code-quality ratchet
+        if: github.event_name == 'pull_request'
         run: agent_os/.venv/bin/python -m agent_os.quality --base origin/${{ github.base_ref }}
 
-      - name: the host's test command
-        run: __TEST_COMMAND__
+      # A manifest that maps a test file to no group, or a path that does not exist, fails here.
+      - name: the test manifest is coherent
+        run: agent_os/.venv/bin/agent-os-tests check
 
-      # Every commit that touches the product tree says why: `Node-Change: usage | rework | owner`
+      # The clock: when the last successful full run was (`never` or `unknown` make one due).
+      - name: read the full-run clock
+        id: clock
+        run: echo "last=$(agent_os/.venv/bin/agent-os-tests last-full-run --repo ${{ github.repository }})" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # The host's test command: the selected tests, or the whole suite when the clock is due or
+      # nothing maps the change. On a push it runs only when the clock is due.
+      - name: the host's test command
+        id: tests
+        run: >-
+          agent_os/.venv/bin/agent-os-tests run
+          --base origin/${{ github.base_ref || github.ref_name }}
+          --command "__TEST_COMMAND__"
+          --last-full-run "${{ steps.clock.outputs.last }}"
+          ${{ github.event_name == 'push' && '--only-when-due' || '' }}
+
+      # A failed run uploads nothing, so the clock keeps its old origin and the next run is full.
+      - name: record the full run
+        if: success() && steps.tests.outputs.mode == 'full'
+        run: >-
+          printf '{"sha":"%s","date":"%s","event":"%s"}\n' "$GITHUB_SHA" "$(date -u +%FT%TZ)"
+          "$GITHUB_EVENT_NAME" > full-run.json
+
+      - name: upload the full-run marker
+        if: success() && steps.tests.outputs.mode == 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-os-full-run
+          path: full-run.json
+          retention-days: 1
+
+      # (A pull request only: a push has no base branch.) Every commit that touches the product tree says why: `Node-Change: usage | rework | owner`
       # (agent_os/docs/AGENT_OS.md §4.6). Reads git only, on the history the checkout above fetched.
       - name: the Node-Change trailer on every commit that touches the product tree
+        if: github.event_name == 'pull_request'
         run: agent_os/.venv/bin/python -m agent_os.product.tree trailers --base origin/${{ github.base_ref }}
