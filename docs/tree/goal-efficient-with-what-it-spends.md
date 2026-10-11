@@ -9,6 +9,7 @@ sources:
 - 'Owner, 2026-10-10, before attending a request in a test session («antes de antenderlo quiero que repases 3 puntos»), point 2: «Eficiencia de agentos»; «A través de la monitorización de agentes: estudiar si se pueden compactar, reducir, eficientar no duplicando o simplificando.»'
 - 'Owner, 2026-10-10, same three points, point 3: «Recucción de costes de agentos. Ahorro de tokens = reducción de contexto = reducción tamaño tareas»; «Evitar tareas grandes: dividirlas.»'
 - 'Owner, 2026-10-09: «no se deben limitar» (parallel work: the only limit is the quota; efficiency is therefore never less parallelism, see fr-independent-work-runs-in-parallel)'
+- 'Owner, 2026-10-11, on the six evaluators proposed for this goal: «Ok a los 6 evaluadores» (relayed by the orchestrating session)'
 decisions:
 - dec-one-owner-for-now
 - dec-a-method-change-is-judged-by-evidence-from-the-products
@@ -47,11 +48,11 @@ reviewed twice (fr-merge-work-is-not-reviewed-twice). What recurs and wastes an 
 the same capture, telemetry for one, is lightened by a script or an MCP
 (fr-what-recurs-becomes-reusable).
 
-The evaluators in `verification` are a proposal, written on 2026-10-10 from the owner's words
-above (the one on the size of the tasks dispatched, added the same day after the owner's three
-points): they are not the owner's until the owner signs them. Goals and evaluators are the owner's
-alone to set or change (fr-only-the-owner-changes-a-goal-or-an-evaluator,
+The evaluators in `verification` were proposed on 2026-10-10 from the owner's words above (the one
+on the size of the tasks dispatched added the same day, after the owner's three points) and the
+owner signed all six on 2026-10-11. Goals and evaluators are the owner's alone to set or change
+(fr-only-the-owner-changes-a-goal-or-an-evaluator,
 dec-a-change-to-the-what-is-merged-only-on-the-owners-word), and a goal without evaluators is a red
-check (fr-every-goal-carries-its-evaluators, dec-a-goal-without-evaluators-is-a-red-check), so the
-proposal stands in the field the check reads and waits for the signature before it merges.
-Trends until the vector gives the first measurements, numeric thresholds after.
+check (fr-every-goal-carries-its-evaluators, dec-a-goal-without-evaluators-is-a-red-check).
+
+Evaluators: in `verification`, set by the owner on 2026-10-11 -- trends until the vector gives the first measurements, numeric thresholds after.

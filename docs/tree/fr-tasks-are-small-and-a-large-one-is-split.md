@@ -10,7 +10,7 @@ mechanism: pending
 The size of a task decides the context its run carries and, with it, what the run costs: the owner
 puts it as saving tokens being reducing context being reducing the size of tasks. So a task that is
 large is divided into smaller ones before it is given to an agent, and the size of the tasks
-dispatched is read as the measure of the saving (an evaluator proposed on
+dispatched is read as the measure of the saving (an evaluator of
 goal-efficient-with-what-it-spends). A smaller task is also what keeps a run within its context
 ceiling (fr-an-agent-run-stays-within-a-bounded-context).
 

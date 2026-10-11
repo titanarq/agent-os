@@ -66,8 +66,8 @@ GOALS = (
 )
 
 # Added on the owner's word of 2026-10-09 (a global goal of efficiency linked to self-improvement),
-# after the four founding goals; its evaluators are a proposal that waits for the owner's signature,
-# so it does not share the founding goals' "set by the owner on 2026-10-06" closing line.
+# after the four founding goals; the owner signed its evaluators on 2026-10-11, so its closing
+# line carries that date and not the founding goals' "set by the owner on 2026-10-06".
 EFFICIENCY_GOAL = "goal-efficient-with-what-it-spends"
 
 
@@ -145,7 +145,10 @@ def test_the_efficiency_goal_and_the_self_improvement_goal_name_each_other():
     assert "goal-improves-with-every-product" in efficiency.description
     assert EFFICIENCY_GOAL in improvement.description
     assert efficiency.verification and all(check.is_judged for check in efficiency.verification)
-    assert "until the owner signs them" in efficiency.description
+    assert efficiency.description.splitlines()[-1] == (
+        "Evaluators: in `verification`, set by the owner on 2026-10-11 -- trends until the "
+        "vector gives the first measurements, numeric thresholds after."
+    )
 
 
 def test_the_slice_of_a_use_case_of_agentos_shows_its_goals_evaluators_as_judged():
