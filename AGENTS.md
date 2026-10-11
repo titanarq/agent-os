@@ -60,9 +60,9 @@ python3 -I bin/dev/suite_show.py <run-dir>/suite.xml <id-fragment>   # only that
 bash bin/dev/wait_checks.sh "$PWD" <PR> [max_minutes]                # CI of the PR's head; exit 0 = every check SUCCESS
 bash bin/dev/safe_merge.sh "$PWD" <PR>              # merge commit only if all SUCCESS and the head holds origin/main
 ```
-The whole suite takes over ten minutes: launch `run_suite.sh` in the background and read the one
+The whole suite takes about ten minutes: launch `run_suite.sh` in the background and read the one
 line it prints or `<run-dir>/suite.summary.json`, never `suite.raw.log` or a tail of pytest's
-output; the same goes for CI (`wait_checks.sh`, not `gh pr checks --watch`). `run_suite.sh` sets
+output (it runs `-n 6` via pytest-xdist; pass `-n 0` for a serial run); the same goes for CI (`wait_checks.sh`, not `gh pr checks --watch`). `run_suite.sh` sets
 `TERM=dumb`, which matters — without it Rich wraps CLI error text in ANSI spans and message
 assertions diverge from CI.
 

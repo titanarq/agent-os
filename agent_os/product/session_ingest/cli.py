@@ -147,7 +147,11 @@ def run_test_ingest(
         tree = load_tree(tree_root)
         if isinstance(session, ChatSession):
             plan = plan_chat_session(
-                session, tree, find_issue=tracker.find_by_key, feedback_file=feedback_file
+                session,
+                tree,
+                find_issue=tracker.find_by_key,
+                feedback_file=feedback_file,
+                confirm_before_dispatch=config.sessions.confirm_before_dispatch,
             )
             print("\n".join(render_chat_plan(plan)))
         else:

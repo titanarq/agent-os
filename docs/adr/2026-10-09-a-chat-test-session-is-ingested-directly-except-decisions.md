@@ -1,5 +1,8 @@
 # A chat test session is ingested directly, except decisions, as it goes, and its result is left for the next session
 
+Amended by `2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md` (point 2: with
+`sessions.confirm_before_dispatch` true, a `change` is launched only once the owner approved it; #171).
+
 Date: 2026-10-09. Amends `2026-10-09-a-closed-test-session-is-ingested-by-a-command-that-plans-first.md` (its points 4 and 8:
 what a verdict becomes, and the reader per schema). Tree: `docs/tree/uc-open-a-test-session-for-a-branch.md` (mechanism,
 "What becomes of the feedback"), `dec-a-test-session-happens-inside-the-app` (the owner's word: "Directo, salvo decisiones"),

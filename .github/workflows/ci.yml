@@ -47,4 +47,4 @@ jobs:
         run: .venv/bin/python -m agent_os.product.tree trailers --base origin/${{ github.base_ref }} --root docs/tree
 
       - name: the mechanism's suite
-        run: .venv/bin/pytest tests -q
+        run: .venv/bin/pytest tests -q -n 6
