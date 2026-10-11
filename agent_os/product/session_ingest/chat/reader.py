@@ -8,6 +8,7 @@ from agent_os.product.session_ingest.chat.model import (
     ITEM_KINDS,
     ITEM_STATUSES,
     ROLES,
+    VERDICTS,
     ChatCase,
     ChatSession,
     Comment,
@@ -81,6 +82,13 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
     status = _optional_text(row, "status", where)
     if status is not None:
         _one_of(status, ITEM_STATUSES, "item status", where)
+    invocations = row.get("invocations", [])
+    if not isinstance(invocations, list) or not all(isinstance(i, str) and i for i in invocations):
+        raise SessionFileError(
+            f"{where}: item {row.get('id')!r}: `invocations` is not a list of ids"
+        )
+    verdict = _optional_text(row, "verdict", where)
+    _one_of(verdict, VERDICTS, "item verdict", where)
     return Item(
         text_of(row, "id", where),
         kind,
@@ -90,6 +98,11 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
         tuple(positions),
         withdrawn,
         status,
+        tuple(invocations),
+        verdict,
+        _optional_text(row, "note", where),
+        _optional_text(row, "question", where),
+        _optional_text(row, "answer_text", where),
     )
 
 

@@ -7,6 +7,8 @@ there would make them unloadable (the same arrangement as `agent_os.quality.conf
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -119,6 +121,17 @@ class SessionsConfig(Strict):
     # When true (the default) a change born from a test session is proposed to the owner and only
     # launched once approved (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`).
     confirm_before_dispatch: bool = True
+    # The repository (`owner/name`) where a `puntal_change` item of the chat opens its issue: the
+    # one that holds the puntal's instructions. Empty (the default): the item is held, nothing is
+    # opened (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`).
+    mechanism_repository: str = ""
+
+    @field_validator("mechanism_repository")
+    @classmethod
+    def owner_slash_name_or_empty(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[\w.-]+/[\w.-]+", value):
+            raise ValueError("must be `owner/name` or empty")
+        return value
 
 
 class InterpreterConfig(Strict):
@@ -139,8 +152,11 @@ class InterpreterConfig(Strict):
     # The most recent messages of the thread the brief carries (the owner's new message and the
     # already-interpreted items are always carried whole). A long session stays cheap per message.
     max_thread_messages: int = 40
+    # The most recent invocations of the puntal a request carries (`invocations`), so the owner can
+    # point at "that answer" and code can check the id the model names.
+    max_invocations: int = 5
 
-    @field_validator("timeout_seconds", "max_thread_messages")
+    @field_validator("timeout_seconds", "max_thread_messages", "max_invocations")
     @classmethod
     def positive(cls, value: int) -> int:
         if value < 1:

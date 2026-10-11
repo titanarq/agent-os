@@ -27,6 +27,8 @@ happened, STDERR the diagnostics. `--dry-run` prints the system prompt and the b
 | `thread` | the stored messages so far, in order, each `{role: owner\|agent, text, state, case, page, at}`. Pass ALL of them in stored order: positions in `from_messages` are positions in this list, and the new message is at position `len(thread)`. |
 | `case` | optional `{id, title, description, verification: [text, ...]}`. When absent and `message.case` is set, the node is read from the host's product tree (`--tree-root`, default `tree.root`); a case the tree does not have is a refusal. |
 | `items` | the items already interpreted in this session (the shape below), so the model corrects instead of duplicating. |
+| `invocations` | optional. The most recent `interpreter.max_invocations` invocations of the puntal on the message's page and case, each `{invocation_id, action, node, page, at, answer}` (`invocation_id`, `action` required; `answer` text cut by the host; an id twice is refused). An item that points at an answer names one of these ids. |
+| `pending_question` / `ask` | optional, never both. `{node, question, default_answer}`, all non-empty text: the open question of what the owner may be answering (`pending_question`), or the one the interpreter is to put (`ask`). A malformed one, or a malformed `invocations`, is `not_run`. |
 | `session_id`, `invocation_id`, `labels` | recorded in the telemetry. `invocation_id` defaults to a UUID. |
 
 ## The envelope (stdout)
@@ -65,6 +67,11 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
   directly), `decision` (changes WHAT the product does: the owner confirms it at the start of the next
   session, `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`), `question_of_what` (touches
   the what with no decision stated: stays open until the owner answers).
+- Three more kinds (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; the
+  contract only, the behaviour comes after): `verdict` (`invocations`: exactly one id, `verdict`: `accept`, `reject` or
+  `retry`, optional `note`), `puntal_change` (a correction of the puntal's instructions: `summary`, `invocations`, `node`,
+  `page`) and `answer` (`node`, `question`, `answer_text`, all required). Any item may carry `invocations: [ids]`; each of
+  these fields is omitted from the item's JSON when empty. The interpreter's parser and the session reader accept them.
 - `id` is assigned by code (`item-N`, after the highest the request carried), never by the model. The
   host stores an item whose `id` it already holds by REPLACING it (a correction) and appends the rest.
   `withdrawn: true` means the owner no longer wants it: ingestion skips it.
@@ -89,7 +96,7 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 ## Configuration
 
 `sessions.confirm_before_dispatch` (default true) switches the proposal mode above. `interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
-`timeout_seconds` (60), `effort`, `max_thread_messages` (40). Model and per-invocation ceilings:
+`timeout_seconds` (60), `effort`, `max_thread_messages` (40), `max_invocations` (5). `sessions.mechanism_repository` (`owner/name`, default empty) is where a `puntal_change` opens its issue. Model and per-invocation ceilings:
 `classes.interpreter` (`role: interpreter`, Sonnet 5.5 by default, not Haiku: it decides which case a comment points at (docs/adr/2026-10-10-puntals-and-mechanical-tasks-default-to-haiku-5-5.md), no `fallback:`). Host paragraphs:
 `project.prompt_extras.interpreter`. Logs, `runs.tsv` and `telemetry.jsonl` (the puntal's record, with
 `class: interpreter` and `action: interpret_feedback`, so cost per message is a query) live in

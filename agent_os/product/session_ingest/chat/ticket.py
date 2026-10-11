@@ -36,6 +36,9 @@ WHAT_EACH_KIND_OF_ITEM_IS = {
     "change": "a change launched as an issue of its own",
     "decision": "a decision that waits for the owner's confirmation in a session",
     "question_of_what": "an open question of what that waits for the owner's answer in a session",
+    "verdict": "a verdict on one answer of the puntal, recorded by the ingestion",
+    "puntal_change": "a correction of the puntal's instructions, an issue of its own on the mechanism",
+    "answer": "the owner's answer to an open question, written into its node",
 }
 
 
