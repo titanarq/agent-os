@@ -128,7 +128,7 @@ def test_the_real_ci_snippet_fires_only_on_pull_requests_touching_the_mechanism(
 def test_plan_host_ci_workflow_renders_the_test_command_into_github_workflows(tmp_path):
     [action] = plan_host_ci_workflow(_project(test_command="make check"), tmp_path)
     assert action.dest == tmp_path / ".github" / "workflows" / "ci-host.yml"
-    assert "run: make check\n" in action.content
+    assert '--command "make check"' in action.content
     assert "__" not in action.content.replace("__TEST_COMMAND__", "")
 
 
@@ -146,8 +146,17 @@ def test_the_real_host_ci_workflow_runs_on_every_pull_request_with_no_path_filte
     assert "pull_request" in triggers
     assert not (triggers["pull_request"] or {}).get("paths")
     assert not (triggers["pull_request"] or {}).get("paths-ignore")
-    steps = [step.get("run") for job in workflow["jobs"].values() for step in job["steps"]]
-    assert "scripts/test.sh" in steps
+    assert "tests" in workflow["jobs"]
+    assert set(triggers["push"]["branches"]) == {"main"}
+    assert workflow["permissions"] == {"contents": "read", "actions": "read"}
+    steps = [step for job in workflow["jobs"].values() for step in job["steps"]]
+    [tests_step] = [step for step in steps if step.get("id") == "tests"]
+    assert '--command "scripts/test.sh"' in tests_step["run"]
+    [upload] = [
+        step for step in steps if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    ]
+    assert upload["with"]["name"] == "agent-os-full-run" and upload["with"]["retention-days"] == 1
+    assert "__" not in action.content
 
 
 def test_the_real_host_ci_workflow_checks_the_node_change_trailer_on_pull_requests(tmp_path):
