@@ -1,0 +1,16 @@
+groups:
+  - id: tree
+    covers: [agent_os/product/tree, docs/tree, docs/AGENT_OS.md, docs/AGENTOS_V2_PLAN.md, .github/workflows/ci.yml]
+    tests: [tests/product/tree]
+  - id: records
+    covers: [agent_os/product/records]
+    tests: [tests/product/records]
+  - id: product-config
+    covers: [agent_os/product/config.py]
+    tests: [tests/product/config]
+  - id: tracker
+    covers: [agent_os/product/tracker, .github/workflows]
+    tests: [tests/product/tracker]
+  - id: board
+    covers: [agent_os/product/board]
+    tests: [tests/product/board]

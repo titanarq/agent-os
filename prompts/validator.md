@@ -64,9 +64,12 @@ __LINT_RULES__
   every check ended green (a skipped one is not a failure). The driver backs this up: `issues move
   N review` refuses while any check is red or unfinished, and an approval you posted before that
   refusal is a review you contradict by hand -- so look first.
-- Run the tests the ISSUE names, and only those, from inside that worktree as well. Run the full
-  suite ONLY if the issue's own definition of done says so -- it is the slowest thing you can run,
-  and running it uninvited is how a review costs more than the work it reviews.
+- Run the branch's test selection from inside that worktree, with the base the pull request targets
+  (`origin/main` unless the issue says `Base: <branch>`):
+  `"$AGENT_OS_PYTHON" -m agent_os.product.test_selection run --base origin/main`
+  plus the tests the ISSUE names. Run the full suite ONLY if the issue's own definition of done says
+  so -- it is the slowest thing you can run, CI carries its clock, and running it uninvited is how a
+  review costs more than the work it reviews. A project without a manifest runs its own test command.
 - Never drop `PYTHONPATH`: not unset, not reassigned, not left behind by a shell you start
   yourself (`env -i`, a login shell, a wrapper). The driver exported it at that worktree and it
   is what makes the environment resolve the worktree's own package instead of this checkout's, so
