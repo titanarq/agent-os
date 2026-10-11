@@ -107,7 +107,7 @@ def test_the_real_ci_snippet_fires_only_on_pull_requests_touching_the_mechanism(
     workflow that reports on every pull request."""
     import yaml
 
-    from agent_os.doctor import _reports_on_every_pull_request
+    from agent_os.product.tracker.pull_request_workflows import reports_on_every_pull_request
 
     workflow = yaml.safe_load(install_module.CI_SNIPPET_SOURCE.read_text())
     # PyYAML reads the bare key `on` as the boolean True.
@@ -117,7 +117,7 @@ def test_the_real_ci_snippet_fires_only_on_pull_requests_touching_the_mechanism(
         "agent_os/**",
         ".github/workflows/ci-agent-os.yml",
     ]
-    assert not _reports_on_every_pull_request(workflow)
+    assert not reports_on_every_pull_request(workflow)
 
 
 # --------------------------------------------------------------------------------------------

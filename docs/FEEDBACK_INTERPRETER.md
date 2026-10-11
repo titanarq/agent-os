@@ -32,7 +32,14 @@ happened, STDERR the diagnostics. `--dry-run` prints the system prompt and the b
 ## The envelope (stdout)
 
 `schema` (1), `invocation_id`, `outcome`, `exit_status`, `detail`, `message_position`, `reply`,
-`needs_answer`, `items`, `retries`, `cost_usd`.
+`needs_answer`, `items`, `retries`, `cost_usd`, `usage`, `latency_s`.
+
+- `usage` and `latency_s` are what the host copies into its own line of the puntal telemetry file
+  (`tokens` / `usage`, `latency_s.total`) so the cost of a message is a query there too: `usage` is the
+  `usage` of the interpreter's own telemetry record (`input_tokens`, `output_tokens`, the cache counters,
+  `total_tokens`, the first-turn figures), summed over the retry when there was one; `latency_s` is
+  `{"total": seconds}` from the moment the process was entered to the moment it had its answer. Both are
+  `null` on `not_run` (nothing ran); on a failed run they hold whatever the turns had streamed.
 
 - `outcome` / `exit_status`: `ok` 0, `error` 1 (the backend failed), `not_run` 2 (the request or the
   config is wrong; nothing was spent), `contract_violation` 3, `ceiling_cut` 4, `invalid_output` 5
