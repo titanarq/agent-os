@@ -21,6 +21,15 @@ def _case_section(case: CaseContext | None) -> str:
     )
 
 
+def _page_node_section(page_node: CaseContext | None) -> str:
+    if page_node is None:
+        return ""
+    return (
+        "# Node of the page the owner is commenting on (it may differ from the case)\n"
+        f"id: {page_node.id}\ntitle: {page_node.title}\n\n{page_node.description.strip()}"
+    )
+
+
 def _thread_section(request: Request, max_messages: int) -> str:
     first = max(0, len(request.thread) - max_messages)
     lines = [
@@ -82,6 +91,9 @@ def build_brief(
         "# Items already interpreted in this session\n"
         + (json.dumps(items, ensure_ascii=False, indent=1) if items else "(none)"),
     ]
+    page_node_section = _page_node_section(request.page_node)
+    if page_node_section:
+        sections.insert(1, page_node_section)
     if message is not None:
         attributes = "".join(
             f" {label}={value}"
@@ -100,7 +112,7 @@ def build_brief(
     if open_question:
         sections.append(open_question)
     if confirmation is not None:
-        sections.insert(2, _use_cases_section(confirmation))
+        sections.insert(3 if page_node_section else 2, _use_cases_section(confirmation))
     if rejection:
         reasons = "\n".join(f"- {reason}" for reason in rejection)
         sections.append(
