@@ -545,6 +545,7 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `project.messages` | one one-line ntfy template per page, written in `project.human_language`; rendered by `agent_lib.render_human_message`, which refuses an unknown key | `review_ready`, `quota_exhausted_no_fallback`, `planner_run_cap_reached`, `backend_worktree_missing`, `unreviewed_pull_request`, `backend_worktree_dirty` |
 | `project.modules` | the project's own module names, one per `docs/modules/*.md`; the `module:<name>` half of the fixed label set `issues.py` creates | `ingest`, `metrics`, `workers`, … |
 | `project.test_command` | the project's own compact test wrapper, injected as `__TEST_COMMAND__` | `scripts/test.sh` |
+| `project.test_selection.manifest` | the test manifest (a file, or a folder of `*.yaml`) `agent-os-tests` reads to select a branch's tests (§4.12); empty means selection is off and every plan is the whole suite | `` (the default), `tests/manifest.yaml` |
 | `project.merge_method` | how the control plane merges a verified PR: `merge`, `squash` or `rebase`, the `merge_method` of GitHub's REST merge endpoint, rendered into `.claude/agents/control-plane.md` as `__MERGE_METHOD__` (§2.4). Any other value fails the config load (agent-os#88) | `merge` (the default) |
 | `project.agent_models` | the `model:` of each `.claude/agents/*.md` definition, rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__` (agent-os#96): `control_plane` (default `sonnet`), `worker_runner` (default `sonnet`), `task_writer` (default `sonnet`), plus `custodian` and `consolidator` (default `opus`: the two roles that run on Opus, rarely -- the roles arrive in Stage 2 of `docs/AGENTOS_V2_PLAN.md`, so for now only the keys and their defaults exist and nothing reads them). Every other role runs on Sonnet. A value is whatever `claude --model` accepts, an alias or a full id, and is opaque to the mechanism: it keeps no allowlist and no price table, and a run's cost is the `total_cost_usd` the CLI reports in its result event. An unknown key fails the config load. The one-shot roles are not here: their model is `classes.<name>.model` | `agent_models: {task_writer: claude-opus-5}` (the defaults are Sonnet for the three definitions, Opus for the two Stage 2 roles) |
 | `project.worktree_links` | paths (relative to the host root) symlinked from the main checkout into a fresh worktree — the validator's throwaway one and a worker's on `init` — when the checkout has them and the worktree does not (agent-os#41) | `[.venv, .env]` |
@@ -1516,6 +1517,34 @@ write) and opens a pull request whose body says `Test-Session: <id>`. It changes
 owner's word, which the answers are (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`).
 The decision: `docs/adr/2026-10-09-a-closed-test-session-is-ingested-by-a-command-that-plans-first.md`.
 
+### 4.12 Test selection (`agent-os-tests`)
+
+A branch runs the tests a manifest maps to what it touched, not the whole suite
+(`docs/adr/2026-10-10-a-branch-runs-the-tests-its-manifest-maps-to-what-it-touched.md`). The manifest
+is named by `project.test_selection.manifest`: one YAML file, or a folder read recursively where
+`version`, `test_globs`, `always` and `exempt` live only in `settings.yaml` and every file may carry
+`groups` (`id`, optional `nodes`, `covers`, `tests`) and `integration` (`id`, `sides`, `tests`). An
+unknown key is a loud error. This module is the selection half only; the clock that makes the whole
+suite run every four hours and the CI templates are separate work.
+
+```bash
+agent-os-tests check [--manifest PATH]
+agent-os-tests plan --base REF [--manifest PATH] [--tree-root DIR] [--format summary|json|paths]
+agent-os-tests run --base REF [--manifest PATH] [--command CMD] [--full]
+```
+
+Also `python -m agent_os.product.test_selection ...`. `--root` defaults to the working directory's
+checkout, never `AGENT_OS_HOST_ROOT`. `check` exits 1 for a test file no group maps, a mapped path that
+does not exist, an unknown integration side, fewer than two sides, or a duplicated id. `plan` selects
+the groups whose `covers` or `tests` hold a changed path (a directory holds what is under it) or whose
+`nodes` list a changed node file's id or one of its ancestors, adds the integrations with a selected
+side and `always`, and falls back to the whole suite for any changed path no group covers and
+`exempt` does not excuse, for a changed `exempt` or `always`, and when no manifest is configured. A
+manifest that is configured but missing is exit 2, an invalid one exit 1. `run` execs `--command`
+(default `project.test_command`) with the selected paths, or alone for a full plan; when the plan cannot
+be computed it runs the whole suite and says why on stderr. `test_command` must accept path arguments
+(`scripts/test.sh tests/x.py`): a wrapper that ignores them makes selection a no-op, not an error.
+
 ## 5. Export recipe
 
 1. **Copy `agent_os/` as a unit** — `git subtree add --prefix=agent_os <the split repo> main`,
@@ -1674,6 +1703,7 @@ install refuses when it resolves to no absolute executable (#12, #51).
 |---|---|---|
 | `bash agent_os/bootstrap.sh` | human, CI | build `agent_os/.venv` and install the package into it, editable. Idempotent; the one prerequisite of everything below |
 | `agent_os/.venv/bin/pytest agent_os/tests -q` | human, CI | the mechanism's own suite: no database, no network, no real backend. The run a second host can also make |
+| `agent-os-tests check\|plan\|run` | CI, worker, validator | the tests a branch must run, from the manifest and the diff (§4.12). Exit 0/1/2 for `check` and `plan`; `run` returns the runner's code |
 | `agent-os-quality --base REF` | CI | the code-quality ratchet (§4.8): new files and folders must be within the line and entry limits, touched ones never worse than on the merge-base with REF. Exit 0/1/2 |
 | `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column. `move N [N …] STATE` takes several numbers in one invocation: the target label and the board's `Status` field are resolved once for all of them, an issue that fails is reported under its number without stopping the rest, and the command exits non-zero naming every issue that did not move. A move costs three GraphQL requests of ~1 point each, whatever the board's size (the board field, once per invocation; the issue's item; the column edit) — the issue and its labels are read and written over REST, on the separate core quota (agent-os#27). The GraphQL quota is 5000 points an hour per user, shared by every host and tool the human runs, and separate from the REST `core` one (`gh api rate_limit --jq .resources.graphql`, not the top-level `.rate`). `validate` reads over REST too (agent-os#70). A rate limit is checked against the login's quotas before it is retried: a bucket at zero fails at once, naming it and its reset time; a secondary limit waits at least a minute per retry |
 | `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. `start` and `branch` pick a free slot themselves and, when every slot is busy, make the next one (`bin/worker/worker_slot_selection.sh`; refused, writing nothing, when the host's `planner.max_parallel_issues` is reached or the backend's quota reads exhausted). On a backend with several slots (#90): `resume`, `collect`, `open-pr`, `stop` and `watch` take `--issue <M>` for the slot that recorded issue M (an explicit `--slot` that recorded another issue is refused), `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot`. `resume --rework` appends the stage a pull request sent back with CHANGES_REQUESTED is owed (see the changes-requested row of the trigger table). A path this driver links into a worktree itself -- `.env`, and every `project.worktree_links` entry that is a symlink there, `.venv` by default -- is never counted as uncommitted work by the dirty check and is never swept into a freeze commit |

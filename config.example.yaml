@@ -56,6 +56,12 @@ project:
   # The project's own compact test wrapper, injected into the worker's RULES as `__TEST_COMMAND__`.
   # A host with more than one test suite names the wrapper that runs the right one.
   test_command: scripts/test.sh
+  # Test selection (`agent-os-tests`, docs/AGENT_OS.md §4.12): a manifest file, or a folder of
+  # `*.yaml`, relative to the repository root, that maps tests to what they verify so a branch runs
+  # only the tests it touched. Empty (the default) keeps it off: every plan is the whole suite.
+  # `test_command` must accept path arguments, or selection does nothing.
+  test_selection:
+    manifest: ""
   # Whether `agent-os-install` writes `.github/workflows/ci-host.yml`, running `test_command` on
   # every pull request with no path filter. The control plane never merges a PR whose head SHA
   # reports zero checks, and `ci-agent-os.yml` only fires on `agent_os/**`, so a host without a

@@ -151,6 +151,7 @@ from agent_os.product.dispatch.slots.naming import (
     worker_slot_worktree,
     worker_slots,
 )
+from agent_os.product.test_selection.config import TestSelectionConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
@@ -692,18 +693,17 @@ class ProjectConfig(Strict):
     # read-only-by-default worker has (agent_os/docs/adr/2026-09-15-workers-connect-read-only-by-default-
     # and-reach-the-owner-only-through-the-test-runner.md).
     test_command: str = "scripts/test.sh"
-    # Whether `agent_os.install` writes `.github/workflows/ci-host.yml`, a workflow running
-    # `test_command` on every pull request with no path filter. The control plane counts zero
-    # checks on a PR's head SHA as merge condition 1 not met, and `ci-agent-os.yml` only fires on
-    # `agent_os/**`; a host whose own CI already reports on every PR sets this to false
-    # (agent_os/docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md).
+    test_selection: TestSelectionConfig = TestSelectionConfig()  # docs/AGENT_OS.md §4.12
+    # Whether `agent_os.install` writes `.github/workflows/ci-host.yml`, running `test_command` on
+    # every pull request with no path filter: zero checks on a PR's head SHA fail merge condition 1
+    # and `ci-agent-os.yml` only fires on `agent_os/**`; a host whose own CI reports on every PR
+    # sets this to false (agent_os/docs/adr/2026-09-24-a-pr-with-no-checks-fails-the-ci-condition-and-every-host-ships-a-ci.md).
     install_host_ci: bool = True
     # How the control plane merges a PR it has verified (Duty 4 of `.claude/agents/control-plane.md`,
-    # rendered as `__MERGE_METHOD__`): the `merge_method` of GitHub's REST merge endpoint. Nothing
-    # in the mechanism needs a merge commit -- merge condition 4 compares content, not ancestry --
-    # so a host that squashes says so here instead of hand-editing the generated prompt, an edit
-    # `agent-os-install --force` would overwrite (agent-os#88). A value outside the three GitHub
-    # accepts fails the load rather than reaching a merge.
+    # rendered as `__MERGE_METHOD__`): GitHub's REST `merge_method`. Nothing in the mechanism needs
+    # a merge commit (merge condition 4 compares content, not ancestry), so a host that squashes
+    # says so here instead of hand-editing the generated prompt, an edit `agent-os-install --force`
+    # would overwrite (agent-os#88). A value outside the three GitHub accepts fails the load.
     merge_method: Literal["merge", "squash", "rebase"] = "merge"
     # The model of each `.claude/agents/*.md` definition `agent_os.install` writes (agent-os#96):
     # a host that moves a role to another model sets it here instead of hand-editing generated
