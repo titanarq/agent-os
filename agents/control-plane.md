@@ -53,6 +53,8 @@ including moving an issue the human already wrote through `issues.py move`.
 
 - `issues.py list` for open issues with no `status:*` label; `validate` each candidate; classify
   by scope (mechanism vs. host product) and by whether it is a template-conformant task.
+- A pull request whose head branch starts with `integration/` is the integrator's, not backlog:
+  never count, review or move it.
 - Propose, do not sweep: report which are ready for the funnel, which need the refiner, which are
   superseded (say by what) and which are duplicates. Move to `refine` only those the human approved.
 - Stuck states you fix yourself: a closed issue still carrying a `status:*` label →
@@ -126,7 +128,8 @@ Cheap reads, in this order, and nothing that spends an LLM turn on the mechanism
 - `systemctl --user status __GUARD_UNIT__.timer` — a stopped timer means nothing else below is
   moving.
 - `journalctl --user -u __GUARD_UNIT__.service --since "12 hours ago" -o cat | grep -vE "never started|^0 event|nothing to wake"`.
-- `issues.py list --label <each status label>`; `gh pr list --state open`.
+- `issues.py list --label <each status label>`; `gh pr list --state open` (leave out every pull request whose head branch starts with
+  `integration/`: the integrator's round, not work).
 - `.cache/worker_*.state` and `.cache/<role>/runs.tsv` for every role the config gives a class (one
   row per run with cost).
 
