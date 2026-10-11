@@ -6,6 +6,9 @@ reason when a rule of `agent_os.product.dispatch.rules` refuses the issue.
 
 `python -m agent_os.product.dispatch headroom [--json]` is the planner's and the control's question:
 can more work run at once right now (`agent_os.product.dispatch.headroom`). Read-only, exit 0.
+
+`python -m agent_os.product.dispatch new-slot BACKEND --alive-workers N` is the driver's question
+when every slot of BACKEND is busy: which slot to create, or why none (`...dispatch.slots`).
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from collections.abc import Sequence
 from agent_os import issues, lib
 from agent_os.product.dispatch.headroom.command import headroom
 from agent_os.product.dispatch.rules import is_v2_host, tree_dispatch_refusals
+from agent_os.product.dispatch.slots.creation import new_slot_command
 
 OPEN_ISSUES_LIMIT = "500"
 
@@ -52,7 +56,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "headroom", help="can more work run at once right now, and what holds each ready issue back"
     )
     headroom_parser.add_argument("--json", action="store_true", help="the same answer as JSON")
+    new_slot = sub.add_parser("new-slot", help="the slot to create when every slot is busy")
+    new_slot.add_argument("backend")
+    new_slot.add_argument("--alive-workers", type=int, required=True)
+    new_slot.add_argument("--cache-dir", default=None)
     args = parser.parse_args(argv)
     if args.command == "headroom":
         return headroom(as_json=args.json)
+    if args.command == "new-slot":
+        return new_slot_command(args.backend, args.alive_workers, args.cache_dir)
     return start_gate(args.issue, args.running)

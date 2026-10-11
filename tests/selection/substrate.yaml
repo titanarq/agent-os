@@ -1,0 +1,32 @@
+groups:
+  - id: guard
+    covers: [agent_os/guard.py]
+    tests: [tests/test_agent_guard.py]
+  - id: library
+    covers: [agent_os/lib.py]
+    tests: [tests/test_agent_lib.py]
+  - id: issues
+    covers: [agent_os/issues.py]
+    tests: [tests/test_issues_cli.py]
+  - id: gh-app-token
+    covers: [agent_os/gh_app_token.py]
+    tests: [tests/plumbing/test_gh_app_token.py]
+  - id: doctor
+    covers: [agent_os/doctor.py]
+    tests: [tests/test_doctor.py, tests/product/doctor]
+  - id: backends
+    covers: [agent_os/streams]
+    tests: [tests/plumbing/test_streams.py, tests/test_backends_config.py]
+  - id: install
+    covers: [agent_os/install.py, templates, agents]
+    tests: [tests/test_install.py, tests/test_install_templates.py]
+  - id: render-and-prompts
+    covers: [agent_os/render.py, prompts, tests/golden, tests/capture_golden.sh]
+    tests:
+      - tests/test_render.py
+      - tests/test_prompt_templates.py
+      - tests/product/worker/test_prompts_forbid_killing_by_pattern.py
+      - tests/product/quality/test_quality_validator_prompt.py
+  - id: adoption-docs
+    covers: [docs/ADOPTION.md, docs/adoption]
+    tests: [tests/test_adoption_doc.py, tests/test_backends_config.py]

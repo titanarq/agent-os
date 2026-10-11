@@ -8,8 +8,9 @@ from agent_os.product.session_ingest.rework_ticket import rework_key
 
 
 class GitHubReworkTracker:
-    def __init__(self) -> None:
-        self._repo: str | None = None
+    def __init__(self, repo: str | None = None) -> None:
+        """`repo` names another repository than the host's (the mechanism's, for a puntal change)."""
+        self._repo = repo
 
     @property
     def repo(self) -> str:
@@ -19,7 +20,10 @@ class GitHubReworkTracker:
         return self._repo
 
     def find(self, session_id: str, node_id: str) -> int | None:
-        return find_by_key(self.repo, rework_key(session_id, node_id))
+        return self.find_by_key(rework_key(session_id, node_id))
+
+    def find_by_key(self, key: str) -> int | None:
+        return find_by_key(self.repo, key)
 
     def open(self, title: str, body: str, labels: list[str]) -> int:
         return int(create_issue(self.repo, title, body, labels)["number"])

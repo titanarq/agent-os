@@ -13,8 +13,8 @@
 #     an explicit <from> is honoured verbatim and fetches nothing.
 #   agent_os/bin/worker_task.sh <qwen|claude> start <issue> [extra-brief.md] [--force]
 #     refuses, writing nothing, at `planner.max_parallel_issues` workers already alive across
-#     every backend, or when an alive worker's own issue shares a `module:` label with this one
-#     (#374): the driver enforces both, the planner only reads the refusal.
+#     every backend (when the host sets one), or when an alive worker's own issue shares a `module:`
+#     label with this one (#374): the driver enforces both, the planner only reads the refusal.
 #   agent_os/bin/worker_task.sh <qwen|claude> status                       # alive? context? last lines
 #   agent_os/bin/worker_task.sh <qwen|claude> watch                        # follow the events
 #   agent_os/bin/worker_task.sh <qwen|claude> collect                      # commits, audit, cost
@@ -36,11 +36,13 @@
 #   agent_os/bin/worker_task.sh <qwen|claude> launch-stage  # the next stage, no gates -- chaining only
 #     Both are called by the run's own subshell, never by hand: `start` and `resume` are the doors.
 #
-#   Every subcommand takes `--slot <n>` (#90): which of the backend's `project.backends.<name>.slots`
-#   concurrent workers it addresses. Slot 1 is the backend's own worktree and `.cache/worker_<name>.*`
-#   files; slot n > 1 is `<worktree>-<n>` and `.cache/worker_<name>-<n>.*`. A backend with one slot
-#   needs no `--slot`. With several: `start` and `branch` pick a free slot themselves (one whose
-#   branch already names the issue first), `resume`, `collect`, `open-pr`, `stop` and `watch` take
+#   Every subcommand takes `--slot <n>` (#90): which of the backend's concurrent workers it addresses.
+#   Slot 1 is the backend's own worktree and `.cache/worker_<name>.*` files; slot n > 1 is
+#   `<worktree>-<n>` and `.cache/worker_<name>-<n>.*`. A backend with one slot needs no `--slot`.
+#   `start` and `branch` pick a free slot themselves (one whose branch already names the issue
+#   first) and, when every slot is busy, make the next one: `project.backends.<name>.slots` is how
+#   many `init` precreates, never a limit (bin/worker/worker_slot_selection.sh). With several slots
+#   `resume`, `collect`, `open-pr`, `stop` and `watch` take
 #   `--issue <N>` for the slot that recorded issue N, `status` and `init` without one cover every
 #   slot, and every other subcommand refuses to guess.
 #   The run's own subshell carries its slot, so `stage-exit`, `open-pr` and the chain stay on it.
@@ -61,7 +63,7 @@
 # under `## Supplement` -- and moves the issue to `doing`. `resume` reuses that same file and the
 # issue recorded by the `start` it is resuming.
 #
-# One worktree per worker slot -- per backend, unless it declares `slots:` (#90) -- so every worker
+# One worktree per worker slot -- one per backend at least, more on demand (#90) -- so every worker
 # can run at once without touching another's tree; the paths
 # and the GitHub App slugs come from config/agents.yaml's `project:` section, never from here
 # (agent_os/docs/adr/2026-09-14-the-agent-mechanism-is-project-agnostic-and-configured-not-coded.md).
@@ -169,23 +171,9 @@ while [ $# -gt 0 ]; do
 done
 set -- ${remaining_arguments[@]+"${remaining_arguments[@]}"}
 
-# One `<backend> <slot> <key> <worktree>` line per slot of THIS backend, derived by `agent_os.lib`
-# -- the same derivation the guard reads, so the two can never name a slot's files differently. A
-# backend with no worktree has no slot line at all, and is slot 1 on an empty worktree, which is
-# what every refusal below has always said about it (`no worktree at`).
-slot_keys=("")
-slot_worktrees=("")
-while IFS=$'\t' read -r _ slot_number slot_key slot_worktree; do
-  [ -n "$slot_number" ] || continue
-  slot_keys[slot_number]=$slot_key
-  slot_worktrees[slot_number]=$slot_worktree
-done < <("$agent_python" -m agent_os.lib worker-slots "$backend" 2>/dev/null)
-slot_count=$((${#slot_keys[@]} - 1))
-if [ "$slot_count" -lt 1 ]; then
-  slot_count=1
-  slot_keys[1]=$backend
-  slot_worktrees[1]=$(backend_value "$backend" worktree --path)
-fi
+# shellcheck source=agent_os/bin/worker/worker_slot_selection.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_slot_selection.sh"
+load_slot_tables
 
 # `WORKER_CACHE_DIR` moves every one of these at once, and `agent_guard.py`'s `cache_dir()` reads
 # the same variable for the paths IT derives -- `worker_paths()`, `planner_events/`, `wake`'s
@@ -878,99 +866,18 @@ and then stop. The driver launches the next stage in a new process."
 # of them guesses: a wrong guess stops, freezes or publishes another run's work.
 # ----------------------------------------------------------------------------------------------
 
-# Every slot's recorded issue and whether it is alive, for a refusal that has to say which slot to
-# name. Leaves the slot variables on the last slot listed; every caller exits right after.
-list_slots() {
-  local n
-  for n in $(seq 1 "$slot_count"); do
-    use_slot "$n"
-    printf '  --slot %s  %s  %s, issue %s\n' "$n" "$worktree" \
-      "$(alive && echo "running pid $(cat "$pidfile")" || echo idle)" \
-      "$(cat "$issuefile" 2>/dev/null | sed 's/^/#/' || true)"
-  done
-}
-
-# A slot `start` or `branch` may take: not alive, and a worktree there to work in. Leaves the slot
-# variables on the last slot looked at.
-slot_is_free() {
-  use_slot "$1"
-  ! alive && [ -e "$worktree/.git" ]
-}
-
-# THE FREE SLOT A DISPATCH TAKES, most specific first: one whose worktree is already on the branch
-# this work belongs on (`branch_wanted`, the exact name `branch` was asked for, or `issue_wanted`,
-# the planner's `<word>/<issue>-<slug>` shape `start`'s base gate accepts) -- which is what makes
-# the planner's `branch task/<N>-<slug>` and the `start <N>` after it land on the SAME slot; then a
-# clean one holding no cut run awaiting its relaunch; then any clean one; then the first free one,
-# whose refusal (`worktree is dirty`) then says what is wrong with it. No free slot at all is a
-# refusal of its own, written before anything else is -- the third dispatch onto two busy slots
-# must leave every file exactly as it was.
-pick_free_slot() {
-  local issue_wanted=$1 branch_wanted=$2 n current free=() clean_uncut="" clean="" any_worktree=""
-  for n in $(seq 1 "$slot_count"); do
-    use_slot "$n"
-    [ -e "$worktree/.git" ] && any_worktree=yes
-    slot_is_free "$n" || continue
-    free+=("$n")
-    current=$(git -C "$worktree" branch --show-current 2>/dev/null || true)
-    if [ -n "$branch_wanted" ] && [ "$current" = "$branch_wanted" ]; then
-      use_slot "$n"; return 0
-    fi
-    if [ -n "$issue_wanted" ] \
-      && printf '%s\n' "$current" | grep -qE "(^|/)[a-z][a-z0-9-]*/$issue_wanted([-/]|$)"; then
-      use_slot "$n"; return 0
-    fi
-    hide_scratchpad_from_git
-    [ -z "$(uncommitted_work)" ] || continue
-    [ -n "$clean" ] || clean=$n
-    if [ -z "$clean_uncut" ] && ! grep -q '^CUT_BY_GUARD' "$statefile" 2>/dev/null; then
-      clean_uncut=$n
-    fi
-  done
-  if [ "${#free[@]}" -eq 0 ]; then
-    # No worktree in any slot is the refusal every subcommand has always given: slot 1's own.
-    if [ -z "$any_worktree" ]; then use_slot 1; return 0; fi
-    echo "refusing to dispatch: every slot of backend '$backend' is busy" \
-      "($slot_count of $slot_count running) -- wait for one to finish"
-    list_slots
-    exit 1
-  fi
-  use_slot "${clean_uncut:-${clean:-${free[0]}}}"
-}
-
-# THE SLOT WHOSE RECORDED ISSUE IS THIS ONE, for `--issue <N>` (`resume`, `collect`, `open-pr`,
-# `stop`, `watch`): the command addresses the run that recorded the issue, in the worktree that
-# holds its branch. The newest record wins when
-# two slots have run the same issue at different times.
-pick_slot_of_issue() {
-  local wanted=$1 n found="" found_file=""
-  for n in $(seq 1 "$slot_count"); do
-    use_slot "$n"
-    [ "$(cat "$issuefile" 2>/dev/null || true)" = "$wanted" ] || continue
-    if [ -z "$found" ] || [ "$issuefile" -nt "$found_file" ]; then
-      found=$n
-      found_file=$issuefile
-    fi
-  done
-  if [ -z "$found" ]; then
-    echo "$subcommand refused: no slot of backend '$backend' recorded issue #$wanted"
-    list_slots
-    exit 1
-  fi
-  use_slot "$found"
-}
-
 subcommand=${1:-status}
 if [ -n "$requested_slot" ]; then
   case "$requested_slot" in
     '' | *[!0-9]*) requested_slot=0 ;;
   esac
-  if [ "$requested_slot" -lt 1 ] || [ "$requested_slot" -gt "$slot_count" ]; then
-    echo "usage: backend '$backend' has no slot ${requested_slot} -- it has $slot_count (project.backends.$backend.slots)"
+  if [ -z "${slot_keys[requested_slot]:-}" ]; then
+    echo "usage: backend '$backend' has no slot ${requested_slot} -- it has ${slot_numbers[*]}" \
+      "(a dispatch makes the next one when every slot is busy)"
     exit 2
   fi
   use_slot "$requested_slot"
-elif [ "$slot_count" -eq 1 ]; then
+elif [ "$slot_count" -eq 1 ] && [ "$subcommand" != start ] && [ "$subcommand" != branch ]; then
   use_slot 1
 else
   case "$subcommand" in
@@ -979,7 +886,7 @@ else
       # Every slot, one after the other, each through its own call -- the report and the idempotent
       # creation are the two things that are the same question asked of every slot.
       worst=0
-      for n in $(seq 1 "$slot_count"); do
+      for n in "${slot_numbers[@]}"; do
         use_slot "$n"
         echo "=== $backend slot $n ($worktree) ==="
         "$agent_os_dir/bin/worker_task.sh" "$backend" "$subcommand" --slot "$n" || worst=$?
@@ -1170,7 +1077,7 @@ start|resume)
       alive_pidfile "$cache/worker_$other.pid" && other_backends_alive+=("$other")
     done < <("$agent_python" -m agent_os.lib worker-slots)
     max_parallel_issues=$("$agent_python" -m agent_os.lib planner-value max_parallel_issues)
-    if [ "${#other_backends_alive[@]}" -ge "$max_parallel_issues" ]; then
+    if [ -n "$max_parallel_issues" ] && [ "${#other_backends_alive[@]}" -ge "$max_parallel_issues" ]; then
       echo "refusing to dispatch: ${#other_backends_alive[@]} worker(s) already running" \
         "(>= planner.max_parallel_issues=$max_parallel_issues) -- wait for one to finish"
       exit 1
@@ -1300,6 +1207,7 @@ stage-exit)
   # -- and, for a run that died before its first event, of the words it printed instead.
   quota=$("$agent_python" -m agent_os.lib quota-status "$events" --log "$logfile" --backend "$backend" \
     2>/dev/null || echo allowed)
+  [ "$quota" != exhausted ] || "$agent_python" -m agent_os.product.tracker.quota_verdict exhausted --backend "$backend" || true
   # A backend the account's quota refused DID start: it is a quota cut below, never this.
   if [ "$backend_status" != 0 ] && [ ! -s "$events" ] && [ "$quota" != exhausted ]; then
     # ANY non-zero status, not only 127. The EVENT STREAM is what carries the weight here: a
@@ -1509,7 +1417,6 @@ open-pr)
   # Below the `ahead` check on purpose: a branch on the base itself, or with nothing on it, has
   # already exited above, and neither of them has anything to conflict with.
   conflicting_paths=""
-  merge_failed=""
   merge_ref=""
   # THE TREE MUST BE COMMITTED BEFORE THE MERGE, or the merge never starts. `git merge` refuses
   # outright when tracked files are modified, and the success arm of `stage-exit` (the last stage
@@ -1563,12 +1470,11 @@ open-pr)
       # a missing committer identity, a broken index. That is NOT "no conflict": pushing now
       # would publish a branch unmerged with its base while reporting nothing wrong, which is the
       # case this step exists to prevent. Stop before the push and say so.
-      merge_failed=yes
       write_state "BLOCKED reason=merge_failed base=$base"
       echo "open-pr: merging $base into $branch never started (no unmerged paths, so not a"
       echo "  conflict): an untracked file in the way, or no committer identity. NOT pushing --"
       echo "  a branch pushed unmerged is the silent no-CI case, and this run will not create one."
-      git -C "$worktree" status --porcelain | sed 's/^/  /'
+      block_on_a_merge_that_never_started "$issue" "$branch" "$base"
       exit 1
     fi
   fi

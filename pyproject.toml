@@ -27,12 +27,14 @@ agent-os-lib = "agent_os.lib:main"
 agent-os-tree = "agent_os.product.tree.cli:main"
 agent-os-sessions = "agent_os.product.sessions.cli:main"
 agent-os-quality = "agent_os.quality.cli:main"
+agent-os-tests = "agent_os.product.test_selection.cli:main"
 agent-os-install = "agent_os.install:main"
 agent-os-doctor = "agent_os.doctor:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.5",  # the suite runs with -n 6 (CI, bin/dev/run_suite.sh)
     "ruff==0.17.0",  # keep equal to the pin in bootstrap.sh
 ]
 
@@ -54,7 +56,7 @@ extend-select = ["DTZ"]
 testpaths = ["tests"]
 # Shared builders sit beside the tests that use them (`tree_helpers`, `compile_support`) and are
 # imported by name from any folder under `tests/product`.
-pythonpath = ["tests/product/tree", "tests/product/dispatch"]
+pythonpath = ["tests/product/tree", "tests/product/dispatch", "tests/product/sessions"]
 markers = [
     "real_agents_paused: the test exercises `agent_os.guard._agents_paused` itself, not the suite's default 'not paused'",
 ]

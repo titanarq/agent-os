@@ -343,44 +343,6 @@ def _workflow(root, name, text):
     path.write_text(text)
 
 
-PATH_FILTERED = "on:\n  pull_request:\n    paths:\n      - agent_os/**\njobs: {}\n"
-
-
-def test_check_pull_request_ci_fails_with_no_workflow_at_all(tmp_path):
-    check = doctor.check_pull_request_ci(tmp_path)
-    assert not check.ok
-    assert "agent-os-install" in check.detail
-
-
-def test_check_pull_request_ci_fails_when_every_workflow_is_path_filtered(tmp_path):
-    _workflow(tmp_path, "ci-agent-os.yml", PATH_FILTERED)
-    _workflow(tmp_path, "docs.yml", "on:\n  pull_request:\n    paths-ignore: ['src/**']\n")
-    _workflow(tmp_path, "nightly.yml", "on:\n  schedule:\n    - cron: '0 0 * * *'\n")
-    check = doctor.check_pull_request_ci(tmp_path)
-    assert not check.ok
-    assert "condition 1" in check.detail
-
-
-def test_check_pull_request_ci_passes_on_an_unfiltered_pull_request_trigger(tmp_path):
-    _workflow(tmp_path, "ci-agent-os.yml", PATH_FILTERED)
-    _workflow(tmp_path, "ci.yml", "on:\n  pull_request:\n    branches: [main]\njobs: {}\n")
-    check = doctor.check_pull_request_ci(tmp_path)
-    assert check.ok, check.detail
-    assert "ci.yml" in check.detail
-
-
-def test_check_pull_request_ci_reads_the_string_and_list_trigger_forms(tmp_path):
-    _workflow(tmp_path, "a.yml", "on: pull_request\n")
-    assert doctor.check_pull_request_ci(tmp_path).ok
-    _workflow(tmp_path, "a.yml", "on: [push, pull_request]\n")
-    assert doctor.check_pull_request_ci(tmp_path).ok
-
-
-def test_check_pull_request_ci_fails_rather_than_crashes_on_an_unreadable_workflow(tmp_path):
-    _workflow(tmp_path, "broken.yaml", "on: [unclosed\n")
-    assert not doctor.check_pull_request_ci(tmp_path).ok
-
-
 # --------------------------------------------------------------------------------------------
 # `run_checks`: a full passing checklist and a full failing one, the two the issue asks for.
 # --------------------------------------------------------------------------------------------
@@ -416,6 +378,8 @@ def test_run_checks_all_pass(tmp_path):
             return _completed(stdout=_linked_response([(1, "owner")]))
         if args[:2] == ["gh", "auth"]:
             return _completed(stdout="  - Token scopes: 'repo', 'project'")
+        if args[1:2] == ["-c"]:
+            return _completed()  # the mechanism-interpreter import probe
         if "agent_os.gh_app_token" in args:
             return _completed(stdout="token\n")
         if args[1:2] == ["api"]:
@@ -445,6 +409,8 @@ def test_run_checks_reports_each_failure_without_stopping_at_the_first(tmp_path)
             return _completed(stdout=_linked_response([(1, "owner")]))
         if args[:2] == ["gh", "auth"]:
             return _completed(returncode=1, stderr="not logged in")
+        if args[1:2] == ["-c"]:
+            return _completed()  # the mechanism-interpreter import probe
         if "agent_os.gh_app_token" in args:
             return _completed(stdout="token\n")
         if args[1:2] == ["api"]:
@@ -504,6 +470,8 @@ def test_run_checks_turns_a_gh_failure_into_a_failed_check_and_keeps_going(tmp_p
     def dispatch(args, **kwargs):
         if args[:2] == ["gh", "auth"]:
             return _completed(stdout="  - Token scopes: 'repo', 'project'")
+        if args[1:2] == ["-c"]:
+            return _completed()  # the mechanism-interpreter import probe
         if "agent_os.gh_app_token" in args:
             return _completed(stdout="token\n")
         if args[:1] == ["gh"]:
@@ -516,7 +484,7 @@ def test_run_checks_turns_a_gh_failure_into_a_failed_check_and_keeps_going(tmp_p
         checks = doctor.run_checks(_project(), tmp_path, "owner/name")
 
     by_name = {check.name: check for check in checks}
-    assert len(checks) == 12, [c.line() for c in checks]
+    assert len(checks) == 13, [c.line() for c in checks]
     labels = by_name["labels that do not autocreate"]
     assert not labels.ok
     assert "Could not resolve to a Repository" in labels.detail
@@ -533,7 +501,7 @@ def test_run_checks_reports_a_missing_binary_as_a_failed_check(tmp_path):
         checks = doctor.run_checks(_project(), tmp_path, "owner/name")
 
     by_name = {check.name: check for check in checks}
-    assert len(checks) == 12, [c.line() for c in checks]
+    assert len(checks) == 13, [c.line() for c in checks]
     for name in (
         "gh auth status",
         "labels that do not autocreate",

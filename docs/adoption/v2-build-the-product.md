@@ -27,24 +27,28 @@ worker's), `dec-every-pull-request-gets-a-code-quality-review`, `fr-a-usable-pro
 6. Merge only when every check is SUCCESS and the head contains `origin/main`
    (`gh pr view <PR> --json headRefOid,statusCheckRollup,mergeable`; `git fetch`; `git merge-base
    --is-ancestor origin/main <head>`), as a merge commit: `gh pr merge <PR> --merge --match-head-commit
-   <sha>`; then `python -m agent_os.issues move <N> done`. A rejected pull request is reworked once with
-   the recipe below; a second rejection goes to a person (the shell took three rounds, each decided by one).
-7. Rework after `CHANGES_REQUESTED`: if `worker_task.sh claude resume --issue <N>` refuses because every
-   stage is done, append a stage with the reviewer's fixes to the issue's `## Stages` (`python -m
-   agent_os.issues update <N> --body-file <file>`) and run `resume --issue <N> --after manual --context
-   "<fixes>"`; check the event stream grows in two minutes.
+   <sha>`; then `python -m agent_os.issues move <N> done`. A rejected pull request is reworked once
+   (step 7); a second rejection goes to a person (the shell took three rounds, each decided by one).
+7. Rework after `CHANGES_REQUESTED`: `agent_os/bin/worker_task.sh claude resume --issue <N> --rework`
+   appends the stage `Address the changes requested on PR #<n>` to the issue's `## Stages` and launches it
+   with the newest settling review as context (a plain `resume` refuses a run whose every stage is done);
+   check the event stream grows in two minutes. The planner's prompt says the same and counts two such
+   stages as the attempts before a person decides.
 **Check.** Smoke the product with no spend after each ticket that touches the web (the host's run script,
 then `curl` its health route); the validator's verdict and the merge sha are on the issue.
 **First time.** The first worker (08-10, 0.59 USD) opened a pull request with CI red and the validator
 approved it -- fixed: `issues move review` now judges the checks, the validator asks for changes, and a
-malformed `Node-Change` trailer blocks `open-pr` (#138, #139). The worker does not run the host's
-quality ratchet before opening the pull request, so ratchet failures arrive as rework (open: #26 cost a
-second round). `open-pr` with `merge_failed` writes BLOCKED without moving the issue to
-`status:blocked-on-human` (open). Ticket nodes that name files a later ticket deleted are not caught by the
-tree doctor (open). `status` and `collect` sometimes take over 100 s (open). A pull request opened before
+malformed `Node-Change` trailer blocks `open-pr` (#138, #139). The worker did not run the host's quality
+ratchet before opening the pull request, so ratchet failures arrived as rework (#26 cost a second
+round) -- fixed: `open-pr` refuses a branch that fails the ratchet (agent-os#145). `open-pr` with
+`merge_failed` wrote BLOCKED without moving the issue to `status:blocked-on-human` -- fixed: it comments
+what was in the way and moves it (agent-os#150). Ticket nodes that named files a later ticket deleted were
+not caught by the tree doctor -- fixed: it reports an `implementation` path that does not exist
+(agent-os#145). `status` and `collect` sometimes take over 100 s (open). A pull request opened before
 the branch contains `origin/main` goes red against a moved main: the driver merges `origin/main` first,
 and the merge rule above is the guard.
-**Baseline.** Eleven tickets merged, 43.5 USD, serial from 11:53 to 13:22 (about 22 min per ticket),
+**Baseline.** Eleven tickets, 15 rounds in all, merged for 43.5 USD in 5 h 25 min of the first host's
+clock, serial from 11:53 to 13:22 (about 22 min per ticket),
 two slots from 16:02. Per ticket (worker + validator): wave 0 web up 1.45; event log 1.56; persistence 5.23;
 web skeleton 2.69; executor 3.26; register 1.65; log in and out 1.54; shell 13.22 over 3 rounds; progress
 signal 2.61; one-command tests 2.42 over 2 rounds; owner verdict 7.88 over 2 rounds. Eight were approved in
@@ -60,27 +64,36 @@ signal appears in 1.4 ms. These are single measurements, not a distribution.
 no code.
 **Why.** `fr-independent-work-runs-in-parallel`; `dec-dispatch-never-runs-two-tickets-on-the-same-code`.
 **How.**
-1. `project.backends.claude.slots: N` and `planner.max_parallel_issues: N`; `worker_task.sh claude init`
-   creates `<worktree>-2..N`. Give each slot an interpreter and `.env` of its own (below).
+1. Nothing to size: leave `project.backends.claude.slots` and `planner.max_parallel_issues` out. When a
+   dispatch finds every slot busy, `worker_task.sh claude branch`/`start` makes the next one
+   (`<worktree>-N`, with the host's `worktree_links` and setup command), so the number of workers follows the
+   number of independent tickets and the quota is the only limit. `slots: N` only precreates slots with
+   `worker_task.sh claude init`; set `max_parallel_issues` only if you want a ceiling anyway.
 2. Before each launch ask the gate: `python -m agent_os.product.dispatch start-gate <N> <live issues>`;
-   launch if it is 0, then `worker_task.sh claude start <N> --slot <S>`. With more than one slot every
-   subcommand except `start`, `branch`, `status`, `init` and `resume --issue` needs `--slot`. Ask the question after every finished
-   worker: does more fit? Free the slot when its worker ends, not when its pull request merges.
+   launch if it is 0 with `worker_task.sh claude branch ...` then `start <N>` (they land on the same slot).
+   With more than one slot `collect`, `open-pr`, `stop`, `watch` and `resume` take `--issue <N>`. Ask the
+   question after every finished worker: does more fit? (`agent_os.product.dispatch headroom` answers it
+   read-only.) A free slot is reused before another is made.
 3. Merge with step 6 of rung 4, one pull request at a time; when another slot merged first, merge
    `origin/main` into the branch, wait for CI, then merge.
-4. Watch the shared quota: it belongs to the backend, so an exhausted window cuts every live slot.
-   Park workers first; never the puntales the owner is trying.
+4. Watch the shared quota: it belongs to the backend, so an exhausted window cuts every live slot and no new
+   slot is made until it reopens. Park workers first; never the puntales the owner is trying.
 **Check.** `status` without `--slot` lists every slot; `start-gate` refuses two tickets whose `touches`
 overlap; each slot's worktree is clean before it starts.
 **First time.** `worktree_links` symlinks the root `.venv` into each slot, and `.gitignore` `.venv/`
-does not cover a symlink, so the worktree is dirty and the branch step refuses (open; first host's
-workaround: a virtualenv of its own per slot, built by hand). A quota cut with no events is recorded as
-`no_stage_commit` (open). `collect`, `open-pr`, `stop` and `watch` demand `--slot` although one run owns
-the issue (open). A rework after rejection needs the manual stage (rung 4, step 7) (open). The planner
-does not page by the cap, only records it (open). Slots are a fixed number, not on demand (open).
+does not cover a symlink, so the worktree was dirty and the branch step refused (first host's workaround:
+a virtualenv of its own per slot, built by hand) -- fixed: the driver's own links are not dirt
+(agent-os#146). A quota cut with no events was recorded as `no_stage_commit` -- fixed: it is a quota cut
+(#146). `collect`, `open-pr`, `stop` and `watch` demanded `--slot` although one run owns the issue --
+fixed: they take `--issue` (#146). A rework after rejection needed a hand-made stage -- fixed:
+`resume --rework` (#146). The planner did not page by the cap, only recorded it -- fixed: every run asks
+`dispatch headroom` whether more can start, and starts all of it (agent-os#144). Slots were a fixed number,
+not on demand -- fixed: the driver makes the next one (#152); a slot made for a ticket the start gate then
+refused stays idle and is reused, never deleted, so prune the extra worktrees by hand when the work is done.
 **Baseline.** Two slots from 16:02 (PR #30), five from 17:22 (PR #44); merges in the 17:18-17:33 window:
 three, against one per 22 minutes serial.
-**First host.** Five slots on one backend, `max_parallel_issues` 5, venvs `...-claude-2` to `-5`.
+**First host.** Five slots on one backend, `max_parallel_issues` 5, venvs `...-claude-2` to `-5`: delete the two
+keys from its `config/agents.yaml` after the `subtree pull` and it grows past five on demand; the five stay.
 
 ## Rung 6 - The test session
 
@@ -100,20 +113,24 @@ by Agentos); `dec-memory-is-files-in-git-and-a-lesson-climbs-to-a-check` (what t
 evidence and hardens the node).
 **How.**
 1. Build it as tickets of rung 4, after the owner's verdict on an improvised answer: the panel and its header
-   button in the shell, the session file the app writes when the owner closes the session
-   (`<tree.test_sessions_dir>/<id>.json`, the contract of `docs/AGENT_OS.md` section 4.11), and one command
+   button in the shell, the session file the app writes as the owner sends each message (no close button: it closes by
+   inactivity; `<tree.test_sessions_dir>/<id>.json`, the contract of `docs/AGENT_OS.md` section 4.11), and one command
    that starts the product with test data.
 2. When the expert compiles the tree, give every `uc-*` node the `depends_on` of its use (register, sign in,
    create, ...): the list is ordered by it, and a node without it falls back to file-name order.
 3. Keep the owner's web apart from the workers'. It runs from the main checkout, frozen while the owner
    tests; a newer version is offered on another port from a separate worktree over a copy of the owner's data
-   (a SQLite backup), never over the live file. A worker stops only what it launched, by PID (the rule that
-   `fix/rollout-stage1k` adds to `prompts/worker.md`). The quota is shared with the workers: park workers
+   (a SQLite backup), never over the live file. A worker stops only what it launched, by PID, never by pattern (`pkill -f`). The quota is shared with the workers: park workers
    first, never the puntales (rung 5, step 4).
-4. When the owner closes the session, `agent-os-sessions test-ingest` prints the plan and writes nothing;
-   read it, then `--apply`: an answered question goes into its node in the owner's words, a rejected case
+4. While the owner tests and after, `agent_os/.venv/bin/agent-os-sessions test-ingest` (the mechanism's
+   interpreter, substrate step 16, never the host's root `.venv`) prints the plan and writes nothing;
+   read it, then `--apply` (an open session of schema 2 is read as it goes, and again on every run): an
+   answered question goes into its node in the owner's words, a change the interpreter understood becomes one
+   keyed issue, a decision is kept for the next session in `understood.json`, a rejected case of schema 1
    becomes one keyed rework issue with the note quoted whole, an accepted case is recorded on the node as
-   `acceptances`. A worker commits the tree edits with `Node-Change: usage` and a body line
+   `acceptances`; the owner's text no item covers waits until the session closes. With
+   `sessions.confirm_before_dispatch` true (default) only a change the owner approved in the chat is launched: the plan lists the
+   others as `proposed` and the uncovered text as `held`, and `understood.json` carries both (`proposals`, `held`). A worker commits the tree edits with `Node-Change: usage` and a body line
    `Test-Session: <id>`; as it changes the what, it merges on the owner's word, not the validator's.
 **Check.** The owner opens the panel from the header on any page and finds the comments box with no case
 chosen; the list starts with what the others depend on; collapsing and navigating keep the draft; a rejected
@@ -127,18 +144,10 @@ ticket from verdict to fix, the loop `test-ingest` automates for a session of sc
 one round of changes) as the panel above, with the file at `schema: 2` and a thread whose messages carry
 `role: owner`. The list came out wrong ("Register" seventh) because the `uc-*` nodes declared no
 `depends_on`; the host fixed it in PR #66 (step 2). The owner's web died during the test: a worker's smoke
-test killed it by pattern (`pkill -f`); step 3 is the consequence. Open: `test-ingest` reads schema 1 only, and
-names and skips a closed session of schema 2 (exit 1, it stays pending) until its reader lands in a later
-pull request; the verdicts on improvised answers are summarised in the plan and nothing is written from
+test killed it by pattern (`pkill -f`); step 3 is the consequence. `test-ingest` now reads schema 2, open or
+closed (`fix/test-session-ingest-v2`). Open: the verdicts on improvised answers are summarised in the plan and nothing is written from
 them yet; the interpreter chat is not built.
 **Baseline.** Session ticket 4.39 USD (worker and validator), the rebuilt one 10.15 (worker 5.48, validator
 4.67, one round of changes), the first rejection fixed for 2.40. Single measurements, as in rung 4.
 **First host.** The panel is `web/app/shell/sessions/` with its detail in `web/docs/sesion-de-pruebas.md`;
 the owner's web runs from the main checkout, the new versions on a second port.
-
-## Not yet exercised in the first host
-
-The planner running unattended, the guard and its timer (armed only by the owner; the doctor stays red on
-the notification topic and the timer on purpose), the notification topic, slots on demand (no fixed
-number), question sessions through `agent-os-sessions open`, the progress board (`agent-os-tree board
-sync`), a second product (the baseline that `goal-improves-with-every-product` compares against).

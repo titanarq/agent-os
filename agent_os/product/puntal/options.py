@@ -116,9 +116,10 @@ def _render_contracts(config, host_root: pathlib.Path) -> tuple[str, str]:
     return fast, slow
 
 
-def resolve_options(*, args: argparse.Namespace, host_root: pathlib.Path) -> Options:
+def resolve_options(*, args: argparse.Namespace, host_root: pathlib.Path, action: str) -> Options:
     """Everything config answers, resolved once and refused loudly: a puntal that cannot be run as
-    configured must not reach a backend."""
+    configured must not reach a backend. The model is the `--model` flag's, else the one
+    `puntal.action_models` names for `action`, else the puntal class's."""
     try:
         config = load_agents_config()
         class_name, task_class = load_role_class(PUNTAL_ROLE)
@@ -162,7 +163,7 @@ def resolve_options(*, args: argparse.Namespace, host_root: pathlib.Path) -> Opt
     return Options(
         class_name=class_name,
         backend=task_class.backend,
-        model=args.model or task_class.model,
+        model=args.model or puntal.action_models.get(action) or task_class.model,
         effort=args.effort if args.effort is not None else puntal.effort,
         persistence_command=persistence_command,
         executor_command=executor_command,

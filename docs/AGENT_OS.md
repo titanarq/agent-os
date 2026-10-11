@@ -26,11 +26,11 @@ only the parts of the knowledge layer an issue names — never the whole reposit
 | Human | Writes/approves issues, flips `auto-ready`, answers `blocked-on-human`, merges PRs | the one collaborator account (e.g. `MatillaM`) | — |
 | Guard | Deterministic tick: budget, liveness, stall, quota, drift-logging, event-writing | acts through whichever identity a driver already minted; posts no comments of its own except the ntfy page | no LLM — pure Python (`agent_os.guard`) |
 | Planner | One-shot decision per wake: relaunch, dispatch, launch validator/refiner, page | its own App (`project.planner_app`) | class `planner`, model per `classes.planner.model` (example: `claude-sonnet-5-5`), 40k ctx / $2 |
-| Worker (claude) | Writes code for one issue, in its own worktree. The example config describes ONE backend, Claude Code (agent-os#116, `docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`); a second one (Qwen Code) stays possible and is the host's own addition | its own App (`project.backends.claude.app`) | classes `mechanical-sonnet` (400k ctx / $5) and `complex-sonnet` (800k ctx / $20), both `claude-sonnet-5-5` in the example |
+| Worker (claude) | Writes code for one issue, in its own worktree. The example config describes ONE backend, Claude Code (agent-os#116, `docs/tree/dec-one-backend-claude-code-with-opus-at-the-top.md`); a second one (Qwen Code) stays possible and is the host's own addition | its own App (`project.backends.claude.app`) | classes `mechanical-haiku` (400k ctx / $5, `claude-haiku-5-5`, the default for a small, fully specified change), `mechanical-sonnet` (the same on `claude-sonnet-5-5`, for the issues that already carry its mark) and `complex-sonnet` (800k ctx / $20, `claude-sonnet-5-5`) in the example (docs/adr/2026-10-10-puntals-and-mechanical-tasks-default-to-haiku-5-5.md) |
 | Validator | Reviews one PR against its issue's acceptance criteria | `project.role_apps.validator`, falls back to `planner_app` | class `validator`, model per `classes.validator.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
 | Refiner | Turns a raw/oversized issue into dispatchable sub-issues, or rewrites one in place | `project.role_apps.refiner`, falls back to `planner_app` | class `refiner`, model per `classes.refiner.model` (example: `claude-opus-5`), 200k ctx / $5 |
 | Expert | Populates the host's product tree under the owner's goals (small requirement and use-case nodes, experiments, questions with scope and default answer, challenges), settles every question of how itself or by a spike, receives every question before the owner, and opens one pull request on the tree (§4.9) | `project.role_apps.expert`, falls back to `planner_app` | class `expert`, model per `classes.expert.model` (example: `claude-sonnet-5-5`), 200k ctx / $5 |
-| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, §4.7); plans in one model turn with no tool, and the app's code applies what it planned (the slow path's one tool is the app's persistence API) | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-sonnet-5-5`), 30k ctx / $0.25 **per invocation** |
+| Puntal | Answers ONE live UI action of a product whose interface runs before its code does (Agentos v2, §4.7); plans in one model turn with no tool, and the app's code applies what it planned (the slow path's one tool is the app's persistence API) | none: no GitHub identity, no tracker access | class `puntal`, model per `classes.puntal.model` (example: `claude-haiku-5-5`; one action may name its own in `puntal.action_models`), 30k ctx / $0.25 **per invocation** |
 | CI | Lints and tests every PR (`.github/workflows/ci.yml`) | GitHub Actions | — |
 
 ```
@@ -69,7 +69,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | (nothing on the issue changes) → `new_dispatchable` event | Guard (`tick`) | the tick's dispatchable set gained a number the previous tick's did not have — a human labelling `status:ready`, `promote-refined`, a blocker closing, a cut run put back. **Not** rate-limited: an edge happens once (`agent_os/docs/adr/2026-09-16-a-newly-dispatchable-issue-is-an-edge-not-a-condition.md`, #384) | one event file; the set itself in `<planner cache dir>/dispatchable_seen.json` | `agent_os.guard` `dispatchable_scan`, `_write_new_dispatchable_event_if_gained`, `read_seen_dispatchable`/`write_seen_dispatchable` |
 | (nothing on the issue changes) → `pr_merged` event | Guard (`tick`) | one or more PRs merged since the last tick's remembered newest `mergedAt` (`.cache/planner/merged_seen.json`), but only when nothing is running AND at least one issue is dispatchable — a merge while a worker is alive, or with nothing dispatchable, still advances the remembered state but writes nothing (the worker's own `worker_finished`, or a later `new_dispatchable`, re-evaluates instead). First tick with no state on disk records it and writes nothing. A `gh` failure never advances the state. The same tick never writes both `pr_merged` and `idle_dispatchable`. **Not** rate-limited: an edge happens once (`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`, #413) | one event file, subject = newest merged PR number, detail lists the merged PRs and the dispatchable issues; `merged_seen.json` advanced | `agent_os.guard` `_write_pr_merged_event_if_gained`, `merged_seen.json` |
 | `status:ready` → `status:doing` | Driver (`worker_task.sh start`), launched by the planner or by hand | `new_dispatchable` (an issue *became* dispatchable — one tick's latency, no rate limit) or `idle_dispatchable` (a set *sitting* dispatchable with nothing running, rate-limited by `planner.idle_wake_minutes`); an issue whose backend has no worktree (#392), or whose backend's idle worktree is dirty (agent-os#86), is in neither | `issues.py move N doing`, `.cache/worker_<b>.state=STARTED`, `.issue`, `.brief.md` | `agent_os.guard:1078-1101`; `agent_os.lib:366-397` (`is_dispatchable`); `agent_os/bin/worker_task.sh:303-341` |
-| **fixed** (#374): `start` refuses past `planner.max_parallel_issues` alive workers, or when an alive worker's issue shares a `module:` label with the one starting | Driver (`worker_task.sh start`), not the planner | `start` invocation | counts alive workers across every slot of every backend in `project.backends` that has a worktree (`agent_lib.py worker-slots`; a backend's own other slots count too, #90); compares `module:` labels via `gh issue view --json labels`; refuses, writing nothing, at or above the cap or on overlap | `agent_os/bin/worker_task.sh` `start`; `planner.max_parallel_issues` in `config/agents.yaml`, `PlannerConfig` in `agent_os.lib`; agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md |
+| **fixed** (#374): `start` refuses past `planner.max_parallel_issues` alive workers (only when the host sets one: absent means no cap, stage 1l), or when an alive worker's issue shares a `module:` label with the one starting | Driver (`worker_task.sh start`), not the planner | `start` invocation | counts alive workers across every slot of every backend in `project.backends` that has a worktree (`agent_lib.py worker-slots`; a backend's own other slots count too, #90); compares `module:` labels via `gh issue view --json labels`; refuses, writing nothing, at or above the cap or on overlap | `agent_os/bin/worker_task.sh` `start`; `planner.max_parallel_issues` in `config/agents.yaml`, `PlannerConfig` in `agent_os.lib`; agent_os/docs/adr/2026-09-15-parallelism-is-a-configured-cap-enforced-by-the-driver.md |
 | `status:doing`, stage N/M committed → stage N+1 starts in a fresh process | Driver, from its exit hook | a stage process exits cleanly with a new `stage N/M:` commit landed and the guard's checks pass (agents-paused, quota, and the issue's cumulative cost AND cumulative tokens both under their class caps — either one passed ends the chain, #387) | fresh backend process (new session, never `--resume`), archives the finished stage's `.jsonl` under `.cache/spend/<issue>/` | `agent_os/bin/worker_task.sh` (chaining, `issue_cost_usd`/`issue_total_tokens`/`ceiling_passed`), `agent_os.guard` `check`, `agent_os.lib` `stages_completed`/`cumulative_cost_usd`/`cumulative_total_tokens`; agent_os/docs/adr/2026-09-15-work-is-staged-before-dispatch-and-each-stage-runs-in-a-fresh-process.md (#375) |
 | `status:doing` → `status:ai-completed` | Driver (`worker_task.sh open-pr`), called by the worker's own subshell | backend CLI exits on its own | branch push, `gh pr create` (`Closes #N`), `issues.py move N ai-completed` | `agent_os/bin/worker_task.sh:464-543` |
 | `status:doing` → `status:blocked-on-human` (no pull request): the branch's `Node-Change` trailers are not what the host's CI requires | Driver (`worker_task.sh open-pr`), before the merge and the push | a commit of the branch that touches the tree root has no trailer git reads (`missing-node-change`, `misplaced-node-change`: the line sits in a paragraph that is not the last one, as when a `Co-Authored-By:` follows a blank line), has two, a value outside the three, or `owner` (`owner-word-by-agent`: the owner's own word, which an agent never writes) | `.state=BLOCKED reason=malformed_node_change_trailer branch=...`, the command's own output as a comment on the issue, `issues.py move N blocked-on-human`; nothing pushed, no commit rewritten. A human rewords the commits and runs `open-pr` again, which rewrites `BLOCKED` to `DONE` | `bin/worker/worker_publication_refusals.sh`, `agent_os.product.tracker.branch_trailers` |
@@ -81,7 +81,7 @@ guard/planner ──(only when nothing can proceed without a human)──> notif
 | `status:doing` (worker asked for help) → `status:blocked-on-human` | Planner, on seeing `worker_finished` with `BLOCKED reason=` in `progress.log` | `worker_finished` event | `issues.py move N blocked-on-human` (prompt instruction, not code) | `agent_os/bin/planner_task.sh:172-179`; the worker only writes `BLOCKED` and comments, `agent_os/bin/worker_task.sh:225-230` |
 | **fixed** (#365): same, if the planner fails to label it | Guard (`tick`) | an open `status:doing` issue that no LIVE worker's `.cache/worker_<b>.issue` marker names, not `status:blocked-on-human` | one `orphan_doing` event per issue per `planner.idle_wake_minutes`; the planner's rules say what to do with it (back to `status:ready`, or ask the human if the branch carries work) | `agent_os.guard` `orphan_doing_issues`, `_write_orphan_doing_events_if_due`, `_issues_a_live_worker_is_running`; `agent_os/bin/planner_task.sh` |
 | `status:ai-completed` (PR open) → validator runs → **approved**: `status:review` | Planner launches validator — DETACHED, so the launch returns at once and the planner's own run ends without waiting for it (#400), and in an environment of its own: no `AGENT_RUN_*` of the run whose `wake` started that planner travels with the launch, so the validator cuts its worktree at the branch's head at its own launch time and writes its own `runs.tsv` row (#475); validator moves the issue | `worker_finished`/`validator_finished`; condition: open PR, no review yet from the validator's App | `gh pr review --approve`; `issues.py move N review` (refused while a CI check of the PR closing N is red or unfinished, `agent_os/product/tracker/pull_request_checks.py`; the validator reads `gh pr checks` first and requests changes citing the failed check) | `agent_os/bin/agent_task.sh:169-199`; trigger `agent_os/bin/planner_task.sh:111-127` |
-| `status:ai-completed` → validator → **changes requested**: label untouched, worker relaunched with the review as context | Planner, via `worker_task.sh resume --context` | `validator_finished` | `resume --after manual --context "<review>"` (counts as a relaunch attempt). When every stage of the issue is already committed a plain `resume` has "nothing to launch": `resume --issue <N> --rework` reads the newest settling review of the open pull request on the worktree's branch (`gh pr list --head`), appends one stage -- `Address the changes requested on PR #<n>`, with ` (round k)` from the second round -- to the issue's `## Stages`, and launches it with the review's text as context; it refuses, writing nothing, when the branch has no open pull request or the newest settling review is an approval or a dismissal, and a second call before that stage is committed adds no second stage (`bin/worker_rework.sh`, `agent_os/rework.py`) | `agent_os/bin/agent_task.sh:188-193`; `agent_os/bin/planner_task.sh:133-137` |
+| `status:ai-completed` → validator → **changes requested**: label untouched, worker relaunched with the review as context | Planner, via `worker_task.sh resume --issue <N> --rework` | `validator_finished` | `resume --issue <N> --rework`: a run whose every stage is committed has "nothing to launch" for a plain `resume`, so `--rework` reads the newest settling review of the open pull request on the worktree's branch (`gh pr list --head`), appends one stage -- `Address the changes requested on PR #<n>`, with ` (round k)` from the second round -- to the issue's `## Stages`, and launches it with the review's text as context; it refuses, writing nothing, when the branch has no open pull request or the newest settling review is an approval or a dismissal, and a second call before that stage is committed adds no second stage. A rework is an attempt of the planner's but not of `planner.relaunch_cap` (which counts guard cuts only), so the planner counts the rounds itself: with two such stages already in `## Stages`, the next CHANGES_REQUESTED review goes to `status:blocked-on-human`, not to a third `--rework` (`bin/worker/worker_rework.sh`, `agent_os/product/tracker/rework.py`, `prompts/planner.md`) | `agent_os/bin/agent_task.sh:188-193`; `agent_os/bin/planner_task.sh:133-137` |
 | `status:ai-completed` → validator → **doubt**: `status:blocked-on-human` | Validator, directly | validator decides | review starting with `@__HUMAN_LOGIN__` under `## Doubts` + move | `agent_os/bin/agent_task.sh:194-199` |
 | (no label changes) → `role_died` event → the planner reads the log and relaunches the role once | Guard (`tick`) detects, planner decides — the same split as `orphan_doing` | a one-shot role's PID dead while `.cache/<role>/<ts>.pid` is still on disk: removing that file is the run's own last step, so one still there is a run that never reached its end. The log of the same stamp tells the two shapes apart — no terminal `result` is `died_mid_run` (nothing it owed was delivered), a `result` with no `<role>_finished` after it is `ended_unannounced` (it may well have delivered). A LIVE run's file is skipped however long it has sat there (#400). The relaunch the planner makes on this event is a launch like any other (#475): its own brief, its own worktree at the branch's head at that moment, its own `runs.tsv` row, and no `AGENT_RUN_*` inherited from the run whose death was just reported | one event per dead run, naming the log; the PID file removed with it, which is what makes this an edge and not a condition — nothing else clears it, so leaving it would wake the planner to the same dead validator every five minutes. Nothing is written to the tracker | `agent_os.guard` `role_run_death`/`dead_role_runs`/`_write_role_died_events`; the detach itself in `agent_os/bin/agent_task.sh` (`agent_detached_run`, `agent_wait_for_own_session`, and `agent_run_environment_names` for the block a launch never carries over, #475); the planner's `role_died` rules in `agent_os/bin/planner_task.sh` |
 | `status:blocked-on-human` → label removed + `human_replied` event | Guard (`tick`) | a comment **by the human** (`project.human_login`) newer than the one that set the label — an agent's own comment on the issue it is blocked on never counts, whatever its timestamp: the mechanism's identities are `project.planner_app`, `backends.*.app` and `role_apps.*`, each commenting as `<slug>[bot]`. Until #397 any newer comment counted, and the planner's own "I am waiting for you" on #387 unblocked a question nobody had answered (2026-09-16) | removes the label; sets no other one | `agent_os.guard` `_check_human_replies`/`_latest_human_comment_at`; `agent_os.lib` `is_human_comment`/`mechanism_logins` |
@@ -100,7 +100,8 @@ Fixed since the table above was first written: the one-issue-per-`module:`-label
 between backends was a prompt sentence with no filter until #374 moved it, plus a configured
 parallelism cap (`planner.max_parallel_issues`), into `worker_task.sh start`; the relaunch cap
 moved into `worker_task.sh resume` the same way in #362. Neither depends on the planner LLM
-anymore.
+anymore. Since stage 1l the cap is optional (absent = none) and slots are made on demand, so
+the start gate by `touches`, not a number, is what keeps two tickets off the same code.
 
 Staged execution (#375) moves another decision out of the planner's prompt the same way: which
 stage runs next, and whether a clean exit counts as a completed stage or a cut, both derive
@@ -110,8 +111,8 @@ ends, `worker_finished` (every stage done) and `worker_cut` (one stage's process
 own commit). `worker_cut` also carries `open-pr`'s own endings, `BLOCKED reason=<reason>`
 (`malformed_node_change_trailer`, `quality_ratchet_failed`, `push_rejected`, `workflows_permission`, `merge_failed`): the work is
 committed and no pull request exists. The planner prompt says what to do with them: never `resume` the issue and never run `open-pr`
-again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it for the first three;
-`merge_failed` leaves the issue `doing`, with no comment) and mention the human with the reason.
+again blindly, make sure the issue is `status:blocked-on-human` (the driver sets it, with a comment
+saying what unblocks it, for every one of them) and mention the human with the reason.
 `tests/product/worker/test_planner_knows_open_pr_endings.py` reads
 the reasons from the drivers so a new one cannot go unnamed there.
 
@@ -258,7 +259,7 @@ and never removes: **`status:agents-paused` on the tracking epic** (`project.tra
 ## 3. Budget: where it is set, measured, recorded, and where it is not visible
 
 **Where it is set.** The issue template ends with `<!-- budget: <class> -->`
-(`.github/ISSUE_TEMPLATE/task.md:26`, `bug.md:27`, default `mechanical-sonnet` in the example config); the class resolves
+(`.github/ISSUE_TEMPLATE/task.md:26`, `bug.md:27`; for a small, fully specified change the example config's class is `mechanical-haiku`); the class resolves
 against `config/agents.yaml`'s `classes:` (`backend`, `model`, `max_context`, `max_cost_usd`,
 `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, and for a worker the optional `fallback` and `escalate`, below). These are
 **placeholder numbers today** — the file says so (`config/agents.yaml:6-7`) — real tuning from
@@ -300,7 +301,7 @@ model), on the class the issue's budget line names, and acts on two optional dec
   operator's `WORKER_MODEL` pins the model and outranks both. Escalation is not a way round a
   quota wall and does not count for `allows_backend_fallback`.
 
-On a backend with `slots: N > 1` (#90) the gate reads the backend's verdict and the slot's ending:
+On a backend with several slots (#90) the gate reads the backend's verdict and the slot's ending:
 the quota verdict is the backend's (`agent_guard_<backend>.json`, shared by every slot), so the
 refusal is the same whichever slot would have taken the issue and a free slot of that backend is no
 way round it; the previous process's ending is read off the state file of the slot being launched
@@ -421,7 +422,10 @@ a Sonnet worker class on `claude-sonnet-5-5` — read and write the same verdict
 windows may be counted per model family, so it can happen that Opus is exhausted while Sonnet still
 has room; the mechanism cannot tell, and an `exhausted` verdict cut on one family parks every role
 and worker on `claude` until the verdict expires (`mechanism.quota_verdict_ttl_minutes`), each falling back
-per its own `fallback:` where it declares one. This is deliberate and errs safe: a host that wants
+per its own `fallback:` where it declares one. The verdict is written by the guard's tick for a live worker,
+by the fold of a role run's log, and by a worker's own `stage-exit` when it reads a refusal
+(`agent_os.product.tracker.quota_verdict`): a run relaunched into the wall dies before any tick sees it,
+and without that record the next launch would read a stale `allowed` and probe the wall again. This is deliberate and errs safe: a host that wants
 the families isolated declares a second backend for the other model (its own `command`, `worktree`
 and `quota` entry) and points those classes at it. Nothing else changes: model ids stay opaque.
 
@@ -511,7 +515,7 @@ and `gh`/backend/`git` stubs only, no database, no network — except `test_agen
 | `.claude/agents/control-plane.md` | Prompt for the subagent that acts as the human's delegate over the mechanism (§2.4), without task writing | Yes |
 | `.claude/agents/task-writer.md` | Prompt for the subagent that writes template-conformant task issues (§2.4); its own definition because it runs on its own model | Yes |
 | `.github/workflows/ci.yml` | Lint (touched files only), the host's `pytest -m "not db"`, and — since #508 — `bash agent_os/bootstrap.sh` followed by `agent_os/.venv/bin/pytest agent_os/tests -q`; since #512 a further step copies `agent_os/` to a directory outside this checkout, makes that copy a git repository with the copied files committed (`git init`, `git add -A`, one commit — the mechanism assumes git throughout, so a bare `cp -r` is not yet the reproduction `host_root()`'s own fallback expects, and an empty commit checks out nothing for the launch-path tests that cut a real worktree off HEAD), bootstraps it and runs `pytest tests -q` there, proving the suite passes with no roedor checkout on `sys.path` | Yes |
-| `.github/ISSUE_TEMPLATE/task.md`, `bug.md` | Issue templates, already carry `<!-- budget: mechanical-sonnet -->` | Yes |
+| `.github/ISSUE_TEMPLATE/task.md`, `bug.md` | Issue templates, end with `<!-- budget: <class> -->` for the author to fill | Yes |
 
 **The host's shims, which are NOT copied out** (a new host writes none unless it wants them):
 `scripts/{worker_task,agent_task,planner_task,worker_progress,notify,qwen_task}.sh` and
@@ -541,6 +545,8 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `project.messages` | one one-line ntfy template per page, written in `project.human_language`; rendered by `agent_lib.render_human_message`, which refuses an unknown key | `review_ready`, `quota_exhausted_no_fallback`, `planner_run_cap_reached`, `backend_worktree_missing`, `unreviewed_pull_request`, `backend_worktree_dirty` |
 | `project.modules` | the project's own module names, one per `docs/modules/*.md`; the `module:<name>` half of the fixed label set `issues.py` creates | `ingest`, `metrics`, `workers`, … |
 | `project.test_command` | the project's own compact test wrapper, injected as `__TEST_COMMAND__` | `scripts/test.sh` |
+| `project.test_selection.full_run_interval_hours` | hours after which CI runs the whole suite again, whatever a pull request touched (§4.12) | `4` (the default) |
+| `project.test_selection.manifest` | the test manifest (a file, or a folder of `*.yaml`) `agent-os-tests` reads to select a branch's tests (§4.12); empty means selection is off and every plan is the whole suite | `` (the default), `tests/manifest.yaml` |
 | `project.merge_method` | how the control plane merges a verified PR: `merge`, `squash` or `rebase`, the `merge_method` of GitHub's REST merge endpoint, rendered into `.claude/agents/control-plane.md` as `__MERGE_METHOD__` (§2.4). Any other value fails the config load (agent-os#88) | `merge` (the default) |
 | `project.agent_models` | the `model:` of each `.claude/agents/*.md` definition, rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__` (agent-os#96): `control_plane` (default `sonnet`), `worker_runner` (default `sonnet`), `task_writer` (default `sonnet`), plus `custodian` and `consolidator` (default `opus`: the two roles that run on Opus, rarely -- the roles arrive in Stage 2 of `docs/AGENTOS_V2_PLAN.md`, so for now only the keys and their defaults exist and nothing reads them). Every other role runs on Sonnet. A value is whatever `claude --model` accepts, an alias or a full id, and is opaque to the mechanism: it keeps no allowlist and no price table, and a run's cost is the `total_cost_usd` the CLI reports in its result event. An unknown key fails the config load. The one-shot roles are not here: their model is `classes.<name>.model` | `agent_models: {task_writer: claude-opus-5}` (the defaults are Sonnet for the three definitions, Opus for the two Stage 2 roles) |
 | `project.worktree_links` | paths (relative to the host root) symlinked from the main checkout into a fresh worktree — the validator's throwaway one and a worker's on `init` — when the checkout has them and the worktree does not (agent-os#41) | `[.venv, .env]` |
@@ -550,7 +556,7 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `project.worker_environment` | env vars exported into a worker's backend process (e.g. a read-only DB role); the KEYS also render the worker's environment paragraph, names never values | `DATABASE_URL: postgresql+psycopg://roedor_ro:...` |
 | `project.forbidden_paths` | the HOST project's protected path globs, which no brief can authorize; one list behind both the ownership-audit regex and the worker's "FILES YOU MUST NOT TOUCH" paragraph (the mechanism's own files are `mechanism.own_paths` below) | `docs/adr/*`, `docker-compose.yml` |
 | `project.never_run` | commands no role may run, each with the one-line reason it rests on; rendered into the worker's, the validator's and the refiner's RULES | `--write`, `census-build` |
-| `project.backends.<name>` | every backend a worker or a role can run on, by name (#514): `command` (what the drivers run — an absolute path or a bare name; omitted, the `project.executables` entry of the same name, else the name itself; an absolute one is added to `project.executables`), `worktree` (relative to the host root), `app` (the GitHub App a worker on it signs as), `stream` (the registered parser its jsonl events are read with, `claude_jsonl` or `qwen_jsonl`, which also picks the command-line dialect the drivers launch it with) `quota` (the detector whose `exhausted` verdict cuts a live run: `claude_rate_limit`, or `none` — recorded, never cut on) and `slots` (how many workers run on it at once, default 1, #90: slot 1 is `worktree` and `.cache/worker_<name>.*`, slot N is `<worktree>-N` and `.cache/worker_<name>-N.*`; the quota verdict `agent_guard_<name>.json` and the App are shared by its slots, and an exhausted verdict cuts every live one). An unregistered `stream` or `quota`, `slots` below 1, several slots without a `worktree`, and a derived slot name or worktree another slot already has all fail at config load. Nothing in the mechanism compares a backend's name against a literal: the drivers read these fields (`agent_lib backend-value <name> <field>`), a worker's default model is the first worker class on that backend (`backend-model`), and a test override is `AGENT_<NAME>_BIN` / `PLANNER_<NAME>_BIN` / `WORKER_WORKTREE_<NAME>` by derivation. A third CLI is one entry here, plus one module under `agent_os/agent_os/streams/` only when its events are a shape no registered parser reads | the example config declares `claude` only (`{worktree: ../example-claude, app: example-claude, stream: claude_jsonl, quota: claude_rate_limit}`); a host adds a second backend (`qwen`, `stream: qwen_jsonl`, `quota: none`) itself, with its own worker classes and fallbacks. An existing host's config is not touched by a `subtree pull` |
+| `project.backends.<name>` | every backend a worker or a role can run on, by name (#514): `command` (what the drivers run — an absolute path or a bare name; omitted, the `project.executables` entry of the same name, else the name itself; an absolute one is added to `project.executables`), `worktree` (relative to the host root), `app` (the GitHub App a worker on it signs as), `stream` (the registered parser its jsonl events are read with, `claude_jsonl` or `qwen_jsonl`, which also picks the command-line dialect the drivers launch it with) `quota` (the detector whose `exhausted` verdict cuts a live run: `claude_rate_limit`, or `none` — recorded, never cut on) and `slots` (how many worker slots `init` precreates, default 1, #90 -- a floor, never a limit: a dispatch that finds every slot busy makes the next one, stage 1l, `docs/adr/2026-10-09-worker-slots-are-created-on-demand.md`; slot 1 is `worktree` and `.cache/worker_<name>.*`, slot N is `<worktree>-N` and `.cache/worker_<name>-N.*`; the quota verdict `agent_guard_<name>.json` and the App are shared by its slots, and an exhausted verdict cuts every live one and stops a new slot from being made). An unregistered `stream` or `quota`, `slots` below 1, several slots without a `worktree`, and a derived slot name or worktree another slot already has all fail at config load. Nothing in the mechanism compares a backend's name against a literal: the drivers read these fields (`agent_lib backend-value <name> <field>`), a worker's default model is the first worker class on that backend (`backend-model`), and a test override is `AGENT_<NAME>_BIN` / `PLANNER_<NAME>_BIN` / `WORKER_WORKTREE_<NAME>` by derivation. A third CLI is one entry here, plus one module under `agent_os/agent_os/streams/` only when its events are a shape no registered parser reads | the example config declares `claude` only (`{worktree: ../example-claude, app: example-claude, stream: claude_jsonl, quota: claude_rate_limit}`); a host adds a second backend (`qwen`, `stream: qwen_jsonl`, `quota: none`) itself, with its own worker classes and fallbacks. An existing host's config is not touched by a `subtree pull` |
 | `project.worktrees`, `project.worker_apps` | **deprecated alias, one release** (#514): the old per-backend maps. When `project.backends` is absent the loader builds it from them — `stream` is the parser named `<backend>_jsonl` when one is registered, else `claude_jsonl`; `quota` is `claude_rate_limit` exactly for a backend whose own name picked `claude_jsonl`, else `none`, which is the guard's pre-#514 rule — and emits ONE `DeprecatedBackendMapsWarning` per process naming `project.worktrees`, `project.worker_apps`, `project.executables` and `project.backends`. When both are present `project.backends` wins and the warning names each ignored key (and each `project.executables.<name>` a backend's own `command` overrides). After load both maps mirror `project.backends`, so a reader that has not moved sees the same values | `qwen: ../roedor-qwen` / `qwen: roedor-qwen` |
 | `project.executables` | the absolute path of every external executable the mechanism's units call by bare name, by command name: the backend CLIs (`qwen`, `claude` — the role drivers look up their own backend here too) and the tracker CLI (`gh`) alike. A name with no entry resolves to itself, which is the bare-name PATH lookup the drivers did before, while a config that does not LOAD stops the driver instead of resolving to anything. `agent-os-install` turns every value into a directory on the generated unit's `Environment=PATH=` (`executables_path_prefix()` in `agent_os/agent_os/install.py`), which is why a non-backend command like `gh` belongs here. Not deprecated: it stays the PATH set, and only stops being where a backend's command is read from when that backend declares `command:` | `{}` (`qwen: /home/you/.nvm/versions/node/vXX/bin/qwen`, `gh: /home/linuxbrew/.linuxbrew/bin/gh`) |
 | `project.role_apps` | one App slug per non-worker role, falls back to `planner_app` when empty | `{}` |
@@ -561,13 +567,14 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `planner.max_runs_per_day` | hard cap on planner runs, across every event kind | `40` (12 once a round completes unattended) |
 | `planner.refiner_unattended` | gates whether `tick` ever writes `refine_pending` | `true` (after a human reviewed a dry run) |
 | `tree.root` | the directory of the product tree and the decision ledger (§4.6), relative to the host's root; `agent-os-tree --root` overrides it for one run | `product` (the default) |
-| `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-sonnet` |
+| `tree.ticket_budget_class` | the worker class a compiled ticket names in its `<!-- budget: -->` line; must be a worker class (the config fails to load otherwise). Empty makes `agent-os-tree compile` refuse until `--budget-class` says which | `mechanical-haiku` |
 | `tree.ticket_labels` | labels every compiled ticket carries besides its task type label; the initial `status:*` is Phase 2's to decide | `[]` |
 | `tree.dispatch_by_node` | `true` makes the host a **v2 host** (§4.6, Dispatch in a v2 host): the guard and `worker_task.sh start` dispatch only tickets that carry a node address, dependencies first, never two on the same code; a worker's brief gains the slice of its node. Off, nothing in dispatch changes | `false` |
 | `tree.test_sessions_dir` | where the product writes a test session's file when the owner closes it (§4.11), relative to the host's root unless absolute; `agent-os-sessions test-ingest` reads it. A host sets it to where its product writes | `var/test-sessions` |
+| `sessions.confirm_before_dispatch` | whether a change born from a test session is proposed to the owner and launched only once approved (an item's `status`, `docs/FEEDBACK_INTERPRETER.md`); read by the interpreter (which proposes and binds the owner's answer) and, once it lands, by `test-ingest` | `true` |
 | `classes.<name>` | `backend`, `model`, `max_context`, `max_cost_usd`, `max_total_tokens`, `commit_warn_turns`, `commit_cut_turns`, `qwen_fallback_eligible`, optional `role` (`worker`, `validator`, `refiner`, `expert`, `planner` or `puntal`), optional `fallback` / `escalate` (worker launch gate, §3), optional one-line `description` (when to choose this class). The refiner's and planner's prompts render every worker class -- name, backend, model, description -- at `__WORKER_CLASSES__`, so a host's `prompt_extras` never names a model; `agent-os-doctor` warns when a `prompt_extras` file names a class `classes:` lacks (#97) | see §3 |
 | `board.*` | the progress board's GitHub Project (§4.6), all optional: `owner` (`@me`), `number` (0: found by `title`, created on a real sync), `title`, `progress_field`, `order_field` |
-| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract of both paths: the slow path calls it, the fast path reads it as reference for the operations it plans), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`). Unknown keys fail the load. The puntal's model and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
+| `puntal.*` | the puntal driver's settings (§4.7), all optional: `persistence_command` (the app's persistence API, a shell-split command; the driver refuses to run without one -- here, in `PUNTAL_PERSISTENCE_COMMAND` or in `--persistence-command`), `persistence_api_file` (a text file describing its subcommands, rendered into the contract of both paths: the slow path calls it, the fast path reads it as reference for the operations it plans), `executor_command` (the app's executor, a shell-split command that applies a plan's operations atomically; empty makes the fast path refuse unless the caller asks for `--json --plan-only`; `PUNTAL_EXECUTOR_COMMAND` and `--executor-command` outrank it), `read_subcommands` (default `[get, list]`: the only words a node's declared read may start with), `executor_timeout_seconds` (default `30`), `timeout_seconds` (default `90`: a hung-process safety, not a budget), `max_tool_calls` (default `12`: the slow path's loop guard), `effort` (default empty: `claude --effort`), `action_models` (default `{}`: `{action: model}`, the model of an action that the class's own answers badly; an action not named runs on `classes.puntal.model`, and `--model` outranks both; the telemetry's `model` and `versions.model` record the effective one). Unknown keys fail the load. The puntal's model (the example's is Haiku 5.5) and its three ceilings, which bind ONE invocation, are `classes.puntal` (`role: puntal`; a `fallback:` on it is refused at load) | `timeout_seconds: 90` |
 
 ### 4.3 Things to create in GitHub
 
@@ -681,7 +688,7 @@ body; every other field is frontmatter. An unknown field is an error.
 | `decisions` | optional | ids of the decisions in force on the node; they bind its whole subtree |
 | `mechanism` | functional requirement, use case | the solution mechanism as text, or `pending` (lazy materialization: the first agent that needs it resolves it and writes it back into the node in the same PR) |
 | `implementation` | required once `hardened` | where the built thing lives: a path, a symbol, a pull request |
-| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
+| `touches` | optional, default absent | the code the node touches, as paths under the host's root (`["app/sync.py", "app/queue"]`; a directory covers what is under it; one word each, no whitespace, comma or `-->`, and never the root itself). **When present it decides**: the ticket's `touches` marker is exactly this, and the prose of `implementation` and `mechanism` is not read; `touches: []` says the node touches no known code. **When absent**, the paths are derived from that prose, as before: any word with a `/` or a file extension is taken for a path, so `http.client`, `p.ej` or a document mentioned in passing become false "files" that can hold a ticket back or let two collide. The expert declares it on every node that compiles to a ticket (`prompts/expert.md`), and splits a node when two independent ones would touch the same code. Declare `touches` when the prose of a node misleads that guess (`docs/tree/dec-dispatch-never-runs-two-tickets-on-the-same-code.md`) |
 | `reads` | optional, default empty | the state the node's action reads, as read commands of the app's persistence API (`list tickets`, `get tickets {payload.id}`; `{payload.NAME}` is a field of the click's JSON payload). The puntal's pre-helper runs them and puts the output in its brief before the model turn, so the model spends no turn reading (§4.7). An undeclared read is not an error: the puntal takes the slow path and the telemetry marks it |
 | `verification` | **a goal needs at least one** (`goal-without-evaluators`); optional on any other node, where it is acceptance when the node has children; a leaf is dispatched with a command, a judged criterion or none (the ticket's acceptance is then judged by an agent); a `command` is **mandatory for a `hardened` node** | list of entries, each **exactly one of** a `command` (exits 0 when the node holds; with an optional `expects`, what a pass proves) **or** a `judge` (a criterion in plain language that an agent judges against what was built); both in one entry, or neither, is a `schema` error |
 | `state` | optional, default `pending` | `pending`, `improvised` (a puntal serves it), `implemented` (deterministic code built from the accepted behaviour, no tests yet), `hardened` (tests written from the accepted interactions) (`docs/tree/dec-tests-harden-they-do-not-build.md`) |
@@ -871,8 +878,8 @@ its `config/agents.yaml` sets `tree.dispatch_by_node: true`. In one, and only th
 - `python -m agent_os.product.dispatch headroom [--json]` is the read-only question *can more work
   run at once right now*: for each ready issue it says whether the start gate and the cap would let it
   start (the issues in the doing state are what runs) or why it waits (an open dependency, code shared
-  with a running ticket or one ahead of it, or only `planner.max_parallel_issues` / the backend's
-  `slots`), then `N could start now; M wait only for the cap`. The planner asks it every run, starts
+  with a running ticket or one ahead of it, or only the `planner.max_parallel_issues` the host set),
+  then `N could start now; M wait only for the cap`. The planner asks it every run, starts
   every issue it says could start, and comments `headroom: waits only for the cap` on the rest, with no
   page: quota is the only limit (`docs/tree/fr-independent-work-runs-in-parallel.md`).
 
@@ -1110,7 +1117,7 @@ is there:
 | `--permission-mode dontAsk` (+ `--allowedTools=Bash(./state *)` on the slow path) | a call that would ask for approval is denied, so on the slow path the one Bash command that runs is the persistence shim, and on the fast path none runs |
 | `--max-budget-usd <classes.puntal.max_cost_usd>` | the CLI's own per-invocation dollar cut |
 | `--no-session-persistence` | no transcript is written under `~/.claude` for a throwaway run |
-| `--model`, `--effort` | `classes.puntal.model` / `--model`; `puntal.effort` / `--effort` |
+| `--model`, `--effort` | `--model`, else `puntal.action_models[<action>]`, else `classes.puntal.model`; `puntal.effort` / `--effort` |
 
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` is exported to the backend (version checks and telemetry
 are start-up latency a person waiting on a click should not pay). The driver also prints, in every
@@ -1403,14 +1410,14 @@ object, written whole each time, id `ts-<YYYYMMDD>-<HHMMSS>-<6 hex>`.
 
 | key | content |
 |---|---|
-| `schema` | optional integer, the version of this contract; absent means 1, the one described here. The reader has one parser per schema and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored whatever its schema |
+| `schema` | optional integer, the version of this contract; absent means 1, the one in this table (schema 2 is below). The reader has one parser per schema (1 and 2) and **names and skips a closed session written in a schema it does not read** (exit 1, the session stays pending); an open one is ignored unless it is schema 2, which is read as it goes (below) |
 | `id`, `branch`, `branch_title` | the session and the requirement of the tree it tests |
 | `status`, `opened_at`, `closed_at` | `open` or `closed`; ISO-8601 moments **with a UTC offset** (a moment without one cannot be placed against the feedback log) |
 | `commit`, `since`, `changes`, `changes_problem` | where the repository stood when it opened, the previous session of the branch, and what changed; ingestion does not read them |
 | `cases` | `[{node, title, state, verdict, note}]`, `verdict` one of `accept`, `reject`, `not_tried` |
 | `questions` | `[{node, question, default_answer, date, answer}]`; `answer` is `null` when the owner did not answer, and then the default stands |
 
-**The command** reads the closed sessions not yet ingested and, by default, **prints the plan and writes
+**The command** reads the sessions to ingest (the closed ones not yet ingested, and the open ones of schema 2) and, by default, **prints the plan and writes
 nothing**; `--apply` carries it out; `--session ID` plans or applies one session again; `--sessions-dir` and
 `--root` override the keys. A file that breaks the contract is named on stderr and skipped (exit 1 at the end);
 a missing directory is refused naming `tree.test_sessions_dir`. Per session:
@@ -1429,18 +1436,155 @@ a missing directory is refused naming `tree.test_sessions_dir`. Per session:
 - a case **not tried** is left alone;
 - the **verdicts on improvised answers** that `feedback.jsonl` holds inside the session's window
   (`opened_at`..`closed_at`: the two files have no other join) are summarised per action and node (accepted,
-  rejected with the note, retried) inside the plan, as input; nothing is written from them yet.
+  rejected with the note, retried) inside the plan, as input; a verdict the chat recorded (schema 2, below) belongs to the
+  session in its `key`, whatever moment it was written, and counts once.
 
 A step already done is shown as such and not repeated; a step that cannot be done (a node the tree lacks, a
 question the node does not carry open, or already answered with other words) is a `problem:` line, exit 1, and the
 session stays pending. The registry of ingested sessions is `.cache/test-sessions/ingested.jsonl`: every effect is
 idempotent on its own, so losing it costs a longer plan and no duplicate.
 
+**Schema 2: the chat.** The owner's comment box is a chat with the feedback interpreter
+(`docs/tree/dec-a-test-session-happens-inside-the-app.md`), and the host writes what the chat produced:
+
+| key | content |
+|---|---|
+| `schema`, `id`, `status`, `opened_at`, `closed_at` | `2`; the rest as above (the id needs no `branch`: a session is not tied to one); `closed_at` is `null` while `status` is `open` |
+| `cases` | `[{node, title, state, verdict}]`, `verdict` one of `perfect`, `ok_with_improvements`, `needs_work` (the last state the owner gave that case in the session) or `not_tried` |
+| `comments` | the thread, in the order sent: `[{role, text, state, case, page, at}]`; `role` `owner` or `agent`, `text` a string (empty when only a state was given), `state` `perfect`, `ok_with_improvements`, `needs_work` or `null`, `case` the node or `null`, `page` and `at` free text |
+| `questions` | as above (the host writes only the answered ones) |
+| `items` | **optional**: what the interpreter understood, `[{id, kind, summary, node, page, from_messages, withdrawn, status?, invocations?, verdict?, note?, question?, answer_text?}]` (`docs/FEEDBACK_INTERPRETER.md`); `kind` `change`, `decision`, `question_of_what`, `verdict` (accept, reject or retry one invocation of the puntal), `puntal_change` or `answer` (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; `sessions.mechanism_repository` names where a `puntal_change` opens its issue); `status` (optional) `proposed` or `approved`, absent = never asked; `from_messages` are positions in `comments` |
+
+A closed session without the `items` key (closed before the interpreter was connected) is valid, and so is `items: []`;
+`commit`, `since`, `changes` and `changes_problem` are not read. Per session, **directly, except decisions** (the owner's word):
+
+- **while `sessions.confirm_before_dispatch` is true (the default)** only a `change` with `status: approved` is launched; one
+  `proposed` or with no status prints `proposed: ... -- waiting for the owner's word in the chat` and goes to `proposals` in
+  `understood.json`, and the raw-text fallbacks below are **held** (`held: ... -- no interpreter read it`, listed under `held`),
+  never launched. With the key false the status is ignored and what follows is the whole rule. Schema 1 is unchanged
+  (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`, `chat/proposals.py`);
+- a `verdict` item, `approved` and not withdrawn, is **recorded in `feedback.jsonl`** against its one invocation: the record
+  `puntal_task.sh feedback` writes (`versions`, `action`, `node` copied from the invocation's telemetry, which sits beside that
+  file) plus `key: chat-verdict.<session>.<item>`, so a second run adds nothing (`already recorded`). A `proposed` one waits like a
+  `change` (`proposals` in `understood.json`); one naming no invocation of the telemetry, or not exactly one, is a `problem:` line.
+  an `answer` item is not acted on here (the host writes it);
+- a `puntal_change` item is **always proposed first** (whatever `sessions.confirm_before_dispatch` says); once `approved` and not
+  withdrawn it opens **one issue on `sessions.mechanism_repository`**, keyed `<!-- key: puntal-change.<session>.<item> -->`, whose
+  Task is to assess `prompts/puntal.md` and reproduce the behaviour as a battery case, changing the prompt only if the battery says
+  so, and whose Context holds the owner's words, each invocation's action, node, outcome and `versions` (from the telemetry) and the
+  case's description; it is listed in `changes` of `understood.json` (origin `puntal change`). With the key empty it is **held**
+  (`held`, nothing opened); an item naming no invocation of the telemetry is a `problem:` line;
+- a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
+  configures it, else the bug label), with `<!-- node: -->` when the item has a node and `<!-- key: test-change.<session>.item.<id> -->`.
+  The seven headings are the validator's, so the worker is told what is work and what is background by the first words of
+  three of them: `## Objective` opens with "Task" and holds the interpreter's reading of the item, the only work; `## Context`
+  opens with "Context -- background, not part of the task" and holds the session, the node and the messages of
+  `from_messages` quoted whole; `## Not included` lists, by summary and each marked "tracked separately, NOT part of this
+  task", every other item not withdrawn that was read from the same messages (changes, decisions, questions of what)
+  (`docs/adr/2026-10-10-an-issue-from-a-test-session-keeps-its-task-apart-from-its-context.md`);
+- a `decision` is **not launched**, and a `question_of_what` neither (it is not a question-session issue: it has no node
+  question and no default answer): both are kept for the next session in `understood.json`; a withdrawn item is nothing;
+- an owner message **no item names** is never lost, whatever the reason (no `items`, `items: []`, a message the interpreter
+  could not read): by the last state of its case, `needs_work` is a rework issue (`test-rework.<session>.<node>`, the
+  thread of the case quoted), `ok_with_improvements` or a remark with no state is a change issue
+  (`test-change.<session>.case.<node>`, thread quoted), a state with no text names no change and the plan says so, and the
+  comments on no case are one general change issue (`test-change.<session>.general`) that says no interpreter read them;
+- a case whose last state is `perfect` is recorded as the owner's acceptance, once per session (`acceptances`); `not_tried`
+  with no comment is left alone; the answered questions are written into their nodes as in schema 1.
+
+A node the tree lacks (a case, or the node of a `change` item) is a `problem:` line and the session stays pending.
+
+**An open session is ingested as it goes.** The app has no button that closes a session: it opens when the owner unfolds the
+panel and closes by itself after two hours without a message, and each message is in the file the moment it is sent. So
+Agentos reads an open schema 2 session on every run, and the run is idempotent (every effect has its own key; an open session
+is never put in the registry of ingested ones, which remembers a closed one only). What counts at once: a `change` item
+(launched once, keyed by its id, however many runs see it), a `decision` or `question_of_what` (kept in `understood.json`),
+an answered question, and a `perfect` (accepted on the day the session **opened**, the date of the owner's first word). What
+**waits** is the owner's text that no item covers: an issue by the state of a case quotes the thread of the case once and is
+keyed by the case, so a message added later would never reach it and an item arriving later would duplicate it. The plan
+prints it as `waiting:` and it is handled as above when the session closes (a session that never closes keeps it waiting; a
+host that closes by inactivity does not have that case). An item withdrawn after it was launched is not a problem: the plan
+says `already launched as #N` so that the owner or the planner closes that issue by hand. The thread of a case spans
+sessions in the app; **a comment is a session and a position**, an item's `from_messages` are positions in its own session's
+file, and every key carries the session, so a later session never re-launches an earlier one's work.
+
+**What the app shows when the owner opens the next session** is `<tree.test_sessions_dir>/understood.json`
+(`chat/understood.py`; the session reader passes it by name). Agentos is its only writer and the app only reads it; a
+single JSON object written whole by atomic replace, `{"schema": 1, "sessions": [block, ...]}`, one block per ingested
+session that left something to show, oldest `opened_at` first (a second ingestion replaces the session's block, and leaves the
+file alone when nothing in it changed):
+
+```json
+{"session": "ts-20261010-101500-abc123", "status": "closed", "opened_at": "2026-10-10T10:00:00+02:00",
+ "closed_at": "2026-10-10T10:15:00+02:00", "ingested_at": "2026-10-10T08:20:00Z",
+ "decisions": [{"id": "item-3", "summary": "...", "node": "uc-x", "page": null, "from_messages": [3]}],
+ "questions": [{"id": "item-4", "summary": "...", "node": null, "page": "/p", "from_messages": [3]}],
+ "changes":   [{"origin": "item", "summary": "...", "node": "uc-x", "issue": 101}]}
+```
+
+`decisions` await the owner's confirmation or correction, `questions` stay open until the owner answers, `changes` were
+launched (`origin` `item`, `rework`, `case change` or `general`; `issue` the number that carries it). `status` is `open` and `closed_at` `null` for a session still in progress. The host paints "what
+I understood and where it went" from the blocks of the sessions before the one it is opening, once each (what it has
+shown it remembers itself, in its own session file), and looks a `from_messages` position up in that session's own file for
+the words. What the owner says about a block is a message of the new session like any other. The file is not part of the
+tree and is not committed. The decision: `docs/adr/2026-10-09-a-chat-test-session-is-ingested-directly-except-decisions.md`.
+
 **Hand-off.** The tree edits stay in the working tree, as with `apply`: a worker commits them with
 `Node-Change: usage` (revisions driven by the owner's answer or use; never `owner`, which an agent does not
 write) and opens a pull request whose body says `Test-Session: <id>`. It changes the what, so it is merged on the
 owner's word, which the answers are (`docs/tree/dec-a-change-to-the-what-is-merged-only-on-the-owners-word.md`).
 The decision: `docs/adr/2026-10-09-a-closed-test-session-is-ingested-by-a-command-that-plans-first.md`.
+
+### 4.12 Test selection (`agent-os-tests`)
+
+A branch runs the tests a manifest maps to what it touched, not the whole suite
+(`docs/adr/2026-10-10-a-branch-runs-the-tests-its-manifest-maps-to-what-it-touched.md`). The manifest
+is named by `project.test_selection.manifest`: one YAML file, or a folder read recursively where
+`version`, `test_globs`, `always` and `exempt` live only in `settings.yaml` and every file may carry
+`groups` (`id`, optional `nodes`, `covers`, `tests`) and `integration` (`id`, `sides`, `tests`). An
+unknown key is a loud error. The clock that makes the whole suite run every
+four hours is described at the end of this section.
+
+```bash
+agent-os-tests check [--manifest PATH]
+agent-os-tests plan --base REF [--manifest PATH] [--tree-root DIR] [--format summary|json|paths]
+agent-os-tests run --base REF [--manifest PATH] [--command CMD] [--full]
+agent-os-tests last-full-run --repo OWNER/REPO [--marker-name agent-os-full-run]
+```
+`plan` and `run` also take `--last-full-run ISO8601|never|unknown`, `--interval-hours N` and `--only-when-due`.
+
+Also `python -m agent_os.product.test_selection ...`. `--root` defaults to the working directory's
+checkout, never `AGENT_OS_HOST_ROOT`. `check` exits 1 for a test file no group maps, a mapped path that
+does not exist, an unknown integration side, fewer than two sides, or a duplicated id. `plan` selects
+the groups whose `covers` or `tests` hold a changed path (a directory holds what is under it) or whose
+`nodes` list a changed node file's id or one of its ancestors, adds the integrations with a selected
+side and `always`, and falls back to the whole suite for any changed path no group covers and
+`exempt` does not excuse, for a changed `exempt` or `always`, and when no manifest is configured. A
+manifest that is configured but missing is exit 2, an invalid one exit 1. `run` execs `--command`
+(default `project.test_command`) with the selected paths, or alone for a full plan; when the plan cannot
+be computed it runs the whole suite and says why on stderr. `test_command` must accept path arguments
+(`scripts/test.sh tests/x.py`): a wrapper that ignores them makes selection a no-op, not an error.
+
+**This repository and its agents.** agent-os's own manifest is `tests/selection/` (its
+`project.test_selection.manifest` stays empty, as hosts get it, so `.github/workflows/ci.yml`, `AGENTS.md`
+and local runs pass `--manifest tests/selection`); `tests/conftest.py`, `pyproject.toml`,
+`config.example.yaml` and `bootstrap.sh` are deliberately unmapped, so a change to them is a full run. The
+worker prompt tells the worker to run the selection before the commit that closes a stage, and the
+validator runs it plus the tests the issue names, the full suite only when the issue's definition of
+done says so; a host with no manifest gets its `test_command`, whole.
+
+**The clock.** `docs/tree/dec-a-full-run-every-four-hours-of-development.md`: the pull request that finds
+`full_run_interval_hours` since the last full run runs the whole suite. The last full run is the
+`created_at` of the newest unexpired Actions artifact named `agent-os-full-run`, which `ci-host.yml`
+uploads (one-day retention) only after a successful run whose mode was `full`, on a pull request or on a
+push to the default branch; `last-full-run` reads it with `gh api` and the default `GITHUB_TOKEN`
+(`actions: read`). `never` (no artifact, or an expired one) and `unknown` (any `gh` failure, which prints
+the reason on stderr and still exits 0) are both due: an unreadable clock is a full run, never a skipped
+one. A failed full run uploads nothing, so the clock keeps its old origin. Due makes `plan` and `run`
+`mode: full`; with `--only-when-due` (a push) not due makes `mode: none` and `run` execs nothing. Without
+`--last-full-run` the clock is not consulted: a local run never carries it. There is no schedule, so with
+no development there is no run. When `GITHUB_OUTPUT` is set `run` appends `mode=<full|selected|none>`,
+and `GITHUB_STEP_SUMMARY` receives the plan. `ci-agent-os.yml` keeps its whole suite.
 
 ## 5. Export recipe
 
@@ -1586,8 +1730,12 @@ untested end to end. The first real dispatch is the first time any of it is exer
 
 Two spellings of every Python command, and they are the same command: `<agent_os python> -m
 agent_os.<module> …` is what the drivers run, and `agent-os-<module> …` is the console script a
-host that wants one on its PATH gets from `pyproject.toml`. In roedor, `scripts/<old name>` is a
-third: the shim (§4.1). The interpreter is the one `agent_os_python()` resolves — never a host's.
+host that wants one on its PATH gets from `pyproject.toml` (they are installed into `agent_os/.venv/bin/`, not
+onto any PATH). In roedor, `scripts/<old name>` is a third: the shim (§4.1). The interpreter is the one
+`agent_os_python()` resolves — never a host's: `agent_os/.venv/bin/python` carries `pyyaml`, `pydantic` and
+`PyJWT[crypto]` (declared in `pyproject.toml`), while a host's root `.venv` carries the host's packages and
+imports none of them, so a `No module named 'pydantic'` from `python -m agent_os.product...` means the
+wrong interpreter ran it (`agent-os-doctor` probes the right one and prints the repair, #163).
 That includes the guard unit `agent-os-install` renders: its `ExecStart=` runs the shim, or the
 module form on a host without one, on that interpreter even when the host has a root `.venv`, and
 install refuses when it resolves to no absolute executable (#12, #51).
@@ -1596,11 +1744,12 @@ install refuses when it resolves to no absolute executable (#12, #51).
 |---|---|---|
 | `bash agent_os/bootstrap.sh` | human, CI | build `agent_os/.venv` and install the package into it, editable. Idempotent; the one prerequisite of everything below |
 | `agent_os/.venv/bin/pytest agent_os/tests -q` | human, CI | the mechanism's own suite: no database, no network, no real backend. The run a second host can also make |
+| `agent-os-tests check\|plan\|run` | CI, worker, validator | the tests a branch must run, from the manifest and the diff (§4.12). Exit 0/1/2 for `check` and `plan`; `run` returns the runner's code |
 | `agent-os-quality --base REF` | CI | the code-quality ratchet (§4.8): new files and folders must be within the line and entry limits, touched ones never worse than on the merge-base with REF. Exit 0/1/2 |
 | `agent_os.issues list/show/create/validate/move` | human, refiner, planner | list/inspect the tracker; scaffold or validate a template-conformant issue; set the one `status:*` label and mirror the board column. `move N [N …] STATE` takes several numbers in one invocation: the target label and the board's `Status` field are resolved once for all of them, an issue that fails is reported under its number without stopping the rest, and the command exits non-zero naming every issue that did not move. A move costs three GraphQL requests of ~1 point each, whatever the board's size (the board field, once per invocation; the issue's item; the column edit) — the issue and its labels are read and written over REST, on the separate core quota (agent-os#27). The GraphQL quota is 5000 points an hour per user, shared by every host and tool the human runs, and separate from the REST `core` one (`gh api rate_limit --jq .resources.graphql`, not the top-level `.rate`). `validate` reads over REST too (agent-os#70). A rate limit is checked against the login's quotas before it is retried: a bucket at zero fails at once, naming it and its reset time; a secondary limit waits at least a minute per retry |
-| `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. On a backend with `slots: N > 1` (#90): `start` and `branch` pick a free slot themselves, `resume`, `collect`, `open-pr`, `stop` and `watch` take `--issue <M>` for the slot that recorded issue M (an explicit `--slot` that recorded another issue is refused), `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot`. `resume --rework` appends the stage a pull request sent back with CHANGES_REQUESTED is owed (see the changes-requested row of the trigger table). A path this driver links into a worktree itself -- `.env`, and every `project.worktree_links` entry that is a symlink there, `.venv` by default -- is never counted as uncommitted work by the dirty check and is never swept into a freeze commit |
+| `agent_os/bin/worker_task.sh <backend> init/branch/start/status/watch/collect/open-pr/stop/resume [--slot N]` | human (direct or via `worker-runner`), planner | `init`: idempotent `git worktree add` on a fresh branch from `origin/main` when the configured path has no worktree yet, then provisioned from `project.worktree_links` and `project.worktree_setup_command` (#511, was gap §7r; agent-os#41). The rest: manage a worker's worktree, branch, dispatch, liveness check, event tail, commit/spend/ownership summary (this stage's context and the issue's token total against both its ceilings), PR, kill, relaunch. `start` and `branch` pick a free slot themselves and, when every slot is busy, make the next one (`bin/worker/worker_slot_selection.sh`; refused, writing nothing, when the host's `planner.max_parallel_issues` is reached or the backend's quota reads exhausted). On a backend with several slots (#90): `resume`, `collect`, `open-pr`, `stop` and `watch` take `--issue <M>` for the slot that recorded issue M (an explicit `--slot` that recorded another issue is refused), `status` and `init` without `--slot` cover every slot, and every other subcommand needs `--slot`. `resume --rework` appends the stage a pull request sent back with CHANGES_REQUESTED is owed (see the changes-requested row of the trigger table). A path this driver links into a worktree itself -- `.env`, and every `project.worktree_links` entry that is a symlink there, `.venv` by default -- is never counted as uncommitted work by the dirty check and is never swept into a freeze commit |
 | `agent-os-install [--dry-run] [--force]` (`agent_os.install`) | human, once per machine | write the systemd `--user` units from `project.guard_unit`/`project.executables` and copy `.claude/agents/*.md` (rendered, if `agent_os/agents/` exists), the issue templates and the CI snippet if absent; never overwrites without `--force`; never enables, restarts or reloads a unit (#511, was gap §7h) |
-| `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, whether the planner's and the validator's Apps may read CI checks, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
+| `agent-os-doctor` (`agent_os.doctor`) | human, once per machine or after a config change | the first-run checklist of §6 read back mechanically: whether the mechanism's own interpreter imports `pyyaml`, `pydantic`, `PyJWT[crypto]` and `agent_os.product` (a failing line names the module it lacks and the exact `bootstrap.sh` command that repairs it), `gh auth status` scopes, the labels that do not autocreate, the Project v2 `Status` field, each App's secrets, whether the planner's and the validator's Apps may read CI checks, each executable, each worktree, the notify topic file, the guard timer's `is-active`, and (a warning, never a failure) any class a `prompt_extras` file names that `classes:` does not define — one line per check, exit 1 on any failure. Reads state only; never calls `agent_guard.py check` (#511) |
 | `agent-os-tree validate\|doctor\|context\|compile\|board` (`agent_os.product.tree`, `agent_os.product.board`) | human, a host's CI, the future planner wiring | the product tree and decision ledger of §4.6: `validate` is the doctor (one line per defect, exit 1), `context NODE` the slice of one node, `compile` the dispatch tickets of the dispatchable nodes (ordered by dependencies, each with its address, dependencies and touched code) and an escalation for each whose mechanism cannot be resolved. Reads files only; creates no issue |
 | `agent_os/bin/agent_task.sh expert N [--dry-run]` | human (manual run; never unattended) | one-shot population of the product tree for issue N and one pull request on it (§4.9); detaches like the other one-shot roles |
 | `agent-os-sessions judgment\|outcome\|open\|answers\|apply\|guard-what\|verify-answer\|test-ingest` (`agent_os.product.sessions`, `agent_os.product.session_ingest`) | planner, validator, control plane, human | the judgments log, the question session issue and its write-back, and the guard on the what of §4.10: `guard-what PR` exits 1 for a pull request that touches a goal node or an evaluator (merge condition 6), `verify-answer` exits 0 for one that is exactly a session answer. Needs `gh`; never a backend |

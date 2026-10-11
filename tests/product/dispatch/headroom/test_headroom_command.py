@@ -22,7 +22,7 @@ def issue(number: int, state: str, node_id: str, *, depends_on=(), touches=()) -
     return {"number": number, "body": text, "labels": [{"name": f"status:{state}"}]}
 
 
-def configure(tmp_path, *, max_parallel_issues: int, worker_slots: int):
+def configure(tmp_path, *, max_parallel_issues: int | None, worker_slots: int):
     path = write_v2_config(tmp_path / "agents.yaml")
     data = yaml.safe_load(path.read_text())
     data["planner"]["max_parallel_issues"] = max_parallel_issues
@@ -41,7 +41,7 @@ def open_issues(monkeypatch, tmp_path):
     return rows
 
 
-def configure_host(monkeypatch, tmp_path, *, max_parallel_issues: int, worker_slots: int):
+def configure_host(monkeypatch, tmp_path, *, max_parallel_issues: int | None, worker_slots: int):
     monkeypatch.setattr(
         lib,
         "DEFAULT_AGENTS_CONFIG",
@@ -89,13 +89,17 @@ def test_a_ticket_clear_of_every_rule_but_the_cap_waits_only_for_the_cap(
     assert lines[-1] == "0 could start now; 1 wait only for the cap"
 
 
-def test_the_slots_of_a_backend_are_a_cap_too(open_issues, monkeypatch, tmp_path, capsys):
-    configure_host(monkeypatch, tmp_path, max_parallel_issues=5, worker_slots=1)
+def test_the_slots_of_a_backend_are_no_cap_the_driver_makes_one(
+    open_issues, monkeypatch, tmp_path, capsys
+):
+    configure_host(monkeypatch, tmp_path, max_parallel_issues=None, worker_slots=1)
     open_issues += [issue(3, "doing", "uc-a"), issue(7, "ready", "uc-b")]
     lines = headroom_lines(capsys)
-    waiting_line = next(line for line in lines if line.startswith("#7"))
-    assert "waits only for the cap" in waiting_line
-    assert "backend qwen" in waiting_line
+    assert "#7  could start now" in lines
+    assert (
+        lines[0]
+        == "slots: 1 worker(s) running, no cap (planner.max_parallel_issues unset) (qwen 1)"
+    )
 
 
 def test_only_the_free_room_is_offered_to_the_ready_tickets(open_issues, capsys):

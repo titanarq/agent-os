@@ -12,12 +12,18 @@ pull request carries them to the tree, and it is a change to the what merged on 
 
 from __future__ import annotations
 
+import datetime
 import pathlib
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from agent_os.lib import TaskClass
-from agent_os.product.session_ingest.plan import ReworkStep, SessionPlan
+from agent_os.product.session_ingest.plan import (
+    AcceptanceStep,
+    AnswerStep,
+    ReworkStep,
+    SessionPlan,
+)
 from agent_os.product.session_ingest.rework_ticket import (
     render_rework_ticket,
     rework_title,
@@ -40,6 +46,7 @@ class ReworkTicketSettings:
     task_classes: dict[str, TaskClass]
     labels: list[str]
     tree_root: str
+    change_labels: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -48,6 +55,7 @@ class AppliedSession:
     answers_written: int = 0
     acceptances_written: int = 0
     rework_issues: list[int] = field(default_factory=list)
+    understood_file: pathlib.Path | None = None
 
 
 def _rendered_tickets(
@@ -71,6 +79,31 @@ def _rendered_tickets(
     return rendered
 
 
+def write_tree_edits(
+    tree: Tree,
+    *,
+    session_id: str,
+    closed_on: datetime.date,
+    answers: list[AnswerStep],
+    acceptances: list[AcceptanceStep],
+) -> AppliedSession:
+    """The edits of the owner's words into the nodes, which every schema of the session file shares."""
+    applied = AppliedSession()
+    for answer in answers:
+        if not answer.already_written:
+            question = answer.question
+            written = answer_question(tree, question.node, question.question, question.answer or "")
+            applied.written_files.append(written)
+            applied.answers_written += 1
+    for acceptance in acceptances:
+        if not acceptance.already_recorded:
+            written = record_acceptance(tree, acceptance.node, session_id, accepted_on=closed_on)
+            if written is not None:
+                applied.written_files.append(written)
+                applied.acceptances_written += 1
+    return applied
+
+
 def apply_session_plan(
     plan: SessionPlan,
     tree: Tree,
@@ -83,22 +116,13 @@ def apply_session_plan(
     if pending_rework and settings is None:
         raise ValueError("a plan with rework to open needs the settings of the ticket")
     tickets = _rendered_tickets(plan, tree, settings) if settings and pending_rework else []
-    applied = AppliedSession()
-    closed_on = plan.session.closed_at.date()
-    for answer in plan.answers:
-        if not answer.already_written:
-            question = answer.question
-            written = answer_question(tree, question.node, question.question, question.answer or "")
-            applied.written_files.append(written)
-            applied.answers_written += 1
-    for acceptance in plan.acceptances:
-        if not acceptance.already_recorded:
-            written = record_acceptance(
-                tree, acceptance.node, plan.session.id, accepted_on=closed_on
-            )
-            if written is not None:
-                applied.written_files.append(written)
-                applied.acceptances_written += 1
+    applied = write_tree_edits(
+        tree,
+        session_id=plan.session.id,
+        closed_on=plan.session.closed_at.date(),
+        answers=plan.answers,
+        acceptances=plan.acceptances,
+    )
     applied.rework_issues.extend(
         step.existing_issue for step in plan.reworks if step.existing_issue is not None
     )

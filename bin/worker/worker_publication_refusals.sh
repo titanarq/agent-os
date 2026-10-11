@@ -34,6 +34,50 @@ branch_carries_the_diary() {
   echo "  Nothing was written: take $DIARY out of the branch and run open-pr again."
 }
 
+# The last half of every refusal that leaves finished work with no pull request: the issue goes to
+# `blocked-on-human`, which is what stops the planner from relaunching anything and what puts it
+# on the board the owner reads in their own session
+# (`fr-the-owner-is-asked-only-in-sessions-they-open`). The state file records it, so the exit hook
+# and the next `status` say the same. The comment is posted before this is called.
+hand_the_issue_to_the_human() {
+  local issue=$1
+  if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
+    write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
+  else
+    echo "WARNING: could not move #$issue to blocked-on-human"
+  fi
+}
+
+# The ending for a merge of the base that never started (no unmerged paths, so not a conflict: an
+# untracked file it would overwrite, no committer identity, a broken index). The branch stays
+# unpushed -- a branch pushed unmerged is the silent no-CI case (#389) -- and, like every other
+# refusal, the issue says why and goes to `blocked-on-human`: until this ending did, a run that
+# stopped here sat in `doing` with no comment, visible only to a planner that happened to act.
+# What `git status --porcelain` says of the worktree is printed and quoted as the evidence.
+# TODO(#366): render the comment from project.messages.
+block_on_a_merge_that_never_started() {
+  local issue=$1 branch=$2 base=$3 worktree_status note
+  worktree_status=$(git -C "$worktree" status --porcelain)
+  printf '%s\n' "$worktree_status" | sed 's/^/  /'
+  note="The work of this issue is committed on \`$branch\`, but merging \`$base\` into it never started,
+so no pull request was opened and the branch was not pushed. This is not a conflict (git left no
+unmerged paths): something stopped the merge before it began, usually an untracked file the base
+would overwrite, a missing committer identity or a broken index. A branch pushed unmerged with its
+base gets no CI at all, which is why this run does not push it.
+
+\`git status --porcelain\` in the worktree:
+
+\`\`\`
+$worktree_status
+\`\`\`
+
+What unblocks it: remove or commit what is in the way, then run \`worker_task.sh $backend open-pr\`
+again. The driver deletes and rewrites nothing."
+  "$agent_python" -m agent_os.issues update "$issue" --comment "$note" \
+    || echo "WARNING: could not comment the failed merge on #$issue"
+  hand_the_issue_to_the_human "$issue"
+}
+
 # THE NODE-CHANGE TRAILER IS JUDGED BEFORE THE PULL REQUEST EXISTS. A worker wrote `Node-Change:`,
 # a blank line and `Co-Authored-By:`; git reads only the last paragraph as trailers, so the host's
 # CI step (`agent-os-tree trailers`) found the trailer absent and the pull request was red from its
@@ -81,11 +125,7 @@ What unblocks it: reword each commit named above (\`git commit --amend\` for the
 again. The driver rewrites no commit."
   "$agent_python" -m agent_os.issues update "$issue" --comment "$note" \
     || echo "WARNING: could not comment the malformed trailers on #$issue"
-  if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
-    write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
-  else
-    echo "WARNING: could not move #$issue to blocked-on-human"
-  fi
+  hand_the_issue_to_the_human "$issue"
 }
 
 # THE CODE-QUALITY RATCHET IS RUN BEFORE THE PULL REQUEST EXISTS. The host's CI runs
@@ -139,11 +179,7 @@ above into a new file or subfolder, commit, and run \`worker_task.sh $backend op
 driver changes no file of the branch."
   "$agent_python" -m agent_os.issues update "$issue" --comment "$note" \
     || echo "WARNING: could not comment the quality ratchet on #$issue"
-  if "$agent_python" -m agent_os.issues move "$issue" blocked-on-human; then
-    write_state_marker "$issue" "$(project_value labels.blocked_on_human)"
-  else
-    echo "WARNING: could not move #$issue to blocked-on-human"
-  fi
+  hand_the_issue_to_the_human "$issue"
 }
 
 # THE BODY OF THE PULL REQUEST, which needs `backend`, `worktree`, `agent_python` and `issue_body`

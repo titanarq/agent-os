@@ -31,9 +31,9 @@ stay in the repository's language (English).
 
 - Scaffold with `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues create --type task --parent <feature>
   --label module:<one> --label p<1-4> --title "..." --body-file <file>`; the body follows
-  `.github/ISSUE_TEMPLATE/task.md` exactly (Objective, Acceptance criteria, Context, Not included,
-  Dependencies, Definition of done, `<!-- budget: <class> -->`). Write the body to the session
-  scratchpad, never into the repo.
+  `.github/ISSUE_TEMPLATE/task.md` exactly: its sections in its order, then the
+  `<!-- budget: <class> -->` line (`issues.py validate` rejects a missing or reordered one). Write the
+  body to the session scratchpad, never into the repo.
 - Acceptance criteria are checkable statements a validator can tick; Context names only the docs,
   ADRs and paths actually needed; Not included names the sibling issue that owns each exclusion.
 - Budget class: name one of the worker classes in `config/agents.yaml` `classes:` (the ones with no

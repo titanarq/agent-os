@@ -38,10 +38,12 @@ def record_feedback(
     retried_as: str | None,
     telemetry_file: pathlib.Path,
     feedback_file: pathlib.Path,
+    key: str | None = None,
 ) -> dict:
     """Appends the verdict and returns the record. Refuses, before writing, a verdict that is not one
     of `VERDICTS` and an invocation the telemetry has never heard of: a verdict that joins to nothing
-    is a typo in an id, and recording it would only hide that."""
+    is a typo in an id, and recording it would only hide that. `key` is set only by a writer that must be
+    idempotent (the chat's verdicts, `session_ingest/chat/verdicts.py`): the line then carries it."""
     if verdict not in VERDICTS:
         raise PuntalRefused(f"a verdict is one of {', '.join(VERDICTS)}, not {verdict!r}")
     invocation = next(
@@ -65,5 +67,7 @@ def record_feedback(
         "session_id": invocation.get("session_id"),
         "versions": invocation.get("versions"),
     }
+    if key is not None:
+        record["key"] = key
     append_json_line(feedback_file, record)
     return record

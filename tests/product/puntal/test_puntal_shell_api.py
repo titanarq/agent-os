@@ -144,7 +144,7 @@ def test_feedback_is_recorded_against_the_invocation_with_its_versions(environme
     assert record["note"] == "wrong priority" and record["action"] == "create_ticket"
     telemetry = telemetry_of(tmp_path)[0]
     assert record["versions"] == telemetry["versions"]
-    assert record["versions"]["model"] == "claude-sonnet-5-5"
+    assert record["versions"]["model"] == "claude-haiku-5-5"
     assert record["versions"]["cli_version"] == "fake-0"
     fast_contract = (BENCH.parent.parent / "prompts" / "puntal.md").read_text()
     assert record["versions"]["method_version"]["prompt_digest"] != prompt_digest(fast_contract), (

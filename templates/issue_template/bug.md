@@ -27,4 +27,4 @@ none
 ## Definition of done
 Tests, docs and the commit/PR this lands as.
 
-<!-- budget: mechanical-sonnet -->
+<!-- budget: <class> -->

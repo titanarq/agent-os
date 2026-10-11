@@ -75,7 +75,7 @@ def test_a_run_hands_the_backend_exactly_the_confining_flags_and_a_scratch_direc
     assert "--tools=Bash" in argv and "--allowedTools=Bash(./state *)" in argv
     assert argv[argv.index("--output-format") + 1] == "stream-json"
     assert float(argv[argv.index("--max-budget-usd") + 1]) == 0.25
-    assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
+    assert argv[argv.index("--model") + 1] == "claude-haiku-5-5"
     assert "--effort" not in argv
     # The contract is the system prompt; the LAST argument is the brief, the node slice in it.
     assert "PUNTAL" in argv[argv.index("--system-prompt") + 1]
@@ -153,7 +153,7 @@ def test_an_answered_run_prints_only_the_response_and_logs_everything(environmen
     # The class's own runs.tsv, with the columns every role's has, and the per-run log + marker.
     rows = (tmp_path / "cache" / "runs.tsv").read_text().splitlines()
     assert rows[0] == "ts\tcontext\tmodel\tnum_turns\ttotal_cost_usd"
-    assert rows[1].split("\t")[1:3] == ["create_ticket @ uc-1-file-a-ticket", "claude-sonnet-5-5"]
+    assert rows[1].split("\t")[1:3] == ["create_ticket @ uc-1-file-a-ticket", "claude-haiku-5-5"]
     (log,) = (tmp_path / "cache").glob("*.log")
     assert (tmp_path / "cache" / f"{log.name}.exited").is_file()
     assert "backend:   claude" in log.read_text()

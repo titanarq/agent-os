@@ -37,13 +37,13 @@ including moving an issue the human already wrote through `issues.py move`.
 
 ## Duty 2 — resolve doubts
 
-- Find them: `issues.py list --label <labels.blocked_on_human>`, and open PR review threads or
+- Find them: `issues.py list --label <project.labels.blocked_on_human>`, and open PR review threads or
   issue comments that mention `@__HUMAN_LOGIN__` after the label was set.
 - Answer **only** when an ADR, a module doc, the issue body, or a dated decisions comment settles
   the question; cite it in the answer. Reply on the same thread, in the human's language, then
   `issues.py move N ready` (or `doing` if a worker still holds it — check `.cache/worker_*.issue`).
   A doubt the refiner raised in its `<!-- refiner-summary -->` on a feature it split is answered
-  by removing `<labels.blocked_on_human>` only: the refiner took the feature's own refine label
+  by removing `project.labels.blocked_on_human` only: the refiner took the feature's own refine label
   off on purpose, its children carry the work, and a feature never moves to `ready`.
 - If the record does not settle it, do not guess: leave the label, post a one-paragraph summary of
   the question and the options to the human (`__MECHANISM_DIR__/bin/notify.sh` plus a comment on the tracking
@@ -75,21 +75,23 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
    `__MECHANISM_DIR__/.venv/bin/python -m agent_os.lib forbidden-paths-merge-audit-violations` from the main
    checkout: any line it prints is a violation, no output means clean. Nothing that any
    `AGENTS.md` rule freezes may be touched either. The exempted paths are delivery directories a PR
-   is meant to add a file under (`config/proposals/*`, `docs/adr/*` today), whose diff moves no
-   stamp and changes no live configuration -- they still hold as `forbidden_paths` for a worker's
-   own brief (`__MODULE_DOCS__/workers.md` Contract, "File ownership"), only the merge-time
-   reading is narrower (#476).
+   is meant to add a file under (`project.merge_audit_exempt_paths`), whose diff moves no stamp and
+   changes no live configuration -- they still hold as `forbidden_paths` for a worker's own brief,
+   only the merge-time reading is narrower (#476,
+   `agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md`).
 4. No test was removed or weakened: compare test files against the base branch after `ruff format`
    on both sides (a reflow looks like a deleted assertion; a squash merge is not an ancestor, so
    compare content, not commits).
 5. The PR body closes exactly the issue it was dispatched for, and the module doc changed if
    behaviour or a contract changed.
-6. The PR does not touch the owner's what: `python -m agent_os.product.sessions guard-what N`
-   prints nothing and exits 0. Any line it prints means the PR changes a goal node or an evaluator,
+6. The PR does not touch the owner's what:
+   `__MECHANISM_DIR__/.venv/bin/python -m agent_os.product.sessions guard-what N` prints nothing and
+   exits 0. Any line it prints means the PR changes a goal node or an evaluator,
    and it is never merged automatically -- leave it for the human's own merge, with that line as
    the reason. The one exception is a PR whose body carries `Session-Answer: #S` when the validator's
-   review records that `verify-answer N --session S` exited 0 (the PR is exactly the owner's answer);
-   run that command yourself too, and merge only if it exits 0.
+   review records that `__MECHANISM_DIR__/.venv/bin/python -m agent_os.product.sessions verify-answer N
+   --session S` exited 0 (the PR is exactly the owner's answer); run that command yourself too, and
+   merge only if it exits 0.
 
 Then merge through REST, pinned to the head SHA you verified the six conditions on
 (`gh pr view N --json headRefOid,headRefName`, read before you started checking):
@@ -125,8 +127,8 @@ Cheap reads, in this order, and nothing that spends an LLM turn on the mechanism
   moving.
 - `journalctl --user -u __GUARD_UNIT__.service --since "12 hours ago" -o cat | grep -vE "never started|^0 event|nothing to wake"`.
 - `issues.py list --label <each status label>`; `gh pr list --state open`.
-- `.cache/worker_*.state`, `.cache/<role>/runs.tsv` (planner, validator, refiner: one row per run
-  with cost), and a spend report script once one exists (per issue, per feature, total vs. cap).
+- `.cache/worker_*.state` and `.cache/<role>/runs.tsv` for every role the config gives a class (one
+  row per run with cost).
 
 ### The workers' activity log
 
@@ -148,26 +150,22 @@ It joins the two halves, and they answer different questions:
   `<ts>-<backend>-stage<N>.jsonl`, and adding another backend's live log to an issue's total is a
   real mistake that has already happened.
 
-**Qwen reports no cost.** Its `result` events carry no `total_cost_usd`, so the column reads
-`ABSENT` and `cumulative_cost_usd` sums it as `0.0` -- which is why `max_cost_usd` never fires on
-a Qwen worker (#387, the fix). Never report a Qwen run as `0.00 USD`: that is not a measurement,
-it is a missing field. **Report Qwen spend in tokens**, against its class's own token ceiling
-(80 M for `mechanical-qwen`, raised from 60 M on 2026-09-16 for headroom), and say the dollar
-figure is only readable in Qwen's own console. Claude's runs do carry the cost, so report those in
-USD.
+**A backend that reports no cost** (its `result` events carry no `total_cost_usd`, so the column
+reads `ABSENT` and sums as `0.0`) is never reported as `0.00 USD`: that is a missing field, not a
+measurement. Report its spend in tokens against its class's `max_total_tokens`.
 
 Never `cat` a `.jsonl` -- a stage log is hundreds of KB and the script already reduces it.
 
 Deviation you must flag: spend on an issue above its class cap or above twice the round's
-running average; **a Qwen issue past ~60 M tokens, since no cap will stop it**; an `EXPECT` past
+running average; a no-cost backend's issue past its class's `max_total_tokens`, since `max_cost_usd` cannot stop it; an `EXPECT` past
 its `cutoff` with no later line; a second relaunch of the same issue; an issue in `doing` for more
 than a day with no commit; a `review` older than a day; the timer inactive; a `blocked-on-human`
 older than an hour.
 
 ## Report
 
-A short table: issue | state | attempts | spend vs cap | waiting on -- spend in USD for Claude
-and in tokens for Qwen, never mixing the two units in one figure. Then one line per backend with
+A short table: issue | state | attempts | spend vs cap | waiting on -- spend in USD where the backend
+reports a cost and in tokens where it does not, never mixing the two units in one figure. Then one line per backend with
 its last hour: the stage it is on and the last `VERDE` or `BLOCKED`, or that it was idle. Then, in
 prose, what you did
 (each write, with its link), what you did not do and why, and the decisions only the human can take,
@@ -175,35 +173,22 @@ each with your recommendation. Numbers in the table, not in the prose.
 
 ## Waking the planner early
 
-`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`: the
-`wake:planner` label (`project.labels.wake_planner`) is the one sanctioned lever you have to bring
-the planner back before the next tick's rate-limited idle wake.
+`wake:planner` (`project.labels.wake_planner`) is your one sanctioned lever to bring the planner back
+before the next tick; the rationale and the caveats are in
+`agent_os/docs/adr/2026-09-17-a-merge-is-an-edge-and-the-human-can-wake-the-planner-by-label.md`.
+Use it when the human asks, or when something the planner waits on changed and no event covers it
+(a merge is covered by `pr_merged`: nudge only if it was not picked up within ~5 min).
 
-**When.** The human asks you to, or something the planner was waiting on has changed and no event
-already covers it. A merge is covered on its own by `pr_merged` — do not nudge for that unless it
-was not picked up within roughly one tick (~5 min).
+1. Check no planner run is in flight (latest row of `.cache/planner/runs.tsv` against the newest
+   `.cache/planner/*.log`; read-only) and that the tracking epic does not carry `status:agents-paused`.
+2. Comment the reason, written for the planner, on the issue it is about (or `project.tracking_epic`).
+3. `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues update <N> --add-label wake:planner`, on an
+   open issue, never on a `status:blocked-on-human` one unless your comment IS the answer.
+4. Confirm within ~5 min: `journalctl --user -u __GUARD_UNIT__.service --since "10 min ago" -o cat | grep -i nudg`
+   and a new row in `.cache/planner/runs.tsv`.
 
-**Before you touch it.** Check a planner run is not already in flight: compare the latest row of
-`.cache/planner/runs.tsv` against the newest `.cache/planner/*.log` to see whether that log is
-still being written (reading either file is fine; writing to either is not). Check the tracking
-epic does not carry `status:agents-paused` — while it does, the tick returns before it would ever
-see the label.
-
-**How.**
-1. Comment the reason on the issue it is about — or on the tracking epic (`project.tracking_epic`)
-   if it is not about any single issue — written for the planner to read, not for the human.
-2. `__MECHANISM_DIR__/.venv/bin/python -m agent_os.issues update <N> --add-label wake:planner`.
-
-The tick removes the label within about five minutes and writes one `nudged` event. Confirm it
-took: `journalctl --user -u __GUARD_UNIT__.service --since "10 min ago" -o cat | grep -i nudg` and a
-new row in `.cache/planner/runs.tsv`.
-
-**Caveats.** Never put the label on a `status:blocked-on-human` issue unless your comment IS the
-answer — commenting as the human already clears that label and wakes the planner as
-`human_replied` on its own, the label would be redundant. Each nudge costs one planner pass
-(roughly 0.3–1 USD) and counts against `planner.max_runs_per_day`: one nudge per reason, and never
-repeat a nudge because the planner looked and decided not to dispatch — that is its judgment
-holding, not a missed wake. The label only ever goes on an open issue.
+One nudge per reason: each costs a planner pass against `planner.max_runs_per_day`, and a planner that
+looked and did not dispatch is its judgment, not a missed wake.
 
 ## Hard rules
 

@@ -19,6 +19,10 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    # GitHub's runners set FORCE_COLOR and Rich then wraps flag-shaped tokens in CLI error text in
+    # ANSI spans, so the suite's message assertions diverge from a local run: TERM=dumb prevents it.
+    env:
+      TERM: dumb
     steps:
       - uses: actions/checkout@v7
 

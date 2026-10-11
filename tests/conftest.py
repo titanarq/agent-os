@@ -54,6 +54,29 @@ SHIPPED_EXAMPLE_CONFIG = AGENT_OS_DIR / "config.example.yaml"
 EXAMPLE_CONFIG = MULTI_BACKEND_CONFIG
 
 
+def throwaway_host_with_origin(tmp_path):
+    """A host checkout of its own, with a bare local origin: what a test points `AGENT_OS_HOST_ROOT`
+    at when the driver may MAKE a worktree (a dispatch that finds every slot busy makes the next
+    one, from the host root) -- without it the worktree and its branch would land in the repository
+    the suite runs from."""
+    import subprocess
+
+    remote = tmp_path / "host-remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    root = tmp_path / "host-checkout"
+    root.mkdir()
+    for arguments in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "host@example.invalid"],
+        ["config", "user.name", "host"],
+        ["commit", "-q", "--allow-empty", "-m", "base"],
+        ["remote", "add", "origin", str(remote)],
+        ["push", "-q", "-u", "origin", "main"],
+    ):
+        subprocess.run(["git", *arguments], cwd=root, check=True, capture_output=True)
+    return root
+
+
 def config_with_never_run(tmp_path, items):
     """A copy of `config.example.yaml` with `project.never_run` replaced by `items` -- (command,
     reason) pairs, or nothing at all for an empty list -- written under `tmp_path` and returned as
