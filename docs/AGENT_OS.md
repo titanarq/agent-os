@@ -545,6 +545,7 @@ unit already fell back to `python -m agent_os.guard tick` when there is no `scri
 | `project.messages` | one one-line ntfy template per page, written in `project.human_language`; rendered by `agent_lib.render_human_message`, which refuses an unknown key | `review_ready`, `quota_exhausted_no_fallback`, `planner_run_cap_reached`, `backend_worktree_missing`, `unreviewed_pull_request`, `backend_worktree_dirty` |
 | `project.modules` | the project's own module names, one per `docs/modules/*.md`; the `module:<name>` half of the fixed label set `issues.py` creates | `ingest`, `metrics`, `workers`, … |
 | `project.test_command` | the project's own compact test wrapper, injected as `__TEST_COMMAND__` | `scripts/test.sh` |
+| `project.test_selection.full_run_interval_hours` | hours after which CI runs the whole suite again, whatever a pull request touched (§4.12) | `4` (the default) |
 | `project.test_selection.manifest` | the test manifest (a file, or a folder of `*.yaml`) `agent-os-tests` reads to select a branch's tests (§4.12); empty means selection is off and every plan is the whole suite | `` (the default), `tests/manifest.yaml` |
 | `project.merge_method` | how the control plane merges a verified PR: `merge`, `squash` or `rebase`, the `merge_method` of GitHub's REST merge endpoint, rendered into `.claude/agents/control-plane.md` as `__MERGE_METHOD__` (§2.4). Any other value fails the config load (agent-os#88) | `merge` (the default) |
 | `project.agent_models` | the `model:` of each `.claude/agents/*.md` definition, rendered as `__CONTROL_PLANE_MODEL__`, `__WORKER_RUNNER_MODEL__` and `__TASK_WRITER_MODEL__` (agent-os#96): `control_plane` (default `sonnet`), `worker_runner` (default `sonnet`), `task_writer` (default `sonnet`), plus `custodian` and `consolidator` (default `opus`: the two roles that run on Opus, rarely -- the roles arrive in Stage 2 of `docs/AGENTOS_V2_PLAN.md`, so for now only the keys and their defaults exist and nothing reads them). Every other role runs on Sonnet. A value is whatever `claude --model` accepts, an alias or a full id, and is opaque to the mechanism: it keeps no allowlist and no price table, and a run's cost is the `total_cost_usd` the CLI reports in its result event. An unknown key fails the config load. The one-shot roles are not here: their model is `classes.<name>.model` | `agent_models: {task_writer: claude-opus-5}` (the defaults are Sonnet for the three definitions, Opus for the two Stage 2 roles) |
@@ -1523,14 +1524,16 @@ A branch runs the tests a manifest maps to what it touched, not the whole suite
 is named by `project.test_selection.manifest`: one YAML file, or a folder read recursively where
 `version`, `test_globs`, `always` and `exempt` live only in `settings.yaml` and every file may carry
 `groups` (`id`, optional `nodes`, `covers`, `tests`) and `integration` (`id`, `sides`, `tests`). An
-unknown key is a loud error. This module is the selection half only; the clock that makes the whole
-suite run every four hours and the CI templates are separate work.
+unknown key is a loud error. The clock that makes the whole suite run every
+four hours is described at the end of this section.
 
 ```bash
 agent-os-tests check [--manifest PATH]
 agent-os-tests plan --base REF [--manifest PATH] [--tree-root DIR] [--format summary|json|paths]
 agent-os-tests run --base REF [--manifest PATH] [--command CMD] [--full]
+agent-os-tests last-full-run --repo OWNER/REPO [--marker-name agent-os-full-run]
 ```
+`plan` and `run` also take `--last-full-run ISO8601|never|unknown`, `--interval-hours N` and `--only-when-due`.
 
 Also `python -m agent_os.product.test_selection ...`. `--root` defaults to the working directory's
 checkout, never `AGENT_OS_HOST_ROOT`. `check` exits 1 for a test file no group maps, a mapped path that
@@ -1543,6 +1546,19 @@ manifest that is configured but missing is exit 2, an invalid one exit 1. `run` 
 (default `project.test_command`) with the selected paths, or alone for a full plan; when the plan cannot
 be computed it runs the whole suite and says why on stderr. `test_command` must accept path arguments
 (`scripts/test.sh tests/x.py`): a wrapper that ignores them makes selection a no-op, not an error.
+
+**The clock.** `docs/tree/dec-a-full-run-every-four-hours-of-development.md`: the pull request that finds
+`full_run_interval_hours` since the last full run runs the whole suite. The last full run is the
+`created_at` of the newest unexpired Actions artifact named `agent-os-full-run`, which `ci-host.yml`
+uploads (one-day retention) only after a successful run whose mode was `full`, on a pull request or on a
+push to the default branch; `last-full-run` reads it with `gh api` and the default `GITHUB_TOKEN`
+(`actions: read`). `never` (no artifact, or an expired one) and `unknown` (any `gh` failure, which prints
+the reason on stderr and still exits 0) are both due: an unreadable clock is a full run, never a skipped
+one. A failed full run uploads nothing, so the clock keeps its old origin. Due makes `plan` and `run`
+`mode: full`; with `--only-when-due` (a push) not due makes `mode: none` and `run` execs nothing. Without
+`--last-full-run` the clock is not consulted: a local run never carries it. There is no schedule, so with
+no development there is no run. When `GITHUB_OUTPUT` is set `run` appends `mode=<full|selected|none>`,
+and `GITHUB_STEP_SUMMARY` receives the plan. `ci-agent-os.yml` keeps its whole suite.
 
 ## 5. Export recipe
 

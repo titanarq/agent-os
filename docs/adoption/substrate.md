@@ -229,6 +229,11 @@ The mechanism reads a project's own knowledge layer at several points (the worke
     host that sets `project.install_host_ci: false` copies those two steps into its own CI, with
     `fetch-depth: 0` on its checkout so the merge-base exists. Tune `quality:` (step 8) before
     the first PR if the defaults in `config.example.yaml` do not fit.
+    *Test selection:* `ci-host.yml` also runs on `push` to `main` (edit it if your default branch
+    differs) and runs `agent-os-tests check`, reads the four-hour clock and runs `agent-os-tests run`
+    instead of the bare test command (`docs/AGENT_OS.md` §4.12). `project.test_command` **must accept
+    path arguments** (`scripts/test.sh tests/x.py`): a wrapper that ignores them runs the whole suite
+    every time. Until `project.test_selection.manifest` is set every run is full, as before.
 21. **`agent-os-doctor`** — reads the whole checklist above back in one pass: the mechanism's own
     interpreter (step 16) importing `pyyaml`, `pydantic`, `PyJWT[crypto]` and `agent_os.product`
     (a failing line names the missing module and the exact repair command), `gh auth status`

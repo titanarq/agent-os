@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TestSelectionConfig(BaseModel):
@@ -13,3 +13,7 @@ class TestSelectionConfig(BaseModel):
     # The manifest file, or the folder of manifest files, relative to the repository root. Empty
     # means selection is off: every plan is the whole suite and nothing changes for the host.
     manifest: str = ""
+
+    # Hours after which a pull request's CI runs the whole suite again, however little it
+    # touched. The clock is the age of the last successful full run, read from GitHub Actions.
+    full_run_interval_hours: int = Field(default=4, gt=0)

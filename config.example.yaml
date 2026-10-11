@@ -62,6 +62,9 @@ project:
   # `test_command` must accept path arguments, or selection does nothing.
   test_selection:
     manifest: ""
+    # Hours after which CI runs the whole suite again whatever a pull request touched: the age of
+    # the last successful full run, read from GitHub Actions (no schedule: no development, no run).
+    full_run_interval_hours: 4
   # Whether `agent-os-install` writes `.github/workflows/ci-host.yml`, running `test_command` on
   # every pull request with no path filter. The control plane never merges a PR whose head SHA
   # reports zero checks, and `ci-agent-os.yml` only fires on `agent_os/**`, so a host without a

@@ -18,15 +18,15 @@ MAX_UNMAPPED_PATHS_NAMED = 10
 class TestPlan:
     __test__ = False  # not a pytest class, whatever its name starts with
 
-    mode: Literal["selected", "full"]
+    mode: Literal["selected", "full", "none"]
     reason: str
     groups: tuple[str, ...] = ()
     tests: tuple[str, ...] = ()
     unmapped_paths: tuple[str, ...] = ()
 
     def summary(self) -> str:
-        if self.mode == "full":
-            return f"mode: full ({self.reason})"
+        if self.mode != "selected":
+            return f"mode: {self.mode} ({self.reason})"
         lines = [f"mode: selected ({self.reason})", f"groups: {', '.join(self.groups) or '-'}"]
         return "\n".join([*lines, *(f"  {test}" for test in self.tests)])
 
