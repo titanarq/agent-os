@@ -23,6 +23,7 @@ import sys
 from agent_os import lib
 from agent_os.cli import host_root
 from agent_os.issues import type_labels
+from agent_os.product.puntal.constants import PuntalRefused
 from agent_os.product.puntal.options import run_dir_for
 from agent_os.product.session_ingest.apply import (
     AppliedSession,
@@ -106,7 +107,7 @@ def _utc_now() -> str:
 
 
 def _apply(
-    plan, tree, tracker, args: argparse.Namespace, config: lib.AgentsConfig
+    plan, tree, tracker, args: argparse.Namespace, config: lib.AgentsConfig, feedback_file
 ) -> AppliedSession:
     """Carries out a plan of either schema; the ticket settings are asked of the config only when a
     ticket is still to be opened, so a session with nothing to open never needs a budget class."""
@@ -119,6 +120,7 @@ def _apply(
             settings=_ticket_settings(config) if to_open else None,
             understood_directory=_sessions_directory(args, config),
             ingested_at=_utc_now(),
+            feedback_file=feedback_file,
         )
     to_open = any(step.existing_issue is None for step in plan.reworks)
     settings = _ticket_settings(config) if to_open else None
@@ -163,8 +165,8 @@ def run_test_ingest(
         if not args.apply:
             continue
         try:
-            applied = _apply(plan, tree, tracker, args, config)
-        except (WritebackError, ReworkTicketError, UnderstoodFileError) as error:
+            applied = _apply(plan, tree, tracker, args, config, feedback_file)
+        except (WritebackError, ReworkTicketError, UnderstoodFileError, PuntalRefused) as error:
             raise IngestRefused(f"{session.id}: {error}") from error
         written_files.extend(applied.written_files)
         if applied.understood_file:

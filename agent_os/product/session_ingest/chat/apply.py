@@ -22,6 +22,7 @@ from agent_os.product.session_ingest.chat.understood import (
     session_block,
     write_session_block,
 )
+from agent_os.product.session_ingest.chat.verdicts import record_verdict_step
 from agent_os.product.tree.loader import Tree
 
 
@@ -55,6 +56,7 @@ def apply_chat_plan(
     settings: ReworkTicketSettings | None,
     understood_directory: pathlib.Path,
     ingested_at: str,
+    feedback_file: pathlib.Path,
 ) -> AppliedSession:
     """`settings` may be None only for a plan with no issue still to open."""
     to_open = [step for step in plan.issues if step.existing_issue is None]
@@ -69,6 +71,8 @@ def apply_chat_plan(
         answers=plan.answers,
         acceptances=plan.acceptances,
     )
+    for step in plan.verdict_steps:
+        record_verdict_step(step, feedback_file=feedback_file)
     issues_by_key = {
         step.subject.key: step.existing_issue for step in plan.issues if step.existing_issue
     }

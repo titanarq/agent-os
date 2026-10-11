@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from agent_os.product.records import read_json_lines
+from agent_os.product.session_ingest.chat.verdict_keys import (
+    belongs_to_session,
+    is_chat_verdict_key,
+)
 
 if TYPE_CHECKING:
     from agent_os.product.session_ingest.session_file import AnySession
@@ -45,12 +49,21 @@ def summarize_verdicts(session: AnySession, feedback_file: pathlib.Path) -> list
     each was first given. An absent file is an empty summary: the session may have judged nothing
     improvised. A line with no readable moment is skipped, never placed in a session by guess."""
     rows: dict[tuple[str, str], ActionVerdicts] = {}
+    counted_keys: set[str] = set()
     for record in read_json_lines(feedback_file):
-        moment = _recorded_at(record)
-        if moment is None or moment < session.opened_at:
-            continue
-        if session.closed_at is not None and moment > session.closed_at:
-            continue
+        key = record.get("key")
+        if is_chat_verdict_key(key):
+            # a verdict from the chat is the session's by its key, never by the moment it was
+            # recorded (`test-ingest` writes it when it runs), and a repeated key counts once
+            if not belongs_to_session(key, session.id) or key in counted_keys:
+                continue
+            counted_keys.add(key)
+        else:
+            moment = _recorded_at(record)
+            if moment is None or moment < session.opened_at:
+                continue
+            if session.closed_at is not None and moment > session.closed_at:
+                continue
         key = (str(record.get("action") or "?"), str(record.get("node") or "?"))
         row = rows.setdefault(key, ActionVerdicts(*key))
         verdict = record.get("verdict")
