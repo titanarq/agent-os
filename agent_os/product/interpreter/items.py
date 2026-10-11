@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from agent_os.product.interpreter.constants import ITEM_KINDS
+from agent_os.product.interpreter.constants import ITEM_KINDS, ITEM_STATUSES
 
 
 @dataclasses.dataclass(frozen=True)
@@ -19,9 +19,13 @@ class Item:
     page: str | None
     from_messages: tuple[int, ...]
     withdrawn: bool = False
+    status: str | None = None
 
     def as_json(self) -> dict:
-        return {**dataclasses.asdict(self), "from_messages": list(self.from_messages)}
+        document = {**dataclasses.asdict(self), "from_messages": list(self.from_messages)}
+        if self.status is None:
+            del document["status"]
+        return document
 
 
 def _optional_text(raw: dict, key: str, problems: list[str], where: str) -> str | None:
@@ -66,6 +70,9 @@ def parse_item(
     withdrawn = raw.get("withdrawn", False)
     if not isinstance(withdrawn, bool):
         problems.append(f"{where}: `withdrawn` must be true or false")
+    status = raw.get("status")
+    if status is not None and status not in ITEM_STATUSES:
+        problems.append(f"{where}: `status` must be one of {list(ITEM_STATUSES)} when present")
     item_id = raw.get("id") or id_of_new
     if problems or not isinstance(item_id, str):
         return None, problems
@@ -77,4 +84,5 @@ def parse_item(
         page=page,
         from_messages=tuple(sorted(set(sources))),
         withdrawn=withdrawn,
+        status=status,
     ), []

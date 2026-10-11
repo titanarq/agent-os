@@ -68,6 +68,9 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 - `id` is assigned by code (`item-N`, after the highest the request carried), never by the model. The
   host stores an item whose `id` it already holds by REPLACING it (a correction) and appends the rest.
   `withdrawn: true` means the owner no longer wants it: ingestion skips it.
+- `status` is optional: `proposed` (the change was put to the owner) or `approved` (the owner agreed);
+  absent means the owner was never asked. Any other value is refused (the request, and the session
+  reader naming the file). Only the interpreter writes it; the host stores it verbatim in `items[]`.
 - `node` is the case's id or null; `page` as the message carried it; `from_messages` are positions in
   the whole thread, the new message's included. One message with several things yields several items.
 

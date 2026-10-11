@@ -112,6 +112,15 @@ class PuntalConfig(Strict):
         return value
 
 
+class SessionsConfig(Strict):
+    """The owner's test sessions as a whole, read by the feedback interpreter and by `test-ingest`
+    (the guard is about the owner's session, not about the tree)."""
+
+    # When true (the default) a change born from a test session is proposed to the owner and only
+    # launched once approved (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`).
+    confirm_before_dispatch: bool = True
+
+
 class InterpreterConfig(Strict):
     """How the feedback interpreter (`agent_os.product.interpreter`) talks and how long it may take.
     The model and the per-invocation ceilings are the `interpreter` class's, as the puntal's are its
