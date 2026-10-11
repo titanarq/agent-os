@@ -33,6 +33,28 @@ class CaseContext:
 
 
 @dataclasses.dataclass(frozen=True)
+class Invocation:
+    """One recent answer of the puntal the host carries, so that an item can name it by id."""
+
+    invocation_id: str
+    action: str
+    node: str | None
+    page: str | None
+    at: str | None
+    answer: str
+
+
+@dataclasses.dataclass(frozen=True)
+class OpenQuestion:
+    """An open question of what with its default answer: `ask` when the interpreter is to put it,
+    `pending_question` when the message may be answering it."""
+
+    node: str
+    question: str
+    default_answer: str
+
+
+@dataclasses.dataclass(frozen=True)
 class Request:
     thread: tuple[Message, ...]
     message: Message
@@ -41,6 +63,9 @@ class Request:
     session_id: str
     invocation_id: str
     labels: dict[str, str]
+    invocations: tuple[Invocation, ...] = ()
+    pending_question: OpenQuestion | None = None
+    ask: OpenQuestion | None = None
 
     @property
     def message_position(self) -> int:
@@ -109,6 +134,55 @@ def case_from_tree(case_id: str, tree_root: pathlib.Path) -> CaseContext:
     return CaseContext(node.id, node.title, node.description, lines)
 
 
+def _required_text(raw: dict, key: str, where: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise InterpreterRefused(f"{where}: `{key}` must be non-empty text")
+    return value
+
+
+def invocations_from_list(raw: object) -> tuple[Invocation, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise InterpreterRefused("`invocations` must be a list")
+    invocations = []
+    for n, entry in enumerate(raw):
+        where = f"invocations[{n}]"
+        if not isinstance(entry, dict):
+            raise InterpreterRefused(f"{where} must be an object")
+        optional = {
+            key: _text_or_none(entry.get(key), what=f"{where}: `{key}`")
+            for key in ("node", "page", "at")
+        }
+        answer = entry.get("answer", "")
+        if not isinstance(answer, str):
+            raise InterpreterRefused(f"{where}: `answer` must be text")
+        invocations.append(
+            Invocation(
+                invocation_id=_required_text(entry, "invocation_id", where),
+                action=_required_text(entry, "action", where),
+                answer=answer,
+                **optional,
+            )
+        )
+    if len({entry.invocation_id for entry in invocations}) != len(invocations):
+        raise InterpreterRefused("`invocations` carries one invocation id twice")
+    return tuple(invocations)
+
+
+def open_question_from_object(raw: object, *, key: str) -> OpenQuestion | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise InterpreterRefused(f"`{key}` must be an object")
+    return OpenQuestion(
+        node=_required_text(raw, "node", f"`{key}`"),
+        question=_required_text(raw, "question", f"`{key}`"),
+        default_answer=_required_text(raw, "default_answer", f"`{key}`"),
+    )
+
+
 def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
     try:
         document = json.loads(text)
@@ -138,7 +212,14 @@ def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
     labels = document.get("labels") or {}
     if not isinstance(labels, dict):
         raise InterpreterRefused("`labels` must be an object")
+    pending = open_question_from_object(document.get("pending_question"), key="pending_question")
+    ask = open_question_from_object(document.get("ask"), key="ask")
+    if pending and ask:
+        raise InterpreterRefused("`pending_question` and `ask` cannot come in the same request")
     return Request(
+        invocations=invocations_from_list(document.get("invocations")),
+        pending_question=pending,
+        ask=ask,
         thread=thread,
         message=message,
         case=case,
