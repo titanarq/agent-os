@@ -18,10 +18,10 @@ import sys
 
 from agent_os.lib import HOST_ROOT
 from agent_os.product.interpreter.brief import build_brief
-from agent_os.product.interpreter.confirmation import confirmation_from_tree
 from agent_os.product.interpreter.constants import OUTCOME_EXIT_STATUS, InterpreterRefused
 from agent_os.product.interpreter.envelope import refusal_envelope, success_envelope
 from agent_os.product.interpreter.options import resolve_options
+from agent_os.product.interpreter.proposals.confirmation import confirmation_from_tree
 from agent_os.product.interpreter.request import Request, parse_request
 from agent_os.product.interpreter.run import interpret, telemetry_request
 from agent_os.product.puntal.cli import release_stdout

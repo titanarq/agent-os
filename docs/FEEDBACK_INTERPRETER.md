@@ -68,10 +68,18 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
   session, `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`), `question_of_what` (touches
   the what with no decision stated: stays open until the owner answers).
 - Three more kinds (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; the
-  contract only, the behaviour comes after): `verdict` (`invocations`: exactly one id, `verdict`: `accept`, `reject` or
+  the interpreter reads `invocations` and proposes `verdict` and `puntal_change`, `answer` comes after): `verdict` (`invocations`: exactly one id, `verdict`: `accept`, `reject` or
   `retry`, optional `note`), `puntal_change` (a correction of the puntal's instructions: `summary`, `invocations`, `node`,
   `page`) and `answer` (`node`, `question`, `answer_text`, all required). Any item may carry `invocations: [ids]`; each of
   these fields is omitted from the item's JSON when empty. The interpreter's parser and the session reader accept them.
+- The brief lists the carried `invocations` (the answer cut to 600 characters). The prompt teaches the three outcomes of "this
+  answer is wrong": a `verdict` on ONE invocation; a `change` or `decision` on the case (its description is the puntal's
+  instruction) with the invocation as evidence; a `puntal_change` (the puntal ignored a clear description). The interpreter
+  proposes the target with its reason and the owner confirms or corrects it in the dialog; an ambiguous answer or target is ONE
+  question. Code binds it: an item that names an id the request did not carry (an item the session already holds keeps its own
+  ids), or a `puntal_change` with no id, is a reason for the one retry. `verdict` and `puntal_change` follow the `approved`
+  rules of `change` (bound to the content shown) and count as proposals in the reply; with `sessions.confirm_before_dispatch`
+  off a new `verdict` is born `approved`, but a `puntal_change` is always born `proposed`.
 - `id` is assigned by code (`item-N`, after the highest the request carried), never by the model. The
   host stores an item whose `id` it already holds by REPLACING it (a correction) and appends the rest.
   `withdrawn: true` means the owner no longer wants it: ingestion skips it.

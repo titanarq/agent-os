@@ -6,19 +6,21 @@ import dataclasses
 import json
 import re
 
-from agent_os.product.interpreter.confirmation import (
-    Confirmation,
-    bind_items,
-    proposal_problems,
-    proposed_after_this_turn,
-    reply_limit,
-)
 from agent_os.product.interpreter.constants import (
     ITEM_ID_PREFIX,
     MAX_REPLY_CHARS,
     QUESTION_MARKS,
 )
 from agent_os.product.interpreter.items import Item, parse_item
+from agent_os.product.interpreter.proposals.confirmation import (
+    Confirmation,
+    bind_items,
+    bind_items_without_confirmation,
+    proposal_problems,
+    proposed_after_this_turn,
+    reply_limit,
+)
+from agent_os.product.interpreter.proposals.invocations import invocation_problems
 from agent_os.product.interpreter.request import Request
 
 FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -96,6 +98,10 @@ def parse_interpretation(
             number += 1 if given is None else 0
             items.append(item)
     limit = MAX_REPLY_CHARS
+    problems += invocation_problems(items, request)
+    if confirmation is None:
+        items, binding_problems = bind_items_without_confirmation(items, request)
+        problems += binding_problems
     if confirmation is not None and isinstance(reply, str) and isinstance(needs_answer, bool):
         items, binding_problems = bind_items(items, request, confirmation)
         proposed = proposed_after_this_turn(items, request)
