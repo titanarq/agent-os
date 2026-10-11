@@ -9,7 +9,8 @@ from agent_os.product.session_ingest.session_file import Question
 
 COMMENT_STATES = ("perfect", "ok_with_improvements", "needs_work")
 CASE_VERDICTS = (*COMMENT_STATES, "not_tried")
-ITEM_KINDS = ("change", "decision", "question_of_what")
+ITEM_KINDS = ("change", "decision", "question_of_what", "verdict", "puntal_change", "answer")
+VERDICTS = ("accept", "reject", "retry")
 ITEM_STATUSES = ("proposed", "approved")
 ROLES = ("owner", "agent")
 
@@ -43,6 +44,11 @@ class Item:
     from_messages: tuple[int, ...]
     withdrawn: bool
     status: str | None = None
+    invocations: tuple[str, ...] = ()
+    verdict: str | None = None
+    note: str | None = None
+    question: str | None = None
+    answer_text: str | None = None
 
 
 @dataclass(frozen=True)
