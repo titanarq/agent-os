@@ -23,9 +23,11 @@ from agent_os.issues import prefixed_title
 from agent_os.lib import TaskClass, validate_issue_body
 from agent_os.product.dispatch.markers import render_marker_lines
 from agent_os.product.dispatch.touched_code import touched_paths_of
+from agent_os.product.session_ingest.chat.model import ChatSession
 from agent_os.product.session_ingest.rework_ticket import (
     ReworkTicketError,
     quoted_owner_words,
+    rework_key,
 )
 from agent_os.product.tree.models import Node
 from agent_os.product.tree.slicing import JUDGED_BY_AGENT_LABEL
@@ -55,7 +57,8 @@ class TicketSubject:
     """What one issue is about, decided by the plan; the ticket only words it.
 
     `task` is the one thing to do and nothing but it; `origin` says where it came from and goes in
-    the context; `others` are the items read from the same messages that this issue does not do."""
+    the context; `others` are the items read from the same messages that this issue does not do and
+    `exclusions` what else it must not do."""
 
     key: str
     title: str
@@ -66,6 +69,65 @@ class TicketSubject:
     node_id: str | None
     is_rework: bool
     others: tuple[OtherItem, ...] = ()
+    exclusions: tuple[str, ...] = ()
+
+
+def thread_text(session: ChatSession, positions: list[int]) -> str:
+    lines = []
+    for position in positions:
+        comment = session.comments[position]
+        details = ", ".join(d for d in (comment.state, comment.page) if d)
+        suffix = f" ({details})" if details else ""
+        lines.append(f"[{position}] {comment.role}{suffix}: {comment.text or '(no text)'}")
+    return "\n".join(lines)
+
+
+def one_safe_line(text: str) -> str:
+    """The interpreter's words are a model's output: one line, with no comment delimiter, so that
+    they can neither open a section of the ticket nor forge a marker line."""
+    return " ".join(text.split()).replace("<!--", "&lt;!--").replace("-->", "--&gt;")
+
+
+def read_from_the_same_messages(
+    session: ChatSession, positions: list[int], *, apart_from: str | None = None
+) -> tuple[OtherItem, ...]:
+    """The items, not withdrawn, that the interpreter read from any of these messages: what an issue
+    quoting them must say it does not do."""
+    return tuple(
+        OtherItem(item.kind, one_safe_line(item.summary))
+        for item in session.items or ()
+        if item.id != apart_from and not item.withdrawn and set(item.from_messages) & set(positions)
+    )
+
+
+def case_subject(session: ChatSession, node: str, kind: str, thread: list[int]) -> TicketSubject:
+    rework = kind == "rework"
+    verdict = "needs work" if rework else "ok with improvements"
+    origin = (
+        f"The owner gave `{node}` the state `{verdict}` in test session `{session.id}`, and no "
+        "interpreter read what they wrote: the whole thread of the case is quoted below."
+    )
+    task = (
+        "Make it do what the owner expected, as the thread says."
+        if rework
+        else "Make the changes the owner's text names."
+    )
+    title = (
+        f"Rework `{node}`: needs work in test session {session.id}"
+        if rework
+        else f"Improve `{node}`: ok with improvements in test session {session.id}"
+    )
+    return TicketSubject(
+        key=rework_key(session.id, node) if rework else change_key(session.id, f"case.{node}"),
+        title=title,
+        summary=title,
+        task=task,
+        origin=origin,
+        messages=thread_text(session, thread),
+        node_id=node,
+        is_rework=rework,
+        others=read_from_the_same_messages(session, thread),
+    )
 
 
 def change_key(session_id: str, tail: str) -> str:
@@ -120,13 +182,17 @@ def render_change_ticket(
         "The owner's messages, as the session recorded them:\n\n"
         f"{quoted_owner_words(subject.messages)}"
     )
-    not_included = [
-        f"- {other.summary} -- {WHAT_EACH_KIND_OF_ITEM_IS[other.kind]}; {TRACKED_SEPARATELY}."
-        for other in subject.others
-    ] + [
-        "- Anything the Task does not name, even when a quoted message mentions it.",
-        "- Changing the what: a decision of what waits for the owner.",
-    ]
+    not_included = (
+        [
+            f"- {other.summary} -- {WHAT_EACH_KIND_OF_ITEM_IS[other.kind]}; {TRACKED_SEPARATELY}."
+            for other in subject.others
+        ]
+        + [f"- {exclusion}" for exclusion in subject.exclusions]
+        + [
+            "- Anything the Task does not name, even when a quoted message mentions it.",
+            "- Changing the what: a decision of what waits for the owner.",
+        ]
+    )
     sections = [
         ("## Objective", objective),
         ("## Acceptance criteria", "\n".join(criteria)),

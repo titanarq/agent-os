@@ -53,6 +53,7 @@ def apply_chat_plan(
     tree: Tree,
     *,
     tracker: IssueTracker,
+    mechanism_tracker: IssueTracker | None = None,
     settings: ReworkTicketSettings | None,
     understood_directory: pathlib.Path,
     ingested_at: str,
@@ -82,7 +83,8 @@ def apply_chat_plan(
             if settings
             else []
         )
-        issues_by_key[step.subject.key] = tracker.open(title, body, labels)
+        opener = mechanism_tracker if step.on_mechanism and mechanism_tracker else tracker
+        issues_by_key[step.subject.key] = opener.open(title, body, labels)
     applied.rework_issues.extend(issues_by_key.values())
     written = write_session_block(
         understood_directory, session_block(plan, issues_by_key, ingested_at)

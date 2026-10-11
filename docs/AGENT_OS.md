@@ -1453,7 +1453,7 @@ idempotent on its own, so losing it costs a longer plan and no duplicate.
 | `cases` | `[{node, title, state, verdict}]`, `verdict` one of `perfect`, `ok_with_improvements`, `needs_work` (the last state the owner gave that case in the session) or `not_tried` |
 | `comments` | the thread, in the order sent: `[{role, text, state, case, page, at}]`; `role` `owner` or `agent`, `text` a string (empty when only a state was given), `state` `perfect`, `ok_with_improvements`, `needs_work` or `null`, `case` the node or `null`, `page` and `at` free text |
 | `questions` | as above (the host writes only the answered ones) |
-| `items` | **optional**: what the interpreter understood, `[{id, kind, summary, node, page, from_messages, withdrawn, status?, invocations?, verdict?, note?, question?, answer_text?}]` (`docs/FEEDBACK_INTERPRETER.md`); `kind` `change`, `decision`, `question_of_what`, `verdict` (accept, reject or retry one invocation of the puntal), `puntal_change` or `answer` (contract only so far: `docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; `sessions.mechanism_repository` names where a `puntal_change` will open its issue); `status` (optional) `proposed` or `approved`, absent = never asked; `from_messages` are positions in `comments` |
+| `items` | **optional**: what the interpreter understood, `[{id, kind, summary, node, page, from_messages, withdrawn, status?, invocations?, verdict?, note?, question?, answer_text?}]` (`docs/FEEDBACK_INTERPRETER.md`); `kind` `change`, `decision`, `question_of_what`, `verdict` (accept, reject or retry one invocation of the puntal), `puntal_change` or `answer` (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; `sessions.mechanism_repository` names where a `puntal_change` opens its issue); `status` (optional) `proposed` or `approved`, absent = never asked; `from_messages` are positions in `comments` |
 
 A closed session without the `items` key (closed before the interpreter was connected) is valid, and so is `items: []`;
 `commit`, `since`, `changes` and `changes_problem` are not read. Per session, **directly, except decisions** (the owner's word):
@@ -1467,7 +1467,13 @@ A closed session without the `items` key (closed before the interpreter was conn
   `puntal_task.sh feedback` writes (`versions`, `action`, `node` copied from the invocation's telemetry, which sits beside that
   file) plus `key: chat-verdict.<session>.<item>`, so a second run adds nothing (`already recorded`). A `proposed` one waits like a
   `change` (`proposals` in `understood.json`); one naming no invocation of the telemetry, or not exactly one, is a `problem:` line.
-  `puntal_change` and `answer` items are not acted on here yet (`puntal_change`: #183; `answer`: the host writes it);
+  an `answer` item is not acted on here (the host writes it);
+- a `puntal_change` item is **always proposed first** (whatever `sessions.confirm_before_dispatch` says); once `approved` and not
+  withdrawn it opens **one issue on `sessions.mechanism_repository`**, keyed `<!-- key: puntal-change.<session>.<item> -->`, whose
+  Task is to assess `prompts/puntal.md` and reproduce the behaviour as a battery case, changing the prompt only if the battery says
+  so, and whose Context holds the owner's words, each invocation's action, node, outcome and `versions` (from the telemetry) and the
+  case's description; it is listed in `changes` of `understood.json` (origin `puntal change`). With the key empty it is **held**
+  (`held`, nothing opened); an item naming no invocation of the telemetry is a `problem:` line;
 - a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
   configures it, else the bug label), with `<!-- node: -->` when the item has a node and `<!-- key: test-change.<session>.item.<id> -->`.
   The seven headings are the validator's, so the worker is told what is work and what is background by the first words of

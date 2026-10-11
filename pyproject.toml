@@ -56,7 +56,7 @@ extend-select = ["DTZ"]
 testpaths = ["tests"]
 # Shared builders sit beside the tests that use them (`tree_helpers`, `compile_support`) and are
 # imported by name from any folder under `tests/product`.
-pythonpath = ["tests/product/tree", "tests/product/dispatch"]
+pythonpath = ["tests/product/tree", "tests/product/dispatch", "tests/product/sessions"]
 markers = [
     "real_agents_paused: the test exercises `agent_os.guard._agents_paused` itself, not the suite's default 'not paused'",
 ]

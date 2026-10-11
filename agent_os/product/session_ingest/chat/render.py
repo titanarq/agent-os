@@ -10,6 +10,7 @@ _ORIGIN_WORDS = {
     "item": "change",
     "rework": "rework (needs work, nothing interpreted it)",
     "case change": "change (ok with improvements, nothing interpreted it)",
+    "puntal change": "puntal change (an issue on the mechanism)",
     "general": "general change (no case, nothing interpreted it)",
 }
 
@@ -19,7 +20,6 @@ _KEPT_ENDINGS = {
         " -- not launched, no question-session issue (it has no node question with a default "
         "answer): open until the owner answers it when the next session opens"
     ),
-    "puntal_change": " -- not launched: this version does not open the issue of a puntal change yet",
     "answer": " -- nothing to do: the host wrote the answer into the session's questions",
 }
 
@@ -66,6 +66,14 @@ def render_chat_plan(plan: ChatSessionPlan) -> list[str]:
         for item in plan.proposals
     )
     lines.extend(f"  held: {held.summary} -- no interpreter read it" for held in plan.held)
+    lines.extend(
+        _item_line(
+            "held",
+            item,
+            " -- puntal change: `sessions.mechanism_repository` is empty, nothing is opened",
+        )
+        for item in plan.held_puntal_changes
+    )
     launched_before = {item.id: number for item, number in plan.withdrawn_after_launch}
     for item in plan.withdrawn:
         number = launched_before.get(item.id)
