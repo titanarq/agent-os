@@ -301,6 +301,12 @@ interpreter:
   # The most recent thread messages the brief carries; the new message and the items always go whole.
   max_thread_messages: 40
 
+# The owner's test sessions as a whole, read by the feedback interpreter and by `test-ingest`.
+sessions:
+  # true: a change born from a test session is proposed to the owner and launched only once approved
+  # (an item's `status`, docs/FEEDBACK_INTERPRETER.md). false: launched as soon as it is interpreted.
+  confirm_before_dispatch: true
+
 # The product tree and the decision ledger (`agent-os-tree`, docs/AGENT_OS.md §4.6). Every key is
 # optional; the values below are the defaults except `ticket_budget_class`, which has none.
 tree:

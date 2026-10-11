@@ -144,6 +144,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
+from agent_os.product import config as product_config
 from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
 from agent_os.product.dispatch.slots.naming import (
     worker_slot_key,
@@ -930,11 +931,9 @@ class PlannerConfig(Strict):
     # the quota is the only limit (docs/tree/fr-independent-work-runs-in-parallel.md).
     max_parallel_issues: int | None = None
     # How far back the guard's FIRST reconciliation of closed-but-still-labeled issues looks, in
-    # days (#365). Afterwards it asks only for issues closed since its own last pass, so the tick
-    # never pages through the whole closed backlog: `gh issue list --state closed` is capped at
-    # one page, and past that cap an old issue closed today would silently never be reconciled.
-    # A machine that has been off for longer than this loses nothing a human cannot fix with one
-    # `issues.py move N done`.
+    # days (#365). Afterwards it asks only for issues closed since its own last pass: `gh issue
+    # list --state closed` is capped at one page, so paging the whole backlog would silently miss
+    # an old issue closed today. Past this lookback a human fixes one with `issues.py move N done`.
     reconcile_closed_lookback_days: int = 30
 
 
@@ -946,6 +945,7 @@ class AgentsConfig(Strict):
     planner: PlannerConfig = PlannerConfig()
     puntal: PuntalConfig = PuntalConfig()
     interpreter: InterpreterConfig = InterpreterConfig()
+    sessions: product_config.SessionsConfig = product_config.SessionsConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
     board: BoardConfig = BoardConfig()
