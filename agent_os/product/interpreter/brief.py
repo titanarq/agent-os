@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from agent_os.product.interpreter.confirmation import Confirmation
 from agent_os.product.interpreter.request import CaseContext, Request
 
 RETRY_HEADING = "# Your previous answer was rejected"
@@ -39,7 +40,22 @@ def _thread_section(request: Request, max_messages: int) -> str:
     return "# Thread so far (position in brackets)\n" + omitted + ("\n".join(lines) or "(empty)")
 
 
-def build_brief(request: Request, *, max_thread_messages: int, rejection: list[str] | None) -> str:
+def _use_cases_section(confirmation: Confirmation) -> str:
+    lines = [f"- {node_id}: {title}" for node_id, title in confirmation.listed]
+    if confirmation.omitted:
+        lines.append(f"({confirmation.omitted} more use case(s) not listed)")
+    return "# Use cases of the tree (an item's `node` is the case or one of these)\n" + (
+        "\n".join(lines) or "(none)"
+    )
+
+
+def build_brief(
+    request: Request,
+    *,
+    max_thread_messages: int,
+    rejection: list[str] | None,
+    confirmation: Confirmation | None = None,
+) -> str:
     message = request.message
     attributes = "".join(
         f" {label}={value}"
@@ -58,6 +74,8 @@ def build_brief(request: Request, *, max_thread_messages: int, rejection: list[s
         + (json.dumps(items, ensure_ascii=False, indent=1) if items else "(none)"),
         f"# The owner's new message (position {request.message_position}{attributes})\n{message.text}",
     ]
+    if confirmation is not None:
+        sections.insert(2, _use_cases_section(confirmation))
     if rejection:
         reasons = "\n".join(f"- {reason}" for reason in rejection)
         sections.append(

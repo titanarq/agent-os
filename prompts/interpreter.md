@@ -47,6 +47,8 @@ AN ITEM
   or you misread it), repeat its `id` with the whole item as it should now read. To drop one the
   owner no longer wants, repeat its `id` with `"withdrawn": true`. Never use an id the brief does not list.
 
+__PROPOSAL_RULES__
+
 THE OWNER'S VERDICT
 A message may carry a verdict on the case (`perfect`, `ok with improvements`, `needs improvement` or
 `incorrect`, in the host's words). It is context, not an item: a defect the owner describes is an item

@@ -6,11 +6,21 @@ import dataclasses
 import json
 import re
 
-from agent_os.product.interpreter.constants import ITEM_ID_PREFIX, MAX_REPLY_CHARS
+from agent_os.product.interpreter.confirmation import (
+    Confirmation,
+    bind_items,
+    proposal_problems,
+    proposed_after_this_turn,
+    reply_limit,
+)
+from agent_os.product.interpreter.constants import (
+    ITEM_ID_PREFIX,
+    MAX_REPLY_CHARS,
+    QUESTION_MARKS,
+)
 from agent_os.product.interpreter.items import Item, parse_item
 from agent_os.product.interpreter.request import Request
 
-QUESTION_MARKS = ("?", "？", "¿")
 FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
 
 
@@ -30,8 +40,11 @@ def _next_item_number(request: Request) -> int:
     return max(numbers, default=0) + 1
 
 
-def parse_interpretation(text: str, request: Request) -> tuple[Interpretation | None, list[str]]:
-    """`(interpretation, [])` or `(None, reasons)`. An object that is not JSON, a reply that is not
+def parse_interpretation(
+    text: str, request: Request, confirmation: Confirmation | None = None
+) -> tuple[Interpretation | None, list[str]]:
+    """`(interpretation, [])` or `(None, reasons)`. With a `confirmation` (the key is on) the items'
+    status, node and the reply as a proposal are bound by code too. An object that is not JSON, a reply that is not
     short, a question that asks nothing, an item that points at nothing: every reason is returned so
     that the one retry can fix them all."""
     stripped = text.strip()
@@ -46,8 +59,6 @@ def parse_interpretation(text: str, request: Request) -> tuple[Interpretation | 
     reply, needs_answer = document.get("reply"), document.get("needs_answer")
     if not isinstance(reply, str) or not reply.strip():
         problems.append("`reply` must be non-empty text")
-    elif len(reply) > MAX_REPLY_CHARS:
-        problems.append(f"`reply` must be short (at most {MAX_REPLY_CHARS} characters)")
     if not isinstance(needs_answer, bool):
         problems.append("`needs_answer` must be true or false")
     elif (
@@ -84,6 +95,16 @@ def parse_interpretation(text: str, request: Request) -> tuple[Interpretation | 
         if item is not None:
             number += 1 if given is None else 0
             items.append(item)
+    limit = MAX_REPLY_CHARS
+    if confirmation is not None and isinstance(reply, str) and isinstance(needs_answer, bool):
+        items, binding_problems = bind_items(items, request, confirmation)
+        proposed = proposed_after_this_turn(items, request)
+        limit = reply_limit(len(proposed))
+        problems += binding_problems + proposal_problems(
+            proposed, reply, needs_answer, confirmation
+        )
+    if isinstance(reply, str) and len(reply) > limit:
+        problems.append(f"`reply` must be short (at most {limit} characters)")
     if problems:
         return None, problems
     return Interpretation(reply.strip(), tuple(items), needs_answer), []
