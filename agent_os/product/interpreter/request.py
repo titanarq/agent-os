@@ -71,6 +71,7 @@ class Request:
     invocations: tuple[Invocation, ...] = ()
     pending_question: OpenQuestion | None = None
     ask: OpenQuestion | None = None
+    page_node: CaseContext | None = None
 
     @property
     def message_text(self) -> str:
@@ -193,6 +194,16 @@ def open_question_from_object(raw: object, *, key: str) -> OpenQuestion | None:
     )
 
 
+def _page_node(raw: object, tree_root: pathlib.Path) -> CaseContext | None:
+    """The node of the page the owner is commenting on: an object like `case`, or only its id, read
+    from the tree. It may differ from the case open in the chat."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        return case_from_tree(raw, tree_root)
+    return case_from_object(raw)
+
+
 def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
     try:
         document = json.loads(text)
@@ -219,6 +230,7 @@ def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
         case = case_from_tree(ask.node, tree_root)
     else:
         case = None
+    page_node = _page_node(document.get("page_node"), tree_root)
     items = []
     for n, raw in enumerate(document.get("items") or []):
         item, problems = parse_item(
@@ -241,6 +253,7 @@ def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
         invocations=invocations_from_list(document.get("invocations")),
         pending_question=pending,
         ask=ask,
+        page_node=page_node,
         thread=thread,
         message=message,
         case=case,

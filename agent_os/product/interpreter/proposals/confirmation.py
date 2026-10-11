@@ -109,6 +109,8 @@ def bind_items(
     allowed_nodes = {node_id for node_id, _ in confirmation.listed} | {
         item.node for item in request.items if item.node
     }
+    if request.page_node:
+        allowed_nodes.add(request.page_node.id)
     bound, problems = [], []
     for item in items:
         status, reason = _bound_status(item, carried.get(item.id))
