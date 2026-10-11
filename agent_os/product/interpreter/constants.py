@@ -25,6 +25,10 @@ KIND_DECISION = "decision"
 KIND_QUESTION_OF_WHAT = "question_of_what"
 ITEM_KINDS = (KIND_CHANGE, KIND_DECISION, KIND_QUESTION_OF_WHAT)
 
+STATUS_PROPOSED = "proposed"
+STATUS_APPROVED = "approved"
+ITEM_STATUSES = (STATUS_PROPOSED, STATUS_APPROVED)
+
 MAX_REPLY_CHARS = 1200
 ITEM_ID_PREFIX = "item-"
 # The model gets one more turn after an output the validator rejected, and no more.
