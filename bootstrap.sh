@@ -20,7 +20,7 @@ base=${AGENT_OS_BOOTSTRAP_PYTHON:-python3}
 
 [ -x "$venv/bin/python" ] || "$base" -m venv "$venv"
 "$venv/bin/python" -m pip install --quiet --upgrade pip
-"$venv/bin/python" -m pip install --quiet -e "$here" pytest "ruff==0.17.0"
+"$venv/bin/python" -m pip install --quiet -e "$here" pytest pytest-xdist "ruff==0.17.0"
 
 echo "agent_os interpreter: $venv/bin/python"
 "$venv/bin/python" -c 'import agent_os; print("agent_os:", agent_os.__file__)'
