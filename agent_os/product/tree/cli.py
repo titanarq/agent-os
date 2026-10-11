@@ -17,6 +17,10 @@
         # every commit of REF..HEAD that touches the tree must carry one `Node-Change: usage|rework|owner`
         # trailer; one line per commit that does not, exit 1. Reads git only. --agent-authored says an
         # agent wrote the range (a worker's branch): `owner`, the owner's own word, is a defect there.
+    agent-os-tree in-works [--root DIR] [--json]
+        # per node with something open: its open issues (`<!-- node: <id> -->`, with their state
+        # label) and the open pull requests that close one of them or change its node file. Reads
+        # GitHub: a `gh` failure exits 1 with the reason, never an empty map.
 
 Exit status: 0 on success, 1 on a red tree or a refusal (one line on stderr saying why), 2 on a
 usage error. The root is `--root`, else `tree.root` of `config/agents.yaml` under the host's root;
@@ -34,6 +38,7 @@ from collections.abc import Sequence
 from agent_os import lib
 from agent_os.cli import host_root
 from agent_os.product.board.cli import add_board_parser, run_board
+from agent_os.product.board.in_works.cli import run_in_works
 from agent_os.product.tree.checks import check_tree
 from agent_os.product.tree.compile import (
     CompileError,
@@ -180,6 +185,22 @@ def _board(args: argparse.Namespace, config_path) -> int:
     return run_board(args, load_tree(root), _load_config(config_path).board, PROGRAM)
 
 
+def _in_works(args: argparse.Namespace, config_path) -> int:
+    from agent_os.issues import repo_name
+
+    root = _resolve_root(args.root, config_path)
+    try:
+        labels = _load_config(config_path).project.labels.state_labels
+    except lib.CONFIG_LOAD_ERRORS as error:
+        print(
+            f"{PROGRAM}: in-works needs the config for the repository and state labels: "
+            + lib.config_load_failure(error, config_path or lib.DEFAULT_AGENTS_CONFIG),
+            file=sys.stderr,
+        )
+        return 1
+    return run_in_works(args, repo_name(), labels, _tree_root_label(root), PROGRAM)
+
+
 def _trailers(args: argparse.Namespace, config_path) -> int:
     root = _resolve_root(args.root, config_path)
     try:
@@ -229,6 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=_compile)
 
     add_board_parser(sub, common, _board)
+    p = sub.add_parser("in-works", parents=[common], help="open issues and pull requests per node")
+    p.set_defaults(handler=_in_works)
     p = sub.add_parser(
         "trailers", parents=[common], help="every commit touching the tree carries Node-Change"
     )
