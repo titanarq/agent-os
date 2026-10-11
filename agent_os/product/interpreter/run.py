@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from agent_os.lib import write_role_run_exit_marker
 from agent_os.product.config import InterpreterConfig
 from agent_os.product.interpreter.brief import build_brief
+from agent_os.product.interpreter.confirmation import Confirmation
 from agent_os.product.interpreter.constants import (
     INTERPRETER_ROLE,
     MAX_RETRIES,
@@ -52,7 +53,11 @@ class Outcome:
 
 
 def interpret(
-    request: Request, options: Options, settings: InterpreterConfig, clock: Clock
+    request: Request,
+    options: Options,
+    settings: InterpreterConfig,
+    clock: Clock,
+    confirmation: Confirmation | None = None,
 ) -> Outcome:
     started_at = datetime.now(UTC)
     options.run_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +74,10 @@ def interpret(
         )
         for attempt in range(MAX_RETRIES + 1):
             brief = build_brief(
-                request, max_thread_messages=settings.max_thread_messages, rejection=rejection
+                request,
+                max_thread_messages=settings.max_thread_messages,
+                rejection=rejection,
+                confirmation=confirmation,
             )
             turn = run_turn(
                 kind="interpret" if attempt == 0 else "retry",
@@ -87,7 +95,7 @@ def interpret(
                 outcome, detail = turn.outcome, turn.outcome_detail
                 break
             text = turn.observer.final_text()
-            interpretation, rejection = parse_interpretation(text, request)
+            interpretation, rejection = parse_interpretation(text, request, confirmation)
             if interpretation is not None:
                 break
             attempts.append(

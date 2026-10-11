@@ -18,6 +18,7 @@ import sys
 
 from agent_os.lib import HOST_ROOT
 from agent_os.product.interpreter.brief import build_brief
+from agent_os.product.interpreter.confirmation import confirmation_from_tree
 from agent_os.product.interpreter.constants import OUTCOME_EXIT_STATUS, InterpreterRefused
 from agent_os.product.interpreter.envelope import refusal_envelope, success_envelope
 from agent_os.product.interpreter.options import resolve_options
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     request = None
     try:
-        options, settings, default_tree_root = resolve_options(
+        options, settings, default_tree_root, confirm = resolve_options(
             host_root=HOST_ROOT,
             model=args.model,
             timeout_seconds=args.timeout,
@@ -71,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         tree_root = pathlib.Path(args.tree_root) if args.tree_root else default_tree_root
         request = parse_request(_read_request_text(args.request), tree_root=tree_root)
+        confirmation = confirmation_from_tree(request.case, tree_root) if confirm else None
     except InterpreterRefused as refusal:
         return _refuse(str(refusal), request)
     if args.dry_run:
@@ -80,10 +82,15 @@ def main(argv: list[str] | None = None) -> int:
         print(options.fast_contract.rstrip("\n"))
         print("--- brief (first message) ---")
         print(
-            build_brief(request, max_thread_messages=settings.max_thread_messages, rejection=None)
+            build_brief(
+                request,
+                max_thread_messages=settings.max_thread_messages,
+                rejection=None,
+                confirmation=confirmation,
+            )
         )
         return 0
-    outcome = interpret(request, options, settings, clock)
+    outcome = interpret(request, options, settings, clock, confirmation)
     if outcome.exit_status:
         print(f"interpreter {outcome.outcome}: {outcome.detail}", file=sys.stderr)
     print(json.dumps(success_envelope(request, outcome), ensure_ascii=False))
