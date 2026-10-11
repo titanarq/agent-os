@@ -17,13 +17,17 @@ def _words(text: str) -> list[str]:
 
 def test_the_prompt_renders_exactly_the_golden_in_the_owners_language():
     rendered = render_prompt(
-        "interpreter", {"REPLY_LANGUAGE": "the language the owner's latest message is written in"}
+        "interpreter",
+        {
+            "REPLY_LANGUAGE": "the language the owner's latest message is written in",
+            "PROPOSAL_RULES": "",
+        },
     )
     assert _words(rendered) == _words(GOLDEN.read_text())
 
 
 def test_a_configured_language_replaces_the_owners_in_the_reply_rule():
-    rendered = render_prompt("interpreter", {"REPLY_LANGUAGE": "Spanish"})
+    rendered = render_prompt("interpreter", {"REPLY_LANGUAGE": "Spanish", "PROPOSAL_RULES": ""})
     assert "Write it in Spanish." in rendered
 
 

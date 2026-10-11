@@ -29,7 +29,13 @@ STATUS_PROPOSED = "proposed"
 STATUS_APPROVED = "approved"
 ITEM_STATUSES = (STATUS_PROPOSED, STATUS_APPROVED)
 
+QUESTION_MARKS = ("?", "？", "¿")
 MAX_REPLY_CHARS = 1200
+# A proposal names the task, the case and the page of every proposed change, so the reply grows by
+# this much per proposed change (the part said once for all fits the base limit).
+PROPOSAL_REPLY_CHARS_PER_ITEM = 400
+# The use cases of the tree the brief lists, the case first; a long tree is cut here, not paged.
+MAX_LISTED_USE_CASES = 60
 ITEM_ID_PREFIX = "item-"
 # The model gets one more turn after an output the validator rejected, and no more.
 MAX_RETRIES = 1

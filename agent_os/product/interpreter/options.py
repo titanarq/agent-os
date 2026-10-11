@@ -9,6 +9,7 @@ import pathlib
 
 from agent_os.lib import (
     CONFIG_LOAD_ERRORS,
+    PROMPTS_DIR,
     backend_config,
     config_load_failure,
     load_agents_config,
@@ -23,6 +24,7 @@ from agent_os.product.puntal.options import Options
 from agent_os.product.puntal.stream.events import Ceilings
 from agent_os.product.puntal.stream.launch import backend_executable_for
 
+PROPOSAL_RULES_PATH = PROMPTS_DIR / "interpreter_proposal.md"
 OWNERS_LANGUAGE = "the language the owner's latest message is written in"
 
 
@@ -45,8 +47,8 @@ def resolve_options(
     model: str | None = None,
     timeout_seconds: int = 0,
     telemetry_file: str | None = None,
-) -> tuple[Options, InterpreterConfig, pathlib.Path]:
-    """`(options, interpreter config, tree root)`."""
+) -> tuple[Options, InterpreterConfig, pathlib.Path, bool]:
+    """`(options, interpreter config, tree root, whether a change is proposed to the owner first)`."""
     try:
         config = load_agents_config()
         class_name, task_class = load_role_class(INTERPRETER_ROLE)
@@ -61,10 +63,15 @@ def resolve_options(
             f"'{backend.stream}': its confinement here is the {SUPPORTED_STREAM} CLI's"
         )
     settings = config.interpreter
+    confirm = config.sessions.confirm_before_dispatch
     try:
         contract = render_prompt(
             INTERPRETER_ROLE,
-            {"REPLY_LANGUAGE": settings.reply_language.strip() or OWNERS_LANGUAGE},
+            {
+                # First: the section it fills carries `__REPLY_LANGUAGE__` itself.
+                "PROPOSAL_RULES": PROPOSAL_RULES_PATH.read_text() if confirm else "",
+                "REPLY_LANGUAGE": settings.reply_language.strip() or OWNERS_LANGUAGE,
+            },
             prompt_extras_path(INTERPRETER_ROLE, config.project),
         )
     except (KeyError, FileNotFoundError) as error:
@@ -97,4 +104,4 @@ def resolve_options(
         path=PATH_FAST,
         plan_only=True,
     )
-    return options, settings, host_root / config.tree.root
+    return options, settings, host_root / config.tree.root, confirm
