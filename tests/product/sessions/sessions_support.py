@@ -51,10 +51,14 @@ def what_question(question: str, default: str, **fields) -> dict:
     }
 
 
-def config_file(tmp_path: pathlib.Path, **tree_keys) -> pathlib.Path:
+def config_file(
+    tmp_path: pathlib.Path, *, confirm_before_dispatch: bool = False, **tree_keys
+) -> pathlib.Path:
+    """The guard is off unless a test asks: the older tests describe the behaviour without it."""
     data = yaml.safe_load(EXAMPLE_CONFIG.read_text())
     data["project"]["human_login"] = OWNER_LOGIN
     data["tree"] = {"root": TREE_ROOT, **tree_keys}
+    data["sessions"] = {"confirm_before_dispatch": confirm_before_dispatch}
     path = tmp_path / "agents.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False))
     return path

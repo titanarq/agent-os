@@ -1456,6 +1456,11 @@ idempotent on its own, so losing it costs a longer plan and no duplicate.
 A closed session without the `items` key (closed before the interpreter was connected) is valid, and so is `items: []`;
 `commit`, `since`, `changes` and `changes_problem` are not read. Per session, **directly, except decisions** (the owner's word):
 
+- **while `sessions.confirm_before_dispatch` is true (the default)** only a `change` with `status: approved` is launched; one
+  `proposed` or with no status prints `proposed: ... -- waiting for the owner's word in the chat` and goes to `proposals` in
+  `understood.json`, and the raw-text fallbacks below are **held** (`held: ... -- no interpreter read it`, listed under `held`),
+  never launched. With the key false the status is ignored and what follows is the whole rule. Schema 1 is unchanged
+  (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`, `chat/proposals.py`);
 - a `change` not withdrawn is **one issue**, same shape and labels family as the rework ticket (`type:task` where the host
   configures it, else the bug label), with `<!-- node: -->` when the item has a node and `<!-- key: test-change.<session>.item.<id> -->`.
   The seven headings are the validator's, so the worker is told what is work and what is background by the first words of

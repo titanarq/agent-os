@@ -52,6 +52,11 @@ def render_chat_plan(plan: ChatSessionPlan) -> list[str]:
                 "default answer): open until the owner answers it when the next session opens"
             )
         lines.append(_item_line(item.kind.replace("_", " "), item, ending))
+    lines.extend(
+        _item_line("proposed", item, " -- waiting for the owner's word in the chat")
+        for item in plan.proposals
+    )
+    lines.extend(f"  held: {held.summary} -- no interpreter read it" for held in plan.held)
     launched_before = {item.id: number for item, number in plan.withdrawn_after_launch}
     for item in plan.withdrawn:
         number = launched_before.get(item.id)

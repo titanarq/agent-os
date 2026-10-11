@@ -6,16 +6,25 @@ Agentos is the only writer and the app only reads; one JSON object, written whol
 
     {"schema": 1, "sessions": [{"session": "<id>", "status": "open" | "closed",
       "opened_at": "<ISO-8601>", "closed_at": "<ISO-8601>" | null, "ingested_at": "<UTC>",
-      "decisions": [<entry>], "questions": [<entry>], "changes": [<change>]}]}
+      "decisions": [<entry>], "questions": [<entry>], "changes": [<change>],
+      "proposals": [<proposal>], "held": [<held>]}]}
 
     <entry>  = {"id": "item-2", "summary": "...", "node": "uc-x" | null, "page": "/p" | null,
                 "from_messages": [4, 5]}      positions in the `comments` of that session's file
     <change> = {"origin": "item" | "rework" | "case change" | "general", "summary": "...",
                 "node": "uc-x" | null, "issue": 123 | null}
+    <proposal> = {"id": "item-2", "status": "proposed" | "approved", "summary": "...",
+                  "node": "uc-x" | null, "page": "/p" | null, "from_messages": [4, 5]}
+    <held>   = {"summary": "...", "node": "uc-x" | null}
 
 - `decisions` are not launched: the owner confirms or corrects them in the session that opens next;
 - `questions` are the interpreter's `question_of_what`: open until the owner answers;
-- `changes` were launched, each with the issue that carries it.
+- `changes` were launched, each with the issue that carries it;
+- `proposals` and `held` are additive lists (schema stays 1) that exist while
+  `sessions.confirm_before_dispatch` is true (`chat/proposals.py`): `proposals` are the changes
+  proposed to the owner and not launched (an approved one only when its node is missing from the
+  tree), `held` the owner text no interpreter read, which is never launched. Blocks written before
+  them have neither key: read a missing one as empty.
 
 One block per session, oldest opening first; a second ingestion of a session replaces its block, so
 the file is idempotent by effect. An open session is ingested as it goes (the app has no button that
@@ -33,6 +42,7 @@ import pathlib
 
 from agent_os.product.session_ingest.chat.model import Item
 from agent_os.product.session_ingest.chat.plan import ChatSessionPlan
+from agent_os.product.session_ingest.chat.proposals import held_entry, proposal_entry
 from agent_os.product.session_ingest.session_file import UNDERSTOOD_FILE_NAME
 
 UNDERSTOOD_SCHEMA = 1
@@ -74,6 +84,8 @@ def session_block(plan: ChatSessionPlan, issues_by_key: dict[str, int], ingested
             }
             for step in plan.issues
         ],
+        "proposals": [proposal_entry(item) for item in plan.proposals],
+        "held": [held_entry(held) for held in plan.held],
     }
 
 
@@ -112,7 +124,9 @@ def write_session_block(directory: pathlib.Path, block: dict) -> pathlib.Path | 
     earlier = next(
         (row for row in document["sessions"] if row.get("session") == block["session"]), None
     )
-    has_something_to_show = bool(block["decisions"] or block["questions"] or block["changes"])
+    has_something_to_show = any(
+        block[name] for name in ("decisions", "questions", "changes", "proposals", "held")
+    )
     if not has_something_to_show and earlier is None:
         return None
     unchanged = earlier is not None and _without_ingestion_time(earlier) == _without_ingestion_time(
