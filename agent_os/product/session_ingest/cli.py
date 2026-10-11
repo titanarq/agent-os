@@ -69,6 +69,10 @@ def build_tracker() -> GitHubReworkTracker:
     return GitHubReworkTracker()
 
 
+def build_mechanism_tracker(repository: str) -> GitHubReworkTracker:
+    return GitHubReworkTracker(repository)
+
+
 def _sessions_directory(args: argparse.Namespace, config: lib.AgentsConfig) -> pathlib.Path:
     configured = pathlib.Path(args.sessions_dir or config.tree.test_sessions_dir)
     return configured if configured.is_absolute() else host_root() / configured
@@ -117,6 +121,11 @@ def _apply(
             plan,
             tree,
             tracker=tracker,
+            mechanism_tracker=(
+                build_mechanism_tracker(config.sessions.mechanism_repository)
+                if config.sessions.mechanism_repository
+                else None
+            ),
             settings=_ticket_settings(config) if to_open else None,
             understood_directory=_sessions_directory(args, config),
             ingested_at=_utc_now(),
@@ -154,6 +163,12 @@ def run_test_ingest(
                 find_issue=tracker.find_by_key,
                 feedback_file=feedback_file,
                 confirm_before_dispatch=config.sessions.confirm_before_dispatch,
+                mechanism_repository=config.sessions.mechanism_repository,
+                find_mechanism_issue=(
+                    build_mechanism_tracker(config.sessions.mechanism_repository).find_by_key
+                    if config.sessions.mechanism_repository
+                    else None
+                ),
             )
             print("\n".join(render_chat_plan(plan)))
         else:

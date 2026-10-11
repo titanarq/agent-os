@@ -42,7 +42,7 @@ import pathlib
 
 from agent_os.product.session_ingest.chat.model import Item
 from agent_os.product.session_ingest.chat.plan import ChatSessionPlan
-from agent_os.product.session_ingest.chat.proposals import held_entry, proposal_entry
+from agent_os.product.session_ingest.chat.proposals import HeldText, held_entry, proposal_entry
 from agent_os.product.session_ingest.session_file import UNDERSTOOD_FILE_NAME
 
 UNDERSTOOD_SCHEMA = 1
@@ -85,7 +85,8 @@ def session_block(plan: ChatSessionPlan, issues_by_key: dict[str, int], ingested
             for step in plan.issues
         ],
         "proposals": [proposal_entry(item) for item in plan.proposals],
-        "held": [held_entry(held) for held in plan.held],
+        "held": [held_entry(held) for held in plan.held]
+        + [held_entry(HeldText(item.summary, item.node)) for item in plan.held_puntal_changes],
     }
 
 

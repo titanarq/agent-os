@@ -4,6 +4,7 @@ The owner's words are split by the interpreter into items (`docs/FEEDBACK_INTERP
 points at the messages it came from (`from_messages`). From there:
 
 - a `change` that is not withdrawn becomes one issue, directly;
+- an approved `puntal_change` becomes one issue on `sessions.mechanism_repository` (`chat/puntal_change.py`);
 - a `decision` is NOT launched: it is kept for the owner to confirm when the next session opens;
 - a `question_of_what` is kept the same way, as an open question;
 - a withdrawn item is nothing;
@@ -33,7 +34,18 @@ from dataclasses import dataclass, field
 
 from agent_os.product.session_ingest.chat.model import ChatSession, Comment, Item
 from agent_os.product.session_ingest.chat.proposals import HeldText, is_awaiting_approval
-from agent_os.product.session_ingest.chat.ticket import OtherItem, TicketSubject, change_key
+from agent_os.product.session_ingest.chat.puntal_change import (
+    PUNTAL_CHANGE_ORIGIN,
+    decide_puntal_change,
+)
+from agent_os.product.session_ingest.chat.ticket import (
+    TicketSubject,
+    case_subject,
+    change_key,
+    one_safe_line,
+    read_from_the_same_messages,
+    thread_text,
+)
 from agent_os.product.session_ingest.chat.verdicts import VerdictStep, verdict_step_for
 from agent_os.product.session_ingest.feedback_summary import ActionVerdicts, summarize_verdicts
 from agent_os.product.session_ingest.plan import (
@@ -42,7 +54,6 @@ from agent_os.product.session_ingest.plan import (
     acceptance_step_for,
     answer_step_for,
 )
-from agent_os.product.session_ingest.rework_ticket import rework_key
 from agent_os.product.tree.loader import Tree
 
 # `<!-- key: -->` -> the number of the issue already opened for it, or None.
@@ -56,6 +67,7 @@ class IssueStep:
     origin: str
     subject: TicketSubject
     existing_issue: int | None
+    on_mechanism: bool = False
 
 
 @dataclass
@@ -75,35 +87,8 @@ class ChatSessionPlan:
     not_tried: list[str] = field(default_factory=list)
     verdicts: list[ActionVerdicts] = field(default_factory=list)
     verdict_steps: list[VerdictStep] = field(default_factory=list)
+    held_puntal_changes: list[Item] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
-
-
-def _thread_text(session: ChatSession, positions: list[int]) -> str:
-    lines = []
-    for position in positions:
-        comment = session.comments[position]
-        details = ", ".join(d for d in (comment.state, comment.page) if d)
-        suffix = f" ({details})" if details else ""
-        lines.append(f"[{position}] {comment.role}{suffix}: {comment.text or '(no text)'}")
-    return "\n".join(lines)
-
-
-def _one_safe_line(text: str) -> str:
-    """The interpreter's words are a model's output: one line, with no comment delimiter, so that
-    they can neither open a section of the ticket nor forge a marker line."""
-    return " ".join(text.split()).replace("<!--", "&lt;!--").replace("-->", "--&gt;")
-
-
-def _read_from_the_same_messages(
-    session: ChatSession, positions: list[int], *, apart_from: str | None = None
-) -> tuple[OtherItem, ...]:
-    """The items, not withdrawn, that the interpreter read from any of these messages: what an issue
-    quoting them must say it does not do."""
-    return tuple(
-        OtherItem(item.kind, _one_safe_line(item.summary))
-        for item in session.items or ()
-        if item.id != apart_from and not item.withdrawn and set(item.from_messages) & set(positions)
-    )
 
 
 def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLookup) -> None:
@@ -118,7 +103,7 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
         )
         return
     where = f" (page {item.page})" if item.page else ""
-    summary = _one_safe_line(item.summary)
+    summary = one_safe_line(item.summary)
     key = change_key(plan.session.id, f"item.{item.id}")
     subject = TicketSubject(
         key=key,
@@ -129,10 +114,10 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
             f"The owner asked for this in test session `{plan.session.id}`{where}, as the "
             "interpreter of the feedback read it."
         ),
-        messages=_thread_text(plan.session, list(item.from_messages)),
+        messages=thread_text(plan.session, list(item.from_messages)),
         node_id=item.node,
         is_rework=False,
-        others=_read_from_the_same_messages(
+        others=read_from_the_same_messages(
             plan.session, list(item.from_messages), apart_from=item.id
         ),
     )
@@ -150,6 +135,18 @@ def _verdict_item(plan: ChatSessionPlan, item: Item, feedback_file: pathlib.Path
         plan.verdict_steps.append(step)
 
 
+def _puntal_change_item(
+    plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLookup | None, **context
+) -> None:
+    outcome = decide_puntal_change(plan.session, tree, item, **context)
+    plan.proposals.extend(outcome.proposals)
+    plan.held_puntal_changes.extend(outcome.held)
+    plan.problems.extend(outcome.problems)
+    if outcome.subject and lookup:
+        existing = lookup(outcome.subject.key)
+        plan.issues.append(IssueStep(PUNTAL_CHANGE_ORIGIN, outcome.subject, existing, True))
+
+
 def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, lookup) -> None:
     if plan.confirm_before_dispatch:
         plan.held.append(HeldText(subject.summary, subject.node_id))
@@ -157,36 +154,6 @@ def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, 
         plan.waiting.append(subject.title)
     else:
         plan.issues.append(IssueStep(origin, subject, lookup(subject.key)))
-
-
-def _case_subject(session: ChatSession, node: str, kind: str, thread: list[int]) -> TicketSubject:
-    rework = kind == "rework"
-    verdict = "needs work" if rework else "ok with improvements"
-    origin = (
-        f"The owner gave `{node}` the state `{verdict}` in test session `{session.id}`, and no "
-        "interpreter read what they wrote: the whole thread of the case is quoted below."
-    )
-    task = (
-        "Make it do what the owner expected, as the thread says."
-        if rework
-        else "Make the changes the owner's text names."
-    )
-    title = (
-        f"Rework `{node}`: needs work in test session {session.id}"
-        if rework
-        else f"Improve `{node}`: ok with improvements in test session {session.id}"
-    )
-    return TicketSubject(
-        key=rework_key(session.id, node) if rework else change_key(session.id, f"case.{node}"),
-        title=title,
-        summary=title,
-        task=task,
-        origin=origin,
-        messages=_thread_text(session, thread),
-        node_id=node,
-        is_rework=rework,
-        others=_read_from_the_same_messages(session, thread),
-    )
 
 
 def _plan_case(plan: ChatSessionPlan, tree: Tree, node: str, covered: set[int], lookup) -> None:
@@ -214,9 +181,9 @@ def _plan_case(plan: ChatSessionPlan, tree: Tree, node: str, covered: set[int], 
         else:
             plan.acceptances.append(step)
     elif verdict == "needs_work" and (uncovered_text or not interpreted):
-        _launch_or_wait(plan, "rework", _case_subject(session, node, "rework", thread), lookup)
+        _launch_or_wait(plan, "rework", case_subject(session, node, "rework", thread), lookup)
     elif verdict != "needs_work" and uncovered_text:
-        _launch_or_wait(plan, "case change", _case_subject(session, node, "change", thread), lookup)
+        _launch_or_wait(plan, "case change", case_subject(session, node, "change", thread), lookup)
     elif verdict == "ok_with_improvements" and not interpreted and not session.is_open:
         plan.no_change_named.append(node)
 
@@ -242,10 +209,10 @@ def _plan_general_comments(plan: ChatSessionPlan, covered: set[int], lookup: Iss
             f"The owner commented in test session `{session.id}` on no particular case, and no "
             "interpreter read it: the whole thread is quoted below."
         ),
-        messages=_thread_text(session, thread),
+        messages=thread_text(session, thread),
         node_id=None,
         is_rework=False,
-        others=_read_from_the_same_messages(session, thread),
+        others=read_from_the_same_messages(session, thread),
     )
     _launch_or_wait(plan, "general", subject, lookup)
 
@@ -257,6 +224,8 @@ def plan_chat_session(
     find_issue: IssueLookup,
     feedback_file: pathlib.Path,
     confirm_before_dispatch: bool = False,
+    mechanism_repository: str = "",
+    find_mechanism_issue: IssueLookup | None = None,
 ) -> ChatSessionPlan:
     plan = ChatSessionPlan(
         session,
@@ -283,6 +252,15 @@ def plan_chat_session(
             _item_step(plan, tree, item, find_issue)
         elif item.kind == "verdict":
             _verdict_item(plan, item, feedback_file)
+        elif item.kind == "puntal_change":
+            _puntal_change_item(
+                plan,
+                tree,
+                item,
+                find_mechanism_issue,
+                repository=mechanism_repository,
+                feedback_file=feedback_file,
+            )
         else:
             plan.kept_for_next_session.append(item)
     nodes = dict.fromkeys(

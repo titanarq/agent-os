@@ -8,8 +8,9 @@ from agent_os.product.session_ingest.rework_ticket import rework_key
 
 
 class GitHubReworkTracker:
-    def __init__(self) -> None:
-        self._repo: str | None = None
+    def __init__(self, repo: str | None = None) -> None:
+        """`repo` names another repository than the host's (the mechanism's, for a puntal change)."""
+        self._repo = repo
 
     @property
     def repo(self) -> str:
