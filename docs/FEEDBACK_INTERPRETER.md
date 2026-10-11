@@ -71,12 +71,24 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 - `status` is optional: `proposed` (the change was put to the owner) or `approved` (the owner agreed);
   absent means the owner was never asked. Any other value is refused (the request, and the session
   reader naming the file). Only the interpreter writes it; the host stores it verbatim in `items[]`.
+- With `sessions.confirm_before_dispatch` true (the default) the interpreter proposes every `change` to the
+  owner in the chat (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`),
+  and code, not the prompt, binds the answer: a new or corrected `change` leaves `proposed`, a `decision` or
+  `question_of_what` leaves with no status; `approved` is kept only on an item the request carried as `proposed` (or
+  with no status), of kind `change`, repeated with the same kind, summary, node and page, and any other `approved` is
+  a reason for the one retry (a re-sent item that was already `approved` and is unchanged stays so). `withdrawn` keeps
+  its meaning. While any `change` stands `proposed` the reply must have `needs_answer` true, ask a question, and name
+  each proposed item's case (title or id) and page; its limit grows by `PROPOSAL_REPLY_CHARS_PER_ITEM` (400) per
+  proposed change over `MAX_REPLY_CHARS` (1200). The brief then lists the tree's use cases (the case first, at most
+  `MAX_LISTED_USE_CASES`, read from `--tree-root`) and an item's `node` must be the case or one of them, else a retry
+  reason. The tree must be readable in this mode (else the run is refused). With the key false none of this applies:
+  `change` items leave as the model wrote them.
 - `node` is the case's id or null; `page` as the message carried it; `from_messages` are positions in
   the whole thread, the new message's included. One message with several things yields several items.
 
 ## Configuration
 
-`interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
+`sessions.confirm_before_dispatch` (default true) switches the proposal mode above. `interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
 `timeout_seconds` (60), `effort`, `max_thread_messages` (40). Model and per-invocation ceilings:
 `classes.interpreter` (`role: interpreter`, Sonnet 5.5 by default, not Haiku: it decides which case a comment points at (docs/adr/2026-10-10-puntals-and-mechanical-tasks-default-to-haiku-5-5.md), no `fallback:`). Host paragraphs:
 `project.prompt_extras.interpreter`. Logs, `runs.tsv` and `telemetry.jsonl` (the puntal's record, with
