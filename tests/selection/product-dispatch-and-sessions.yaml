@@ -1,0 +1,13 @@
+groups:
+  - id: dispatch
+    covers: [agent_os/product/dispatch]
+    tests: [tests/product/dispatch, tests/product/worker/test_slots_made_on_demand.py]
+  - id: sessions
+    # Test-session ingestion and the question session own these use cases of the tree.
+    nodes:
+      - uc-open-a-test-session-for-a-branch
+      - uc-open-a-question-session
+      - dec-a-test-session-happens-inside-the-app
+      - dec-a-question-session-is-a-github-issue
+    covers: [agent_os/product/sessions, agent_os/product/session_ingest]
+    tests: [tests/product/sessions]

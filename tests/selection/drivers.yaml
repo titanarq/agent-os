@@ -1,0 +1,36 @@
+groups:
+  - id: worker-driver
+    covers: [bin/worker_task.sh, bin/worker, bin/worker_progress.sh, prompts/worker.md]
+    tests:
+      - tests/test_worker_task.py
+      - tests/test_worker_slots.py
+      - tests/test_worker_launch_gate.py
+      - tests/product/worker/test_init_reuses_its_branch.py
+      - tests/product/worker/test_open_pr_merge_failed_blocks_on_human.py
+      - tests/product/worker/test_slots_made_on_demand.py
+      - tests/product/worker/test_worker_linked_paths.py
+      - tests/product/worker/test_worker_quota_refusal_cut.py
+      - tests/product/worker/test_worker_quota_verdict_persisted.py
+      - tests/product/worker/test_worker_rework.py
+      - tests/product/worker/test_worker_slot_by_issue.py
+      - tests/product/worker/test_worker_stage_merge_commit.py
+  - id: role-drivers
+    covers: [bin/agent_task.sh, bin/agent_role_instructions.sh, bin/planner_task.sh, bin/qwen_task.sh, bin/notify.sh, prompts/validator.md, prompts/refiner.md, prompts/planner.md, prompts/expert.md]
+    tests:
+      - tests/test_agent_task.py
+      - tests/test_role_backend_fallback.py
+      - tests/test_role_quota_verdict.py
+      - tests/test_role_run_environment_isolation.py
+      - tests/product/worker/test_planner_knows_open_pr_endings.py
+      - tests/product/worker/test_planner_prompt_matches_the_driver.py
+      - tests/product/expert
+integration:
+  - id: prompts-read-through-the-renderer-by-the-drivers
+    sides: [render-and-prompts, worker-driver, role-drivers]
+    tests: [tests/test_worker_task.py, tests/test_agent_task.py]
+  - id: slots-made-on-demand-by-the-dispatcher
+    sides: [worker-driver, dispatch]
+    tests: [tests/product/worker/test_slots_made_on_demand.py, tests/test_worker_slots.py]
+  - id: the-installer-copies-the-issue-templates
+    sides: [install, issues]
+    tests: [tests/test_install_templates.py, tests/test_issues_cli.py]
