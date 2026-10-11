@@ -28,8 +28,6 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import yaml
-
 from agent_os.cli import host_root
 from agent_os.issues import board_owner, gh_json, repo_name
 from agent_os.lib import (
@@ -47,10 +45,16 @@ from agent_os.lib import (
 )
 from agent_os.product.tracker.app_check_access import describe_check_access_of_apps
 from agent_os.product.tracker.linked_boards import linked_boards
+from agent_os.product.tracker.mechanism_interpreter import (
+    describe_mechanism_interpreter,
+    probe_mechanism_interpreter,
+)
+from agent_os.product.tracker.pull_request_workflows import unfiltered_pull_request_workflows
 
 REQUIRED_GH_SCOPES = ("repo", "project")
 BOARD_STATUS_FIELD = "Status"
 CONFIG_CHECK = "config/agents.yaml loads"
+MECHANISM_INTERPRETER_CHECK = "mechanism interpreter imports agent_os"
 
 
 @dataclass
@@ -72,6 +76,11 @@ def check_python_version() -> Check:
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     detail = version if ok else f"{version} -- install python3.12 or newer"
     return Check("python3 >= 3.12", ok, detail)
+
+
+def check_mechanism_interpreter() -> Check:
+    verdict = probe_mechanism_interpreter()
+    return Check(MECHANISM_INTERPRETER_CHECK, verdict.ok, describe_mechanism_interpreter(verdict))
 
 
 def _gh_auth_scopes() -> tuple[bool, set[str], str]:
@@ -320,26 +329,6 @@ def check_guard_timer(project: ProjectConfig) -> Check:
 
 
 PULL_REQUEST_CI_CHECK = "a check on every pull request"
-PATH_FILTER_KEYS = ("paths", "paths-ignore")
-
-
-def _reports_on_every_pull_request(workflow: object) -> bool:
-    """Whether a parsed workflow's `on:` fires on `pull_request` with no `paths`/`paths-ignore`
-    filter. PyYAML reads the bare key `on` as the boolean True, so both spellings are looked up.
-    A heuristic: it does not read job-level `if:` conditions or branch filters."""
-    if not isinstance(workflow, dict):
-        return False
-    triggers = workflow.get("on", workflow.get(True))
-    if triggers == "pull_request":
-        return True
-    if isinstance(triggers, list):
-        return "pull_request" in triggers
-    if isinstance(triggers, dict) and "pull_request" in triggers:
-        pull_request = triggers["pull_request"] or {}
-        return isinstance(pull_request, dict) and not any(
-            key in pull_request for key in PATH_FILTER_KEYS
-        )
-    return False
 
 
 def check_pull_request_ci(root: pathlib.Path) -> Check:
@@ -347,15 +336,7 @@ def check_pull_request_ci(root: pathlib.Path) -> Check:
     only host files. The control plane counts zero checks on a PR's head SHA as merge condition 1
     not met (agent-os#50), and the installed `ci-agent-os.yml` is path-filtered to `agent_os/**`."""
     workflows_dir = root / ".github" / "workflows"
-    candidates = sorted([*workflows_dir.glob("*.yml"), *workflows_dir.glob("*.yaml")])
-    unfiltered = []
-    for path in candidates:
-        try:
-            workflow = yaml.safe_load(path.read_text())
-        except (OSError, yaml.YAMLError):
-            continue
-        if _reports_on_every_pull_request(workflow):
-            unfiltered.append(path.name)
+    unfiltered = unfiltered_pull_request_workflows(workflows_dir)
     if unfiltered:
         return Check(
             PULL_REQUEST_CI_CHECK, True, f"unfiltered pull_request trigger in {unfiltered}"
@@ -395,6 +376,7 @@ def _one_line(message: object) -> str:
 def run_checks(project: ProjectConfig, root: pathlib.Path, repo: str) -> list[Check]:
     return [
         check_python_version(),
+        _guarded(MECHANISM_INTERPRETER_CHECK, check_mechanism_interpreter),
         _guarded("gh auth status", check_gh_auth),
         _guarded("labels that do not autocreate", check_labels, project, repo),
         _guarded("Project v2 Status field", check_board, project, repo),
@@ -422,6 +404,7 @@ def main() -> None:
         checks = [
             Check(CONFIG_CHECK, False, config_load_failure(error)),
             check_python_version(),
+            _guarded(MECHANISM_INTERPRETER_CHECK, check_mechanism_interpreter),
             _guarded("gh auth status", check_gh_auth),
         ]
     else:
