@@ -23,12 +23,12 @@ happened, STDERR the diagnostics. `--dry-run` prints the system prompt and the b
 
 | Field | Meaning |
 |---|---|
-| `message` | required. The owner's new message: `text` (non-empty), `state`, `case`, `page`, `at` (all optional, free text; `state` is the host's own verdict word, e.g. `perfect`, `ok_with_improvements`, `needs_improvement`, `incorrect`). |
+| `message` | required, except on an `ask` request, which carries none (one is refused). The owner's new message: `text` (non-empty), `state`, `case`, `page`, `at` (all optional, free text; `state` is the host's own verdict word, e.g. `perfect`, `ok_with_improvements`, `needs_improvement`, `incorrect`). |
 | `thread` | the stored messages so far, in order, each `{role: owner\|agent, text, state, case, page, at}`. Pass ALL of them in stored order: positions in `from_messages` are positions in this list, and the new message is at position `len(thread)`. |
 | `case` | optional `{id, title, description, verification: [text, ...]}`. When absent and `message.case` is set, the node is read from the host's product tree (`--tree-root`, default `tree.root`); a case the tree does not have is a refusal. |
 | `items` | the items already interpreted in this session (the shape below), so the model corrects instead of duplicating. |
 | `invocations` | optional. The most recent `interpreter.max_invocations` invocations of the puntal on the message's page and case, each `{invocation_id, action, node, page, at, answer}` (`invocation_id`, `action` required; `answer` text cut by the host; an id twice is refused). An item that points at an answer names one of these ids. |
-| `pending_question` / `ask` | optional, never both. `{node, question, default_answer}`, all non-empty text: the open question of what the owner may be answering (`pending_question`), or the one the interpreter is to put (`ask`). A malformed one, or a malformed `invocations`, is `not_run`. |
+| `pending_question` / `ask` | optional, never both. `{node, question, default_answer}`, all non-empty text: the open question of what the owner may be answering (`pending_question`), or the one the interpreter is to put (`ask`). With `ask` the reply is ONE agent message (the question and its default in words), `needs_answer` true, no items; an `ask` while an item is `proposed` is a refusal (no open question is asked while a proposal waits). With `pending_question`, a message that answers it yields ONE `answer` item whose `node`, `question` and `answer_text` are set by code: the owner's message verbatim, or the default's text when the model marks an explicit yes to it. Several items in one reply go in this order, closed by ONE question: the `answer`, the numbered proposals, what is left out. A malformed one, or a malformed `invocations`, is `not_run`. |
 | `session_id`, `invocation_id`, `labels` | recorded in the telemetry. `invocation_id` defaults to a UUID. |
 
 ## The envelope (stdout)

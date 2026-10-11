@@ -21,6 +21,7 @@ from agent_os.product.interpreter.proposals.confirmation import (
     reply_limit,
 )
 from agent_os.product.interpreter.proposals.invocations import invocation_problems
+from agent_os.product.interpreter.proposals.open_question import ask_problems, bind_answers
 from agent_os.product.interpreter.request import Request
 
 FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -98,6 +99,10 @@ def parse_interpretation(
             number += 1 if given is None else 0
             items.append(item)
     limit = MAX_REPLY_CHARS
+    items, answer_problems = bind_answers(items, request)
+    problems += answer_problems
+    if isinstance(needs_answer, bool):
+        problems += ask_problems(request, items, needs_answer)
     problems += invocation_problems(items, request)
     if confirmation is None:
         items, binding_problems = bind_items_without_confirmation(items, request)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import yaml
 
@@ -112,7 +114,9 @@ def test_the_request_carries_invocations_and_the_open_question():
     carried = request(invocations=[entry], pending_question=QUESTION)
     assert carried.invocations[0].invocation_id == "inv-1" and carried.invocations[0].answer == "ok"
     assert carried.pending_question.default_answer == "No cap." and carried.ask is None
-    assert request(ask=QUESTION).ask.question == "Cap?"
+    asking = json.loads(request_json(ask=QUESTION))
+    del asking["message"]
+    assert parse_request(json.dumps(asking), tree_root=None).ask.question == "Cap?"
     assert request().invocations == () and request().pending_question is None
 
 
