@@ -1553,6 +1553,14 @@ manifest that is configured but missing is exit 2, an invalid one exit 1. `run` 
 be computed it runs the whole suite and says why on stderr. `test_command` must accept path arguments
 (`scripts/test.sh tests/x.py`): a wrapper that ignores them makes selection a no-op, not an error.
 
+**This repository and its agents.** agent-os's own manifest is `tests/selection/` (its
+`project.test_selection.manifest` stays empty, as hosts get it, so `.github/workflows/ci.yml`, `AGENTS.md`
+and local runs pass `--manifest tests/selection`); `tests/conftest.py`, `pyproject.toml`,
+`config.example.yaml` and `bootstrap.sh` are deliberately unmapped, so a change to them is a full run. The
+worker prompt tells the worker to run the selection before the commit that closes a stage, and the
+validator runs it plus the tests the issue names, the full suite only when the issue's definition of
+done says so; a host with no manifest gets its `test_command`, whole.
+
 **The clock.** `docs/tree/dec-a-full-run-every-four-hours-of-development.md`: the pull request that finds
 `full_run_interval_hours` since the last full run runs the whole suite. The last full run is the
 `created_at` of the newest unexpired Actions artifact named `agent-os-full-run`, which `ci-host.yml`

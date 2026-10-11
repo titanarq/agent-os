@@ -1,0 +1,21 @@
+# The test manifest of this repository: one file per area, shape and rules in
+# docs/adr/2026-10-10-a-branch-runs-the-tests-its-manifest-maps-to-what-it-touched.md.
+# Deliberately unmapped, so that a change to any of them is a full run: tests/conftest.py,
+# pyproject.toml, config.example.yaml, bootstrap.sh, agent_os/cli.py, bin/_python.sh and the
+# helpers on the pytest `pythonpath`.
+version: 1
+always:
+  # It reads every file git knows, so any change can break it.
+  - tests/test_no_host_literals.py
+exempt:
+  # Prose and tooling that no test reads.
+  - docs/changelog
+  - docs/adr
+  - docs/CHANGELOG.md
+  - docs/spikes
+  - docs/FEEDBACK_INTERPRETER.md
+  - AGENTS.md
+  - CLAUDE.md
+  - LICENSE
+  - .gitignore
+  - bin/dev

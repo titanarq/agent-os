@@ -80,6 +80,19 @@ a file, so you find out here, while the stage is still yours.
   within it in this same stage -- move code or text into a new file or subfolder -- run the check
   again, and only then commit. Exit 2 means the check could not run: say so in your report.
 
+TESTS -- RUN THE BRANCH'S SELECTION BEFORE YOU CLOSE A STAGE
+The suite of a project can take longer than the stage it checks, so CI runs only the tests the
+project's test manifest maps to what your branch touched, and a clock decides when the whole suite
+runs. You run the same selection, not the whole suite.
+- Before the commit that closes a stage, run from your worktree, with the base your pull request
+  targets (`origin/main` unless the issue says `Base: <branch>`):
+  `"$AGENT_OS_PYTHON" -m agent_os.product.test_selection run --base origin/main`
+  It selects by the checkout you stand in, so run it in your worktree and never in the main checkout.
+- Exit 0: the selected tests passed, carry on. Exit 1: a test failed -- fix it in this same stage and
+  run it again. Exit 2: the selection could not run -- say so in your report. When the project has
+  no manifest the command simply runs its own test command whole: nothing else changes for you.
+- The whole suite is the clock's job: run it only when the issue's definition of done says so.
+
 PROCESSES YOU START ARE YOURS TO STOP -- BY THE PID YOU KEPT, NEVER BY PATTERN
 A smoke test often needs a server, and this machine is shared: the owner's own running product and
 other workers' servers live on it, in other checkouts and on other ports, and a pattern cannot tell

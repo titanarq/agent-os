@@ -55,7 +55,9 @@ non-obvious "why".
 ```bash
 bash bootstrap.sh                                   # own interpreter in .venv (idempotent)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-bash bin/dev/run_suite.sh "$PWD" <run-dir>          # the whole suite, as CI runs it; add `-k name` for one area
+TERM=dumb .venv/bin/agent-os-tests run --base origin/main --manifest tests/selection --command ".venv/bin/pytest -q"   # the branch's selection, as CI runs it
+.venv/bin/pytest tests -q                           # the whole suite (CI's clock decides when it is due, not you)
+bash bin/dev/run_suite.sh "$PWD" <run-dir>          # the whole suite in the background; add `-k name` for one area
 python3 -I bin/dev/suite_show.py <run-dir>/suite.xml <id-fragment>   # only that failing test, truncated
 bash bin/dev/wait_checks.sh "$PWD" <PR> [max_minutes]                # CI of the PR's head; exit 0 = every check SUCCESS
 bash bin/dev/safe_merge.sh "$PWD" <PR>              # merge commit only if all SUCCESS and the head holds origin/main
@@ -90,8 +92,8 @@ assertions diverge from CI.
 
 ## Definition of done
 A defect found in use has the test that reproduced it, failing first and passing now; something new
-the owner has not used yet has no new tests. Ruff is clean and the existing suite passes (the
-relevant tests while iterating, the whole suite if the change is wide). `docs/AGENT_OS.md` changes
+the owner has not used yet has no new tests. Ruff is clean and the branch's selection passes (the
+command under Commands; a path no group of `tests/selection/` covers selects the whole suite). `docs/AGENT_OS.md` changes
 only if the change alters a behaviour it already describes, in its section, without growing it if
 that can be avoided; `docs/ADOPTION.md` changes when a config key or the adoption steps changed.
 The changelog note goes in its own fragment, `docs/changelog/unreleased/<branch-name-with-hyphens>.md`,

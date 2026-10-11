@@ -1,0 +1,31 @@
+groups:
+  - id: puntal
+    covers: [agent_os/product/puntal, bin/puntal_task.sh, prompts/puntal.md, prompts/puntal_slow.md, docs/AGENT_OS.md]
+    tests:
+      - tests/product/puntal/contract
+      - tests/product/puntal/test_puntal_action_models.py
+      - tests/product/puntal/test_puntal_actor.py
+      - tests/product/puntal/test_puntal_api_in_fast_contract.py
+      - tests/product/puntal/test_puntal_bench.py
+      - tests/product/puntal/test_puntal_bench_fast.py
+      - tests/product/puntal/test_puntal_docs.py
+      - tests/product/puntal/test_puntal_fast_path.py
+      - tests/product/puntal/test_puntal_shell_api.py
+      - tests/product/puntal/test_puntal_task.py
+  - id: interpreter
+    covers: [agent_os/product/interpreter, bin/interpreter_task.sh, prompts/interpreter.md, prompts/interpreter_proposal.md]
+    tests: [tests/product/puntal/interpreter]
+  - id: quality-ratchet
+    covers: [agent_os/quality]
+    tests:
+      - tests/product/quality/test_open_pr_quality_ratchet.py
+      - tests/product/quality/test_quality_cli.py
+      - tests/product/quality/test_quality_measures_the_checkout_it_stands_in.py
+      - tests/product/quality/test_quality_ratchet.py
+  - id: test-selection
+    covers: [agent_os/product/test_selection]
+    tests: [tests/product/quality/test_selection]
+integration:
+  - id: puntal-and-interpreter-share-the-launch-and-prompts
+    sides: [puntal, interpreter]
+    tests: [tests/product/puntal/interpreter]
