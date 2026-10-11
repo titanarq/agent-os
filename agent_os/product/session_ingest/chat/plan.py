@@ -32,6 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from agent_os.product.session_ingest.chat.model import ChatSession, Comment, Item
+from agent_os.product.session_ingest.chat.proposals import HeldText, is_awaiting_approval
 from agent_os.product.session_ingest.chat.ticket import OtherItem, TicketSubject, change_key
 from agent_os.product.session_ingest.feedback_summary import ActionVerdicts, summarize_verdicts
 from agent_os.product.session_ingest.plan import (
@@ -65,6 +66,9 @@ class ChatSessionPlan:
     kept_for_next_session: list[Item] = field(default_factory=list)
     withdrawn: list[Item] = field(default_factory=list)
     withdrawn_after_launch: list[tuple[Item, int]] = field(default_factory=list)
+    confirm_before_dispatch: bool = False
+    proposals: list[Item] = field(default_factory=list)
+    held: list[HeldText] = field(default_factory=list)
     waiting: list[str] = field(default_factory=list)
     no_change_named: list[str] = field(default_factory=list)
     not_tried: list[str] = field(default_factory=list)
@@ -101,7 +105,12 @@ def _read_from_the_same_messages(
 
 
 def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLookup) -> None:
+    if is_awaiting_approval(item, confirm_before_dispatch=plan.confirm_before_dispatch):
+        plan.proposals.append(item)
+        return
     if item.node is not None and item.node not in tree.nodes:
+        if plan.confirm_before_dispatch:
+            plan.proposals.append(item)
         plan.problems.append(
             f"{item.id}: no such node {item.node!r}, its change cannot be launched"
         )
@@ -129,7 +138,9 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
 
 
 def _launch_or_wait(plan: ChatSessionPlan, origin: str, subject: TicketSubject, lookup) -> None:
-    if plan.session.is_open:
+    if plan.confirm_before_dispatch:
+        plan.held.append(HeldText(subject.summary, subject.node_id))
+    elif plan.session.is_open:
         plan.waiting.append(subject.title)
     else:
         plan.issues.append(IssueStep(origin, subject, lookup(subject.key)))
@@ -232,8 +243,13 @@ def plan_chat_session(
     *,
     find_issue: IssueLookup,
     feedback_file: pathlib.Path,
+    confirm_before_dispatch: bool = False,
 ) -> ChatSessionPlan:
-    plan = ChatSessionPlan(session, verdicts=summarize_verdicts(session, feedback_file))
+    plan = ChatSessionPlan(
+        session,
+        verdicts=summarize_verdicts(session, feedback_file),
+        confirm_before_dispatch=confirm_before_dispatch,
+    )
     items = session.items or ()
     covered = {position for item in items for position in item.from_messages}
     for question in session.questions:

@@ -128,7 +128,9 @@ evidence and hardens the node).
    answered question goes into its node in the owner's words, a change the interpreter understood becomes one
    keyed issue, a decision is kept for the next session in `understood.json`, a rejected case of schema 1
    becomes one keyed rework issue with the note quoted whole, an accepted case is recorded on the node as
-   `acceptances`; the owner's text no item covers waits until the session closes. A worker commits the tree edits with `Node-Change: usage` and a body line
+   `acceptances`; the owner's text no item covers waits until the session closes. With
+   `sessions.confirm_before_dispatch` true (default) only a change the owner approved in the chat is launched: the plan lists the
+   others as `proposed` and the uncovered text as `held`, and `understood.json` carries both (`proposals`, `held`). A worker commits the tree edits with `Node-Change: usage` and a body line
    `Test-Session: <id>`; as it changes the what, it merges on the owner's word, not the validator's.
 **Check.** The owner opens the panel from the header on any page and finds the comments box with no case
 chosen; the list starts with what the others depend on; collapsing and navigating keep the draft; a rejected
