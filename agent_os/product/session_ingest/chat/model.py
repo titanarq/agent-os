@@ -46,6 +46,7 @@ class Item:
     note: str | None = None
     question: str | None = None
     answer_text: str | None = None
+    origin: str | None = None
 
 
 @dataclass(frozen=True)

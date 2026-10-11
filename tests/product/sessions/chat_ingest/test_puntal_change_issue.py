@@ -1,5 +1,5 @@
 """An approved `puntal_change` opens ONE issue on the mechanism's repository (agent-os#183); held when
-`sessions.mechanism_repository` is empty, proposed whatever the guard says."""
+`sessions.mechanism_repository` is empty, and waiting while it is proposed."""
 
 from __future__ import annotations
 
@@ -127,9 +127,10 @@ def test_with_no_mechanism_repository_it_is_held_and_listed(host, capsys):
     assert [h["node"] for h in block["held"]] == ["uc-bad"] and block["changes"] == []
 
 
-@pytest.mark.parametrize("guard", [False, True])
-@pytest.mark.parametrize("status", ["proposed", None])
-def test_it_waits_for_approval_whatever_the_guard_says(host, status, guard):
+@pytest.mark.parametrize(
+    ("status", "guard"), [("proposed", False), ("proposed", True), (None, True)]
+)
+def test_it_waits_while_proposed_and_in_review_mode_while_it_has_no_status(host, status, guard):
     sessions, _, mechanism_tracker, config = host(repository=MECHANISM, guard=guard)
     write_session(sessions, status=status)
     assert ingest(config, "--apply") == 0

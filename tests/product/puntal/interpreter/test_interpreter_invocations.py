@@ -24,6 +24,7 @@ INVOCATIONS = [
     },
 ]
 LISTED = Confirmation((("uc-publish-an-ad", "Publish an ad"),))
+REVIEW_MODE = Confirmation((("uc-publish-an-ad", "Publish an ad"),), review_mode=True)
 QUESTION = "Shall I record it like this?"
 
 
@@ -80,8 +81,8 @@ def test_a_corrected_item_may_keep_an_answer_that_has_left_the_carried_window():
     assert problems == [] and interpretation.items[0].invocations == ("inv-old",)
 
 
-@pytest.mark.parametrize("confirmation", [None, LISTED])
-def test_a_puntal_change_is_never_born_approved_with_the_key_off_or_on(confirmation):
+@pytest.mark.parametrize("confirmation", [None, LISTED, REVIEW_MODE])
+def test_approved_written_on_a_new_puntal_change_is_a_retry_reason_in_any_mode(confirmation):
     new = item("puntal_change", "It ignored the case", invocations=["inv-a"], status="approved")
     interpretation, problems = interpret(
         new, confirmation=confirmation, needs_answer=True, reply=f"Review the puntal? {QUESTION}"
@@ -89,23 +90,25 @@ def test_a_puntal_change_is_never_born_approved_with_the_key_off_or_on(confirmat
     assert interpretation is None and any("new in this turn" in problem for problem in problems)
 
 
-def test_with_the_key_off_a_verdict_is_born_approved_and_a_puntal_change_proposed():
+def test_a_stated_verdict_and_puntal_change_are_born_approved_outside_review_mode():
     interpretation, problems = interpret(
         verdict(), item("puntal_change", "It ignored the case", invocations=["inv-a"])
     )
     assert problems == []
-    assert [i.status for i in interpretation.items] == ["approved", "proposed"]
+    assert [i.status for i in interpretation.items] == ["approved", "approved"]
 
 
-def test_with_the_key_on_a_verdict_is_proposed_and_approved_only_on_the_same_item_after_the_yes():
+def test_in_review_mode_a_verdict_is_proposed_and_approved_only_on_the_same_item_after_the_yes():
     reply = f"Publish an ad, /ads/new: reject that answer. {QUESTION}"
-    interpretation, _ = interpret(verdict(), confirmation=LISTED, needs_answer=True, reply=reply)
+    interpretation, _ = interpret(
+        verdict(), confirmation=REVIEW_MODE, needs_answer=True, reply=reply
+    )
     assert interpretation.items[0].status == "proposed"
     shown = {**json.loads(json.dumps(interpretation.items[0].as_json())), "id": "item-1"}
     request = request_of(items=[shown])
     again = {**shown, "status": "approved", "id": "item-1"}
-    approved, problems = interpret(again, request=request, confirmation=LISTED)
+    approved, problems = interpret(again, request=request, confirmation=REVIEW_MODE)
     assert problems == [] and approved.items[0].status == "approved"
     changed = {**again, "invocations": ["inv-a"]}
-    refused, problems = interpret(changed, request=request, confirmation=LISTED)
+    refused, problems = interpret(changed, request=request, confirmation=REVIEW_MODE)
     assert refused is None and any("invocation changed" in problem for problem in problems)

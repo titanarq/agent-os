@@ -118,9 +118,11 @@ class SessionsConfig(Strict):
     """The owner's test sessions as a whole, read by the feedback interpreter and by `test-ingest`
     (the guard is about the owner's session, not about the tree)."""
 
-    # When true (the default) a change born from a test session is proposed to the owner and only
-    # launched once approved (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`).
-    confirm_before_dispatch: bool = True
+    # Review mode, which the owner switches on when they ask for a review of everything: every item
+    # of a test session is proposed to the owner and only launched once approved. False (the
+    # default): the item's origin decides, and only a derived item waits
+    # (`docs/adr/2026-10-11-an-items-origin-sets-its-status-and-the-owner-is-asked-only-about-what-is-derived.md`).
+    confirm_before_dispatch: bool = False
     # The repository (`owner/name`) where a `puntal_change` item of the chat opens its issue: the
     # one that holds the puntal's instructions. Empty (the default): the item is held, nothing is
     # opened (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`).

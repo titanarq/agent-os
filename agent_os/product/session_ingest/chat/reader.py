@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from agent_os.product.interpreter.constants import ITEM_KINDS, ITEM_STATUSES, VERDICTS
+from agent_os.product.interpreter.constants import (
+    ITEM_KINDS,
+    ITEM_ORIGINS,
+    ITEM_STATUSES,
+    VERDICTS,
+)
 from agent_os.product.session_ingest.chat.model import (
     CASE_VERDICTS,
     COMMENT_STATES,
@@ -80,6 +85,8 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
     status = _optional_text(row, "status", where)
     if status is not None:
         _one_of(status, ITEM_STATUSES, "item status", where)
+    origin = _optional_text(row, "origin", where)
+    _one_of(origin, ITEM_ORIGINS, "item origin", where)
     invocations = row.get("invocations", [])
     if not isinstance(invocations, list) or not all(isinstance(i, str) and i for i in invocations):
         raise SessionFileError(
@@ -101,6 +108,7 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
         _optional_text(row, "note", where),
         _optional_text(row, "question", where),
         _optional_text(row, "answer_text", where),
+        origin=origin,
     )
 
 

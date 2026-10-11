@@ -132,6 +132,7 @@ def test_guard_on_launches_only_the_approved_change_and_lists_the_rest(make_host
     assert set(block["proposals"][0]) == {
         "id",
         "status",
+        "origin",
         "summary",
         "node",
         "page",
@@ -140,14 +141,16 @@ def test_guard_on_launches_only_the_approved_change_and_lists_the_rest(make_host
     assert [c["issue"] for c in block["changes"]] == [101]
 
 
-def test_guard_off_ignores_the_status(make_host, capsys):
+def test_outside_review_mode_only_a_proposed_item_waits(make_host, capsys):
     sessions, tracker, config = make_host(guard=False)
     write_session(sessions, three_changes())
     assert ingest(config, "--apply") == 0
-    assert "waiting for the owner" not in capsys.readouterr().out
-    assert len(tracker.opened) == 3
+    out = capsys.readouterr().out
+    assert "proposed: item-2: Proposed change -- waiting for the owner's word in the chat" in out
+    assert "proposed: item-3" not in out
+    assert len(tracker.opened) == 2
     (block,) = json.loads((sessions / "understood.json").read_text())["sessions"]
-    assert block["proposals"] == [] and block["held"] == []
+    assert [p["id"] for p in block["proposals"]] == ["item-2"] and block["held"] == []
 
 
 def test_guard_on_holds_the_raw_text_fallbacks_and_shows_them_in_understood(make_host, capsys):

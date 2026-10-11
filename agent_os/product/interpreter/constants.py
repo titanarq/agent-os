@@ -41,6 +41,13 @@ STATUS_PROPOSED = "proposed"
 STATUS_APPROVED = "approved"
 ITEM_STATUSES = (STATUS_PROPOSED, STATUS_APPROVED)
 
+# Where an item comes from, which is what sets its status
+# (`docs/adr/2026-10-11-an-items-origin-sets-its-status-and-the-owner-is-asked-only-about-what-is-derived.md`).
+ORIGIN_STATED = "stated"
+ORIGIN_DERIVED = "derived"
+ORIGIN_DETECTED = "detected"
+ITEM_ORIGINS = (ORIGIN_STATED, ORIGIN_DERIVED, ORIGIN_DETECTED)
+
 QUESTION_MARKS = ("?", "？", "¿")
 # The part of an invocation's answer the brief shows: enough to tell two answers apart.
 MAX_INVOCATION_ANSWER_CHARS = 600

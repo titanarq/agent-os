@@ -3,7 +3,7 @@
 The owner's words are split by the interpreter into items (`docs/FEEDBACK_INTERPRETER.md`); each item
 points at the messages it came from (`from_messages`). From there:
 
-- a `change` that is not withdrawn becomes one issue, directly;
+- a `change` that is not withdrawn becomes one issue, directly, unless it is `proposed` (it waits for the owner's yes);
 - an approved `puntal_change` becomes one issue on `sessions.mechanism_repository` (`chat/puntal_change.py`);
 - a `decision` is NOT launched: it is kept for the owner to confirm when the next session opens;
 - a `question_of_what` is kept the same way, as an open question;
@@ -42,6 +42,7 @@ from agent_os.product.session_ingest.chat.ticket import (
     TicketSubject,
     case_subject,
     change_key,
+    item_origin_sentence,
     one_safe_line,
     read_from_the_same_messages,
     thread_text,
@@ -110,10 +111,7 @@ def _item_step(plan: ChatSessionPlan, tree: Tree, item: Item, lookup: IssueLooku
         title=f"{summary} (test session {plan.session.id}, {item.id})",
         summary=summary,
         task=summary,
-        origin=(
-            f"The owner asked for this in test session `{plan.session.id}`{where}, as the "
-            "interpreter of the feedback read it."
-        ),
+        origin=item_origin_sentence(item, plan.session.id, where),
         messages=thread_text(plan.session, list(item.from_messages)),
         node_id=item.node,
         is_rework=False,
@@ -260,6 +258,7 @@ def plan_chat_session(
                 find_mechanism_issue,
                 repository=mechanism_repository,
                 feedback_file=feedback_file,
+                confirm_before_dispatch=confirm_before_dispatch,
             )
         else:
             plan.kept_for_next_session.append(item)

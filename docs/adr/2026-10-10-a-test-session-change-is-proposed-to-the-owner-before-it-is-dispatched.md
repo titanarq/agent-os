@@ -7,6 +7,8 @@ below), `dec-a-question-session-is-a-github-issue`, `fr-the-owner-is-asked-only-
 `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`, `dec-a-soft-product-decision-is-the-refiners-and-a-hard-one-the-owners`,
 `dec-obey-while-challenging`. Issues: #167 (this design), #169, #170, #171.
 
+**Amended 2026-10-11** by `2026-10-11-an-items-origin-sets-its-status-and-the-owner-is-asked-only-about-what-is-derived.md` (#203): the key is now off by default and is the *review mode*; outside it, only an item whose origin is `derived` is proposed.
+
 ## Context
 
 The owner, 2026-10-10: *"Por ahora vamos a poner este punto de parada, para que yo valide si el trabajo que le vas a dar a cada

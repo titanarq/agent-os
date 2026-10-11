@@ -15,9 +15,15 @@ def _case_section(case: CaseContext | None) -> str:
     if case is None:
         return "# Case\n(none: the owner's message is not about one use case)"
     verification = "\n".join(f"- {line}" for line in case.verification) or "(none declared)"
+    above = "\n".join(f"- {line}" for line in case.criteria_above)
+    criteria = (
+        f"\n\nCriteria above the case (a `detected` item clashes with one):\n{above}"
+        if above
+        else ""
+    )
     return (
         f"# Case\nid: {case.id}\ntitle: {case.title}\n\n{case.description.strip()}\n\n"
-        f"How it is verified:\n{verification}"
+        f"How it is verified:\n{verification}{criteria}"
     )
 
 

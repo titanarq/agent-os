@@ -60,12 +60,12 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 `page`, `at`) and `items[]`:
 
 ```json
-{"id": "item-1", "kind": "change", "summary": "...", "node": "uc-...", "page": "/ads/new",
- "from_messages": [4], "withdrawn": false}
+{"id": "item-1", "kind": "change", "origin": "stated", "status": "approved", "summary": "...",
+ "node": "uc-...", "page": "/ads/new", "from_messages": [4], "withdrawn": false}
 ```
 
 - `kind`: `change` (a defect, retouch or improvement that keeps what the product is for: launched
-  directly), `decision` (changes WHAT the product does: the owner confirms it at the start of the next
+  once approved), `decision` (changes WHAT the product does: the owner confirms it at the start of the next
   session, `dec-a-change-to-the-what-is-merged-only-on-the-owners-word`), `question_of_what` (touches
   the what with no decision stated: stays open until the owner answers).
 - Three more kinds (`docs/adr/2026-10-10-a-verdict-a-correction-and-an-open-question-go-through-the-chat.md`; the
@@ -84,27 +84,39 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
 - `id` is assigned by code (`item-N`, after the highest the request carried), never by the model. The
   host stores an item whose `id` it already holds by REPLACING it (a correction) and appends the rest.
   `withdrawn: true` means the owner no longer wants it: ingestion skips it.
-- `status` is optional: `proposed` (the change was put to the owner) or `approved` (the owner agreed);
-  absent means the owner was never asked. Any other value is refused (the request, and the session
-  reader naming the file). Only the interpreter writes it; the host stores it verbatim in `items[]`.
-- With `sessions.confirm_before_dispatch` true (the default) the interpreter proposes every `change` to the
-  owner in the chat (`docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`),
-  and code, not the prompt, binds the answer: a new or corrected `change` leaves `proposed`, a `decision` or
-  `question_of_what` leaves with no status; `approved` is kept only on an item the request carried as `proposed` (or
-  with no status), of kind `change`, repeated with the same kind, summary, node and page, and any other `approved` is
-  a reason for the one retry (a re-sent item that was already `approved` and is unchanged stays so). `withdrawn` keeps
-  its meaning. While any `change` stands `proposed` the reply must have `needs_answer` true, ask a question, and name
-  each proposed item's case (title or id) and page; its limit grows by `PROPOSAL_REPLY_CHARS_PER_ITEM` (400) per
-  proposed change over `MAX_REPLY_CHARS` (1200). The brief then lists the tree's use cases (the case first, at most
-  `MAX_LISTED_USE_CASES`, read from `--tree-root`) and an item's `node` must be the case or one of them, else a retry
-  reason. The tree must be readable in this mode (else the run is refused). With the key false none of this applies:
-  `change` items leave as the model wrote them.
+- `origin` is written by the interpreter on every item (`docs/adr/2026-10-11-an-items-origin-sets-its-status-and-the-owner-is-asked-only-about-what-is-derived.md`):
+  `stated` (the owner said it as it is), `derived` (deduced from what they said) or `detected` (Agentos
+  noticed it because it clashes with a criterion above the case: a goal or an evaluator; the brief lists
+  the goal and requirement above the case). It is required on a new or corrected item and optional on
+  a withdrawn one; a stored item from before may have none.
+- `status` is optional: `proposed` (the item was put to the owner) or `approved` (the owner agreed, or
+  the origin made it so); absent means the owner was never asked. Any other value is refused (the
+  request, and the session reader naming the file). Only the interpreter's code writes it; the host
+  stores it verbatim in `items[]`. For `change`, `decision`, `puntal_change` and `verdict` code sets it
+  from the origin: `stated` and `detected` are born `approved`, `derived` is born `proposed`. The
+  interpreter asks about a `proposed` item in the chat (only that item waits) and comments a `detected`
+  one as a question already accepted (`needs_answer` false); if the owner says no it withdraws it and
+  proposes, as a `derived` item, the change that reverts it. `question_of_what` and `answer` carry no
+  status.
+- With `sessions.confirm_before_dispatch` true (review mode, which the owner switches on when they ask
+  for a review of everything; default false, `docs/adr/2026-10-10-a-test-session-change-is-proposed-to-the-owner-before-it-is-dispatched.md`)
+  every new or corrected item is born `proposed` whatever its origin. Code, not the prompt, binds the
+  answer in both modes: `approved` is kept only on an item the request carried as `proposed` (or with no
+  status), of a status-bearing kind, repeated with the same kind, summary, node, page, verdict and
+  invocations, and any other `approved` is a reason for the one retry (a re-sent item that was already
+  `approved` and is unchanged stays so). `withdrawn` keeps its meaning. While any such item stands
+  `proposed` the reply must have `needs_answer` true, ask a question, and name each proposed item's case
+  (title or id) and page; a `detected` item of this turn is named the same way (its `needs_answer` stays
+  false). The limit grows by `PROPOSAL_REPLY_CHARS_PER_ITEM` (400) per proposed or detected item over
+  `MAX_REPLY_CHARS` (1200). With a readable tree (`--tree-root`; required in review mode, else the run
+  is refused) the brief lists the tree's use cases (the case first, at most `MAX_LISTED_USE_CASES`) and
+  an item's `node` must be the case or one of them, else a retry reason.
 - `node` is the commented page's node when the request carries `page_node` and the item is about that page, else the case's id; null for a new capability no node covers yet (a valid item); `page` as the message carried it; `from_messages` are positions in
   the whole thread, the new message's included. One message with several things yields several items.
 
 ## Configuration
 
-`sessions.confirm_before_dispatch` (default true) switches the proposal mode above. `interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
+`sessions.confirm_before_dispatch` (default false) switches the review mode above. `interpreter:` section (`config.example.yaml`): `reply_language` (default empty: the owner's own),
 `timeout_seconds` (60), `effort`, `max_thread_messages` (40), `max_invocations` (5). `sessions.mechanism_repository` (`owner/name`, default empty) is where a `puntal_change` opens its issue. Model and per-invocation ceilings:
 `classes.interpreter` (`role: interpreter`, Sonnet 5.5 by default, not Haiku: it decides which case a comment points at (docs/adr/2026-10-10-puntals-and-mechanical-tasks-default-to-haiku-5-5.md), no `fallback:`). Host paragraphs:
 `project.prompt_extras.interpreter`. Logs, `runs.tsv` and `telemetry.jsonl` (the puntal's record, with

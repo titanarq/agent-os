@@ -1,5 +1,5 @@
-"""`sessions.confirm_before_dispatch` on: a change is proposed to the owner and the owner's answer is
-bound by code. The fake `claude` plays the model; nothing here reaches a real backend."""
+"""`sessions.confirm_before_dispatch` on (review mode): every item is proposed to the owner whatever
+its origin, and the owner's answer is bound by code. The fake `claude` plays the model; nothing here reaches a real backend."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import json
 
 from agent_os.cli import AGENT_OS_DIR
 from tests.product.puntal.interpreter.interpreter_support import (  # noqa: F401 -- the fixture
-    EXAMPLE_CONFIG,
     interpret,
     interpreter_environment,
     item,
     model_answer,
     play_answers,
     request_json,
+    review_mode_config,
 )
 
 TREE = str(AGENT_OS_DIR / "docs" / "tree")
@@ -26,7 +26,7 @@ PROPOSED = {"status": "proposed"}
 
 
 def run(environment, tmp_path, *answers, **request):
-    environment["AGENTS_CONFIG_PATH"] = str(EXAMPLE_CONFIG)
+    environment["AGENTS_CONFIG_PATH"] = review_mode_config(tmp_path)
     play_answers(tmp_path, environment, *answers)
     completed = interpret(environment, request_json(**request), "--tree-root", TREE)
     return completed, json.loads(completed.stdout)
@@ -44,15 +44,16 @@ THREAD = [{"role": "owner", "text": "first"}, {"role": "agent", "text": PROPOSAL
 ANSWER = {"text": "yes, launch it", "case": "uc-publish-an-ad", "page": "/ads/new"}
 
 
-def test_a_new_change_is_born_proposed_whatever_the_model_wrote_and_a_decision_has_no_status(
-    tmp_path, environment
-):
-    items = [item(status="proposed"), item("decision", "Drop the warning", status="proposed")]
-    completed, envelope = run(
-        environment, tmp_path, model_answer(reply=PROPOSAL, needs_answer=True, items=items)
-    )
-    assert completed.returncode == 0, completed.stderr
-    assert [i.get("status") for i in envelope["items"]] == ["proposed", None]
+def test_in_review_mode_every_new_item_is_born_proposed_whatever_its_origin(tmp_path, environment):
+    items = [
+        item(origin="detected"),
+        item("decision", "Drop the warning"),
+        item(summary="Resize it", origin="stated"),
+    ]
+    answer = model_answer(reply=PROPOSAL, needs_answer=True, items=items)
+    completed, envelope = run(environment, tmp_path, answer)
+    assert completed.returncode == 0 and envelope["retries"] == 0, completed.stderr
+    assert [i["status"] for i in envelope["items"]] == ["proposed"] * 3
 
 
 def test_approved_on_a_new_item_is_a_retry_reason_not_a_silent_downgrade(tmp_path, environment):
@@ -64,9 +65,9 @@ def test_approved_on_a_new_item_is_a_retry_reason_not_a_silent_downgrade(tmp_pat
 
 def test_approved_on_a_changed_or_non_change_item_is_a_retry_reason(tmp_path, environment):
     changed = {**item(status="approved", summary="Another thing"), "id": "item-1"}
-    decision = {**item("decision", status="approved"), "id": "item-2"}
-    known = [carried(), {**item("decision"), "id": "item-2"}]
-    for returned in (changed, decision):
+    doubt = {**item("question_of_what", status="approved"), "id": "item-2"}
+    known = [carried(), {**item("question_of_what"), "id": "item-2"}]
+    for returned in (changed, doubt):
         completed, envelope = run(
             environment,
             tmp_path,
@@ -142,18 +143,19 @@ def test_the_reply_may_grow_by_a_constant_per_proposed_change(tmp_path, environm
     assert envelope["retries"] == 0 and len(envelope["reply"]) > 1200
 
 
-def test_dry_run_shows_the_proposal_rules_and_the_use_case_listing(tmp_path, environment):
-    environment["AGENTS_CONFIG_PATH"] = str(EXAMPLE_CONFIG)
+def test_dry_run_shows_the_proposal_rules_the_review_mode_and_the_use_case_listing(
+    tmp_path, environment
+):
+    environment["AGENTS_CONFIG_PATH"] = review_mode_config(tmp_path)
     completed = interpret(environment, request_json(), "--tree-root", TREE, "--dry-run")
     assert completed.returncode == 0, completed.stderr
-    assert "PROPOSING EVERY CHANGE TO THE OWNER" in completed.stdout
+    assert "ITEMS THAT WAIT FOR THE OWNER" in completed.stdout
+    assert "REVIEW MODE IS ON" in completed.stdout
     assert "- uc-publish-an-ad: Publish an ad\n" in completed.stdout
     assert f"- {OTHER_USE_CASE}: " in completed.stdout
 
 
-def test_with_the_key_off_the_prompt_and_the_brief_carry_no_confirmation_rule(
-    tmp_path, environment
-):
+def test_with_the_key_off_the_prompt_has_the_origins_and_no_review_mode(tmp_path, environment):
     completed = interpret(environment, request_json(), "--dry-run")
-    assert "PROPOSING EVERY CHANGE" not in completed.stdout
-    assert "Use cases of the tree" not in completed.stdout
+    assert "ORIGIN OF AN ITEM" in completed.stdout
+    assert "REVIEW MODE IS ON" not in completed.stdout

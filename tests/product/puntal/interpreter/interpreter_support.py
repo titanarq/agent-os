@@ -48,12 +48,24 @@ def item(kind="change", summary="Label the checkbox", **fields) -> dict:
     return {
         "id": None,
         "kind": kind,
+        "origin": "stated",
         "summary": summary,
         "node": "uc-publish-an-ad",
         "page": "/ads/new",
         "from_messages": [0],
         **fields,
     }
+
+
+def review_mode_config(tmp_path) -> str:
+    """The example config with review mode on (`sessions.confirm_before_dispatch: true`)."""
+    config = tmp_path / "agents-review-mode.yaml"
+    config.write_text(
+        EXAMPLE_CONFIG.read_text().replace(
+            "confirm_before_dispatch: false", "confirm_before_dispatch: true"
+        )
+    )
+    return str(config)
 
 
 def play_answers(tmp_path, environment, *answers: str) -> None:
@@ -86,15 +98,6 @@ def interpreter_environment(tmp_path, no_real_backend):
         FAKE_PUNTAL_ARGV_LOG=str(tmp_path / "argv.log"),
         FAKE_PUNTAL_PID_FILE=str(tmp_path / "fake.pid"),
     )
-    # The pre-proposal behaviour: the example config has the key on, and these tests are the
-    # contract of the key off.
-    without_confirmation = tmp_path / "agents-without-confirmation.yaml"
-    without_confirmation.write_text(
-        EXAMPLE_CONFIG.read_text().replace(
-            "confirm_before_dispatch: true", "confirm_before_dispatch: false"
-        )
-    )
-    env["AGENTS_CONFIG_PATH"] = str(without_confirmation)
     env.pop("FAKE_PUNTAL_FAULT", None)
     env.pop("FAKE_PUNTAL_PLAYBOOK", None)
     return env
