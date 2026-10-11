@@ -50,6 +50,22 @@ def _use_cases_section(confirmation: Confirmation) -> str:
     )
 
 
+def _open_question_section(request: Request) -> str:
+    ask, pending = request.ask, request.pending_question
+    if ask is not None:
+        return (
+            "# Put this open question to the owner (nobody has written: this is YOUR message)\n"
+            f"case: {ask.node}\nquestion: {ask.question}\ndefault answer: {ask.default_answer}"
+        )
+    if pending is not None:
+        return (
+            "# Your last message put this open question (the new message may answer it)\n"
+            f"case: {pending.node}\nquestion: {pending.question}\n"
+            f"default answer: {pending.default_answer}"
+        )
+    return ""
+
+
 def build_brief(
     request: Request,
     *,
@@ -58,15 +74,6 @@ def build_brief(
     confirmation: Confirmation | None = None,
 ) -> str:
     message = request.message
-    attributes = "".join(
-        f" {label}={value}"
-        for label, value in (
-            ("case", message.case),
-            ("page", message.page),
-            ("state", message.state),
-        )
-        if value
-    )
     items = [item.as_json() for item in request.items]
     sections = [
         _case_section(request.case),
@@ -74,8 +81,24 @@ def build_brief(
         invocations_section(request),
         "# Items already interpreted in this session\n"
         + (json.dumps(items, ensure_ascii=False, indent=1) if items else "(none)"),
-        f"# The owner's new message (position {request.message_position}{attributes})\n{message.text}",
     ]
+    if message is not None:
+        attributes = "".join(
+            f" {label}={value}"
+            for label, value in (
+                ("case", message.case),
+                ("page", message.page),
+                ("state", message.state),
+            )
+            if value
+        )
+        sections.append(
+            f"# The owner's new message (position {request.message_position}{attributes})\n"
+            f"{message.text}"
+        )
+    open_question = _open_question_section(request)
+    if open_question:
+        sections.append(open_question)
     if confirmation is not None:
         sections.insert(2, _use_cases_section(confirmation))
     if rejection:

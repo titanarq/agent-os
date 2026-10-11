@@ -7,7 +7,12 @@ import json
 import pathlib
 import uuid
 
-from agent_os.product.interpreter.constants import ROLE_OWNER, THREAD_ROLES, InterpreterRefused
+from agent_os.product.interpreter.constants import (
+    ROLE_OWNER,
+    STATUS_PROPOSED,
+    THREAD_ROLES,
+    InterpreterRefused,
+)
 from agent_os.product.interpreter.items import Item, parse_item
 
 
@@ -57,7 +62,7 @@ class OpenQuestion:
 @dataclasses.dataclass(frozen=True)
 class Request:
     thread: tuple[Message, ...]
-    message: Message
+    message: Message | None
     case: CaseContext | None
     items: tuple[Item, ...]
     session_id: str
@@ -66,6 +71,11 @@ class Request:
     invocations: tuple[Invocation, ...] = ()
     pending_question: OpenQuestion | None = None
     ask: OpenQuestion | None = None
+
+    @property
+    def message_text(self) -> str:
+        """What the owner typed; empty on an `ask`, which has no message."""
+        return self.message.text if self.message else ""
 
     @property
     def message_position(self) -> int:
@@ -194,11 +204,19 @@ def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
     if not isinstance(thread_raw, list):
         raise InterpreterRefused("`thread` must be a list")
     thread = tuple(_message(raw, where=f"thread[{n}]") for n, raw in enumerate(thread_raw))
-    message = _message(document.get("message"), where="message", require_owner=True)
+    ask = open_question_from_object(document.get("ask"), key="ask")
+    if ask is not None:
+        if document.get("message") is not None:
+            raise InterpreterRefused("an `ask` request carries no `message`: nobody has written")
+        message = None
+    else:
+        message = _message(document.get("message"), where="message", require_owner=True)
     if document.get("case") is not None:
         case = case_from_object(document["case"])
-    elif message.case:
+    elif message and message.case:
         case = case_from_tree(message.case, tree_root)
+    elif ask:
+        case = case_from_tree(ask.node, tree_root)
     else:
         case = None
     items = []
@@ -213,9 +231,12 @@ def parse_request(text: str, *, tree_root: pathlib.Path) -> Request:
     if not isinstance(labels, dict):
         raise InterpreterRefused("`labels` must be an object")
     pending = open_question_from_object(document.get("pending_question"), key="pending_question")
-    ask = open_question_from_object(document.get("ask"), key="ask")
     if pending and ask:
         raise InterpreterRefused("`pending_question` and `ask` cannot come in the same request")
+    if ask and any(item.status == STATUS_PROPOSED and not item.withdrawn for item in items):
+        raise InterpreterRefused(
+            "an `ask` request while a proposal waits: no open question is asked"
+        )
     return Request(
         invocations=invocations_from_list(document.get("invocations")),
         pending_question=pending,

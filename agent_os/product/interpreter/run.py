@@ -156,11 +156,12 @@ def telemetry_request(request: Request) -> TelemetryRequest:
     """The puntal's request shape, so the interpretation lands in the telemetry a refiner already
     reads: the action is `interpret_feedback` and the node is the case, when there is one."""
     case = request.case
+    node_id = case.id if case else (request.ask.node if request.ask else "(no case)")
     return TelemetryRequest(
         action="interpret_feedback",
-        node_id=case.id if case else "(no case)",
+        node_id=node_id,
         node_slice=(f"{case.title}\n{case.description}" if case else ""),
-        payload=request.message.text,
+        payload=request.message_text or (request.ask.question if request.ask else ""),
         relevant_state="",
         session_id=request.session_id,
         invocation_id=request.invocation_id,

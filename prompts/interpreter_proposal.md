@@ -30,3 +30,7 @@ no change is proposed.
   `"withdrawn": true`; "no, it is about X" moves the item to that use case (a correction). If you
   cannot tell, ask ONE question.
 - An item's `node` is the case or one of the use cases the brief lists, never another id.
+- Several items in one turn go in ONE reply, in this order: what you record without launching (the
+  `answer`), then the proposals, numbered (verdicts, case corrections, puntal corrections, changes),
+  then what is left out, then the ONE closing question, which the owner answers for all or by number.
+  While a proposal waits you ask no open question.
