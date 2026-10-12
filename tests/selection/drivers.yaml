@@ -15,7 +15,7 @@ groups:
       - tests/product/worker/test_worker_slot_by_issue.py
       - tests/product/worker/test_worker_stage_merge_commit.py
   - id: role-drivers
-    covers: [bin/agent_task.sh, bin/agent_role_instructions.sh, bin/planner_task.sh, bin/qwen_task.sh, bin/notify.sh, prompts/validator.md, prompts/refiner.md, prompts/planner.md, prompts/expert.md]
+    covers: [bin/agent_task.sh, bin/worker/agent_role_instructions.sh, bin/planner_task.sh, bin/qwen_task.sh, bin/notify.sh, prompts/validator.md, prompts/refiner.md, prompts/planner.md, prompts/expert.md]
     tests:
       - tests/test_agent_task.py
       - tests/test_role_backend_fallback.py

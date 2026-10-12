@@ -254,14 +254,14 @@ def _build_stand_in_main(directory: pathlib.Path) -> pathlib.Path:
     `config/` -- and `$AGENT_OS_HOST_ROOT` (below) names this directory as the host root rather
     than leaving it to be derived."""
     main = directory / "main"
-    (main / "agent_os" / "bin").mkdir(parents=True)
+    (main / "agent_os" / "bin" / "worker").mkdir(parents=True)
     # A copy of `config.example.yaml`, not a symlink to a host's real `config/` (#512): nothing
     # this chain measures depends on a project's own values, and a copy keeps the disposable tree
     # self-contained -- `AGENT_OS_HOST_ROOT=main` below is what points both launched roles at it,
     # whether or not a subprocess inherits this session's own `AGENTS_CONFIG_PATH`.
     (main / "config").mkdir()
     (main / "config" / "agents.yaml").write_text(EXAMPLE_CONFIG.read_text())
-    for name in ("agent_task.sh", "agent_role_instructions.sh", "_python.sh"):
+    for name in ("agent_task.sh", "worker/agent_role_instructions.sh", "_python.sh"):
         (main / "agent_os" / "bin" / name).symlink_to(AGENT_OS_DIR / "bin" / name)
     # A repository of its own, holding exactly the farm: every `git worktree add` the chain makes
     # is registered HERE and goes with tmp_path, never under the gitdir of the checkout running
