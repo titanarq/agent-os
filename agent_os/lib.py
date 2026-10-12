@@ -145,13 +145,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 
 from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.product import config as product_config
-from agent_os.product.config import (
-    BoardConfig,
-    IntegratorConfig,
-    InterpreterConfig,
-    PuntalConfig,
-    TreeConfig,
-)
+from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
 from agent_os.product.dispatch.slots.naming import (
     worker_slot_key,
     worker_slot_worktree,
@@ -301,14 +295,7 @@ class TaskClass(Strict):
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
     role: Literal[
-        "worker",
-        "validator",
-        "refiner",
-        "expert",
-        "planner",
-        "puntal",
-        "interpreter",
-        "integrator",
+        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter", "integrator"
     ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
@@ -366,10 +353,9 @@ class TaskClass(Strict):
 
     @model_validator(mode="after")
     def a_puntal_declares_no_fallback(self) -> TaskClass:
-        # The puntal driver (and the interpreter, which runs on its turn runner) confines the
-        # backend with the flags of one CLI dialect and substitutes nothing: a click that cannot be
-        # answered on its own backend fails fast, which is what a person waiting for it needs. A
-        # declaration nothing would read is a config written wrong.
+        # The puntal driver (and the interpreter, on its turn runner) confines the backend with one
+        # CLI dialect's flags and substitutes nothing: a click that cannot be answered on its own
+        # backend fails fast, which a person waiting needs. A declaration nothing reads is wrong.
         if self.role in ("puntal", "interpreter") and self.fallback is not None:
             raise ValueError(
                 f"fallback is not supported on a {self.role} class: it never substitutes"
@@ -958,7 +944,7 @@ class AgentsConfig(Strict):
     planner: PlannerConfig = PlannerConfig()
     puntal: PuntalConfig = PuntalConfig()
     interpreter: InterpreterConfig = InterpreterConfig()
-    integrator: IntegratorConfig = IntegratorConfig()
+    integrator: product_config.IntegratorConfig = product_config.IntegratorConfig()
     sessions: product_config.SessionsConfig = product_config.SessionsConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()
