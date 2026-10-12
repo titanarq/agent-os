@@ -76,9 +76,10 @@ def _checks_problem(rollup: list[dict], number: int) -> tuple[bool, str]:
 
 
 def _paths_of(repository: pathlib.Path, run: RunCommand, number: int, head_sha: str, base: str):
-    fetched = run(["git", "fetch", "--quiet", "origin", base, f"refs/pull/{number}/head"])
-    if fetched.returncode != 0:
-        raise GitError(f"git fetch of #{number} failed: {fetched.stderr.strip()}")
+    for reference in (base, f"refs/pull/{number}/head"):
+        fetched = run(["git", "fetch", "--quiet", "origin", reference])
+        if fetched.returncode != 0:
+            raise GitError(f"git fetch of {reference} failed: {fetched.stderr.strip()}")
     pinned = run(["git", "rev-parse", "FETCH_HEAD"]).stdout.strip()
     if pinned != head_sha:
         raise GitError(f"the head moved while it was read ({pinned[:9]} is not {head_sha[:9]})")
