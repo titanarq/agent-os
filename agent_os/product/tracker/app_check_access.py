@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agent_os.cli import agent_os_python
-from agent_os.product.integrator.integration_branches import without_integration_pull_requests
+from agent_os.product.tracker.pull_request_checks import without_integration_pull_requests
 
 CHECKS_PERMISSION = "Checks: read"
 COMMIT_STATUSES_PERMISSION = "Commit statuses: read"
