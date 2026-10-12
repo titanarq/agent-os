@@ -23,8 +23,8 @@ from agent_os.product.puntal.telemetry.outcome import (
     turn_cost,
     turn_usage,
 )
-from agent_os.product.records import record_versions
-from agent_os.product.records.versions import prompt_digest
+from agent_os.product.shared.records import record_versions
+from agent_os.product.shared.records.versions import prompt_digest
 
 TELEMETRY_SCHEMA = 2
 # The top-level keys of one telemetry record, in the order they are written. Documented field by

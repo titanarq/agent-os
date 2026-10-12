@@ -18,7 +18,7 @@ host's `.cache/judgments/`, joined by `judgment_id`.
 
 `scope` says whose call it was: a `how` judgment is the agents' to take; a `what` one was taken
 only because the owner was not asked, and is what a question session's digest puts back in front
-of the owner. `versions` is `agent_os.product.records.record_versions`: without it a change in how
+of the owner. `versions` is `agent_os.product.shared.records.record_versions`: without it a change in how
 often judgments are reversed cannot be told from a change of model or of prompt.
 """
 
@@ -28,7 +28,7 @@ import datetime
 import pathlib
 import uuid
 
-from agent_os.product.records import append_json_line, read_json_lines
+from agent_os.product.shared.records import append_json_line, read_json_lines
 
 SCHEMA_VERSION = 1
 JUDGMENTS_FILE = "judgments.jsonl"

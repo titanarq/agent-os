@@ -144,13 +144,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from agent_os.cli import AGENT_OS_DIR, host_root
-from agent_os.product import config as product_config
-from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
 from agent_os.product.dispatch.slots.naming import (
     worker_slot_key,
     worker_slot_worktree,
     worker_slots,
 )
+from agent_os.product.shared import config as product_config
+from agent_os.product.shared.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
 from agent_os.product.test_selection.config import TestSelectionConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (

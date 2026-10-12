@@ -25,7 +25,7 @@ from puntal_support import (
 
 from agent_os.product import puntal
 from agent_os.product.puntal.telemetry.feedback import FEEDBACK_FIELDS
-from agent_os.product.records.versions import prompt_digest
+from agent_os.product.shared.records.versions import prompt_digest
 
 pytestmark = pytest.mark.usefixtures("no_real_backend")
 

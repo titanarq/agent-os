@@ -12,7 +12,7 @@ import pathlib
 from datetime import UTC, datetime
 
 from agent_os.product.puntal.constants import PuntalRefused
-from agent_os.product.records import append_json_line, read_json_lines
+from agent_os.product.shared.records import append_json_line, read_json_lines
 
 FEEDBACK_SCHEMA = 1
 VERDICTS = ("accept", "reject", "retry")

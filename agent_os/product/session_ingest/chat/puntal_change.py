@@ -16,7 +16,6 @@ import json
 import pathlib
 from dataclasses import dataclass, field
 
-from agent_os.product.records import read_json_lines
 from agent_os.product.session_ingest.chat.model import ChatSession, Item
 from agent_os.product.session_ingest.chat.proposals import is_awaiting_approval
 from agent_os.product.session_ingest.chat.ticket import (
@@ -26,6 +25,7 @@ from agent_os.product.session_ingest.chat.ticket import (
     thread_text,
 )
 from agent_os.product.session_ingest.chat.verdicts import telemetry_file_beside
+from agent_os.product.shared.records import read_json_lines
 from agent_os.product.tree.loader import Tree
 
 PUNTAL_CHANGE_ORIGIN = "puntal change"

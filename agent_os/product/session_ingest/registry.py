@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent_os.product.records import append_json_line, read_json_lines
+from agent_os.product.shared.records import append_json_line, read_json_lines
 
 REGISTRY_FILE = "ingested.jsonl"
 

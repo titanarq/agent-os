@@ -28,7 +28,6 @@ from collections.abc import Sequence
 from agent_os import lib
 from agent_os.cli import host_root
 from agent_os.issues import repo_name
-from agent_os.product.records import record_versions
 from agent_os.product.session_ingest import cli as test_ingest_cli
 from agent_os.product.sessions import github, judgments, session_log
 from agent_os.product.sessions.batch import build_batch
@@ -45,6 +44,7 @@ from agent_os.product.sessions.writeback import (
     answer_question,
     raise_reclaimed_question,
 )
+from agent_os.product.shared.records import record_versions
 from agent_os.product.tree.cli import _resolve_root as resolve_tree_root
 from agent_os.product.tree.loader import load_tree
 

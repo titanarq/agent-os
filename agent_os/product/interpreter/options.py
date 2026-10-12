@@ -17,12 +17,12 @@ from agent_os.lib import (
     prompt_extras_path,
     render_prompt,
 )
-from agent_os.product.config import InterpreterConfig
 from agent_os.product.interpreter.constants import INTERPRETER_ROLE, InterpreterRefused
 from agent_os.product.puntal.constants import PATH_FAST, SUPPORTED_STREAM
 from agent_os.product.puntal.options import Options
 from agent_os.product.puntal.stream.events import Ceilings
 from agent_os.product.puntal.stream.launch import backend_executable_for
+from agent_os.product.shared.config import InterpreterConfig
 
 PROPOSAL_RULES_PATH = PROMPTS_DIR / "interpreter_proposal.md"
 REVIEW_MODE_RULES_PATH = PROMPTS_DIR / "interpreter_review_mode.md"

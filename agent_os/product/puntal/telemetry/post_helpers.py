@@ -11,7 +11,7 @@ from agent_os.product.puntal.results import InvocationResult
 from agent_os.product.puntal.stream.launch import Clock
 from agent_os.product.puntal.telemetry.files import append_runs_row
 from agent_os.product.puntal.telemetry.record import build_record
-from agent_os.product.records import append_json_line
+from agent_os.product.shared.records import append_json_line
 
 
 def record_invocation(

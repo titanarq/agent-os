@@ -17,11 +17,11 @@ import pathlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from agent_os.product.records import read_json_lines
 from agent_os.product.session_ingest.chat.verdict_keys import (
     belongs_to_session,
     is_chat_verdict_key,
 )
+from agent_os.product.shared.records import read_json_lines
 
 if TYPE_CHECKING:
     from agent_os.product.session_ingest.session_file import AnySession

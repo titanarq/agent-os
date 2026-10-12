@@ -28,6 +28,7 @@ agent-os-tree = "agent_os.product.tree.cli:main"
 agent-os-sessions = "agent_os.product.sessions.cli:main"
 agent-os-quality = "agent_os.quality.cli:main"
 agent-os-tests = "agent_os.product.test_selection.cli:main"
+agent-os-integrate = "agent_os.product.integrator.cli:main"
 agent-os-install = "agent_os.install:main"
 agent-os-doctor = "agent_os.doctor:main"
 

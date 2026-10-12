@@ -14,8 +14,8 @@ import threading
 
 import pytest
 
-from agent_os.product.records import append_json_line, record_versions
-from agent_os.product.records.versions import agent_os_commit, prompt_digest
+from agent_os.product.shared.records import append_json_line, record_versions
+from agent_os.product.shared.records.versions import agent_os_commit, prompt_digest
 
 
 def git(directory: pathlib.Path, *arguments: str) -> str:

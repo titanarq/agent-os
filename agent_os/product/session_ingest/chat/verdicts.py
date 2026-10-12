@@ -13,9 +13,9 @@ import pathlib
 from dataclasses import dataclass
 
 from agent_os.product.puntal.telemetry.feedback import VERDICTS, record_feedback
-from agent_os.product.records import read_json_lines
 from agent_os.product.session_ingest.chat.model import Item
 from agent_os.product.session_ingest.chat.verdict_keys import chat_verdict_key
+from agent_os.product.shared.records import read_json_lines
 
 TELEMETRY_FILE_NAME = "telemetry.jsonl"
 

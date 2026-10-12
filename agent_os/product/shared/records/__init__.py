@@ -7,7 +7,7 @@ The puntal's telemetry and feedback use it today; the judgments log of `docs/AGE
 - `record_versions` -- the model, the CLI version and the method version of a record.
 """
 
-from agent_os.product.records.jsonl import append_json_line, read_json_lines
-from agent_os.product.records.versions import record_versions
+from agent_os.product.shared.records.jsonl import append_json_line, read_json_lines
+from agent_os.product.shared.records.versions import record_versions
 
 __all__ = ["append_json_line", "read_json_lines", "record_versions"]

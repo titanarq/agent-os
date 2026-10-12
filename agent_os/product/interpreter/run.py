@@ -15,7 +15,6 @@ import os
 from datetime import UTC, datetime
 
 from agent_os.lib import write_role_run_exit_marker
-from agent_os.product.config import InterpreterConfig
 from agent_os.product.interpreter.brief import build_brief
 from agent_os.product.interpreter.constants import (
     INTERPRETER_ROLE,
@@ -34,6 +33,7 @@ from agent_os.product.puntal.stream.launch import Clock
 from agent_os.product.puntal.telemetry.outcome import classify_turn, invocation_cost
 from agent_os.product.puntal.telemetry.record import InvocationTrace
 from agent_os.product.puntal.turn import remaining_ceilings, run_turn
+from agent_os.product.shared.config import InterpreterConfig
 
 ATTEMPT_TEXT_CHARS = 2000
 

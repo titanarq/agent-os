@@ -1093,7 +1093,7 @@ invocation's own telemetry record**: a verdict is about that model and that prom
 installed when the owner clicks. A verdict on an invocation the telemetry has never heard of is
 refused (exit `2`) and writes nothing.
 
-**Versions on every record** (`agent_os/product/records/versions.py`, which the judgments log will
+**Versions on every record** (`agent_os/product/shared/records/versions.py`, which the judgments log will
 reuse). `versions` is `{"model", "cli_version", "method_version": {"agent_os_commit",
 "prompt_digest"}}`. `cli_version` is what the CLI reported at start-up (null for a run that never
 started); `agent_os_commit` is `HEAD` in agent-os's own checkout and, in a host, the upstream commit
@@ -1355,7 +1355,7 @@ owner through the next session issue.
 **The judgments log.** What an agent decided alone is recorded so that a question session can show
 the owner what was decided without them, and so that how often such decisions are undone can be
 measured per role and kind. Two append-only files under `.cache/judgments/`, joined by
-`judgment_id` and written with `agent_os.product.records` (so each record is stamped with the model,
+`judgment_id` and written with `agent_os.product.shared.records` (so each record is stamped with the model,
 the CLI version and the method version):
 
 - `judgments.jsonl`: `schema`, `judgment_id`, `recorded_at`, `role`, `kind` (free: the sort of

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from agent_os.product.board.branches import build_branches, requirement_id_in
 from agent_os.product.board.project import BoardError, GhProjectClient
 from agent_os.product.board.sync import find_project, item_body, item_field_value
-from agent_os.product.config import BoardConfig
+from agent_os.product.shared.config import BoardConfig
 from agent_os.product.tree.loader import Tree
 
 
