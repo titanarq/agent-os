@@ -39,12 +39,15 @@ def integration_title(members: Sequence[int]) -> str:
     return "integration: " + " ".join(f"#{number}" for number in members)
 
 
-def integration_body(members: Sequence[int], pinned: dict[int, str], base: str) -> str:
+def integration_body(
+    members: Sequence[int], pinned: dict[int, str], base: str, evicted: Sequence[int] = ()
+) -> str:
     rows = "\n".join(f"- #{number} at `{pinned[number]}`" for number in members)
+    rebuilt = "".join(f"\nRebuilt without #{number} after a failed round.\n" for number in evicted)
     return (
         f"The integrator's proof of a group of ready pull requests, built on `{base}`. It is never "
         f"merged: each member lands on its own once this head's checks are all SUCCESS.\n\n"
-        f"Members and their pinned heads:\n{rows}\n"
+        f"Members and their pinned heads:\n{rows}\n{rebuilt}"
     )
 
 
@@ -114,11 +117,18 @@ def build_integration(
     say: Say,
     *,
     dry_run: bool,
+    without: Sequence[int] = (),
 ) -> BuildResult:
     result = BuildResult()
     kept, result.left_solo = _read_members(
-        repository, run, pull_requests, default_branch, repo_flags
+        repository,
+        run,
+        [number for number in pull_requests if number not in without],
+        default_branch,
+        repo_flags,
     )
+    for number in without:
+        result.left_solo[number] = "evicted after the group's failed round"
     members = tuple(kept)
     pinned = {number: facts.head_sha for number, facts in kept.items()}
     if len(members) < MINIMUM_GROUP:
@@ -129,10 +139,14 @@ def build_integration(
         result.members = members
         return result
     with integration_lock(repository / ".cache"):
-        return _build_locked(repository, run, kept, default_branch, repo_flags, result, pinned)
+        return _build_locked(
+            repository, run, kept, default_branch, repo_flags, result, pinned, without
+        )
 
 
-def _build_locked(repository, run, kept, default_branch, repo_flags, result, pinned) -> BuildResult:
+def _build_locked(
+    repository, run, kept, default_branch, repo_flags, result, pinned, without
+) -> BuildResult:
     _checked(run, ["git", "fetch", "--quiet", "origin", default_branch], "fetching the base")
     base_sha = _checked(run, ["git", "rev-parse", f"origin/{default_branch}"], "reading the base")
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -174,7 +188,7 @@ def _build_locked(repository, run, kept, default_branch, repo_flags, result, pin
                 "--title",
                 integration_title(members),
                 "--body",
-                integration_body(members, pinned, base_sha),
+                integration_body(members, pinned, base_sha, without),
             ],
             "opening the integration pull request",
         )
