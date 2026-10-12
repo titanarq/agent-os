@@ -1,0 +1,1 @@
+- The CI template `templates/ci-agent-os.yml` runs the mechanism's suite in parallel (`pytest agent_os/tests -q -n auto`, pytest-xdist is already installed by `bootstrap.sh`): a host's `ci-agent-os` job took 24 minutes in series. Hosts pick it up by copying the line into their workflow.
