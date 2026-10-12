@@ -246,6 +246,14 @@ choice, rendered into the installed prompt as `__MERGE_METHOD__` (agent-os#88). 
 remote ref also leaves a backend's worktree in place, where `gh pr merge --delete-branch` could
 take it with the local branch (§7 row (r)).
 
+When two or more pull requests are ready and `integrator.enabled` is true, the control plane hands
+their numbers to `agent-os-integrate` (`plan --judge`, `build`, `result`, `land`) instead of merging
+them one by one: one CI for the group, then each member merged with its own merge commit. Condition 1
+still reads the head's own CI (the integration CI is an addition), the integrator receives an approval
+and never grants one, and a solo pull request merges exactly as above
+(`docs/adr/2026-10-11-the-integrator-lands-a-group-of-ready-prs-under-one-ci-and-one-at-a-time-when-in-doubt.md`,
+agent-os#213).
+
 If any one of them fails it requests changes with the failing condition and the evidence, leaves
 `status:review`, and reports it — it never merges to unblock a round.
 
