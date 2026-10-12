@@ -5,8 +5,11 @@ here and not in the validator's prompt alone: a model that read `FAILURE` and ap
 (the first real worker of a host, 2026-10) cannot reach the human's "ready" page.
 """
 
+import json
 import re
 from dataclasses import dataclass
+
+INTEGRATION_BRANCH_PREFIX = "integration/"
 
 CLOSES_ISSUE_PATTERN = re.compile(r"(?im)^closes #(?P<issue>\d+)\b")
 
@@ -80,3 +83,30 @@ def refusal_for_issue(issue: int, open_pull_requests: list[dict]) -> str | None:
         int(pull_request["number"]), pull_request.get("statusCheckRollup") or []
     )
     return None if verdict.is_green else verdict.refusal()
+
+
+def is_integration_branch(head_branch_name: str | None) -> bool:
+    """The integrator's pull request (head `integration/<stamp>`, never merged, closed when its
+    round ends) is not work: every reader of open pull requests skips it."""
+    return (head_branch_name or "").startswith(INTEGRATION_BRANCH_PREFIX)
+
+
+def without_integration_pull_requests(pull_requests: list[dict]) -> list[dict]:
+    return [row for row in pull_requests if not is_integration_branch(row.get("headRefName"))]
+
+
+def fields_with_head_branch(json_fields: str) -> str:
+    """`gh pr list --json` fields with `headRefName` added, so the rows can be filtered."""
+    return json_fields if "headRefName" in json_fields else f"{json_fields},headRefName"
+
+
+def parse_pull_request_rows(gh_stdout: str, *, state: str) -> list[dict]:
+    """The rows of a `gh pr list --json` answer; anything unreadable is the empty list. Open ones
+    leave out the integration pull requests."""
+    try:
+        rows = json.loads(gh_stdout or "[]")
+    except ValueError:
+        return []
+    if not isinstance(rows, list):
+        return []
+    return without_integration_pull_requests(rows) if state == "open" else rows

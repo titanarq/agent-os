@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agent_os.cli import agent_os_python
+from agent_os.product.tracker.pull_request_checks import without_integration_pull_requests
 
 CHECKS_PERMISSION = "Checks: read"
 COMMIT_STATUSES_PERMISSION = "Commit statuses: read"
@@ -154,10 +155,10 @@ def read_open_pull_requests_with_checks(
     try:
         pull_requests = read_json(
             "pr", "list", "--repo", repo, "--state", "open", "--limit", "200",
-            "--json", "number,body,statusCheckRollup",
+            "--json", "number,body,statusCheckRollup,headRefName",
         )  # fmt: skip
     except SystemExit as failure:
         if not is_permission_refusal(str(failure.code)):
             raise
         raise SystemExit(both_permissions_refused_line(refused_action)) from failure
-    return pull_requests or []
+    return without_integration_pull_requests(pull_requests or [])

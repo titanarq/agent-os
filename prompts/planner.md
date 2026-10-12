@@ -137,6 +137,7 @@ validator review yet, launch `agent_os/bin/agent_task.sh validator <pr>`:
 
     "$AGENT_OS_PYTHON" -m agent_os.issues list --label status:ai-completed
     gh pr list --state open --json number,headRefName,body,reviews    # which PR closes which issue
+    # skip every PR whose headRefName starts with `integration/`: the integrator's, not work
     # no review yet == `.reviews` carries none authored by the App the validator signs as
     agent_os/bin/agent_task.sh validator <pr>
 

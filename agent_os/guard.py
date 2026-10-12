@@ -114,6 +114,7 @@ from agent_os.lib import (
 )
 from agent_os.product.dispatch.rate_limit_marker import marker_timestamp
 from agent_os.product.dispatch.rules import rows_the_tree_rules_allow_here
+from agent_os.product.tracker import pull_request_checks
 from agent_os.streams.interface import event_message
 
 # The HOST project's root, resolved rather than assumed: `$AGENT_OS_HOST_ROOT`, else the git
@@ -2370,8 +2371,11 @@ class UnreviewedCompletion:
 def _gh_pr_list(fields: str, *, main: Path, state: str = "open", limit: int = 500) -> list[dict]:
     """Pull requests in one state (open by default), the same shape `_gh_issue_list` gives issues.
     A `gh` failure reads as the empty list, exactly as there."""
+    fields_to_read = (
+        pull_request_checks.fields_with_head_branch(fields) if state == "open" else fields
+    )
     result = subprocess.run(
-        ["gh", "pr", "list", "--state", state, "--json", fields, "--limit", str(limit)],
+        ["gh", "pr", "list", "--state", state, "--json", fields_to_read, "--limit", str(limit)],
         capture_output=True,
         text=True,
         cwd=main,
@@ -2379,11 +2383,7 @@ def _gh_pr_list(fields: str, *, main: Path, state: str = "open", limit: int = 50
     )
     if result.returncode != 0:
         return []
-    try:
-        rows = json.loads(result.stdout or "[]")
-    except ValueError:
-        return []
-    return rows if isinstance(rows, list) else []
+    return pull_request_checks.parse_pull_request_rows(result.stdout, state=state)
 
 
 def role_run_is_alive(subject: str, *, main: Path = HOST_ROOT) -> bool:
