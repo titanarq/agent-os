@@ -3,10 +3,10 @@ groups:
     covers: [agent_os/product/tree, docs/tree, docs/AGENT_OS.md, docs/AGENTOS_V2_PLAN.md, .github/workflows/ci.yml]
     tests: [tests/product/tree]
   - id: records
-    covers: [agent_os/product/records]
+    covers: [agent_os/product/shared/records]
     tests: [tests/product/records]
   - id: product-config
-    covers: [agent_os/product/config.py]
+    covers: [agent_os/product/shared/config.py]
     tests: [tests/product/config]
   - id: tracker
     covers: [agent_os/product/tracker, .github/workflows]

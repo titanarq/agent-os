@@ -17,7 +17,7 @@ import sys
 from agent_os.product.board.order import read_owner_order
 from agent_os.product.board.project import BoardError, GhProjectClient
 from agent_os.product.board.sync import sync_board
-from agent_os.product.config import BoardConfig
+from agent_os.product.shared.config import BoardConfig
 from agent_os.product.tree.loader import Tree
 
 

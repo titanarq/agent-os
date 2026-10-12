@@ -18,7 +18,7 @@ from agent_os.product.board.branches import (
     requirement_id_in,
 )
 from agent_os.product.board.project import GhProjectClient
-from agent_os.product.config import BoardConfig
+from agent_os.product.shared.config import BoardConfig
 from agent_os.product.tree.loader import Tree
 
 FIELD_TYPES = ("progress_field", "TEXT"), ("order_field", "NUMBER")

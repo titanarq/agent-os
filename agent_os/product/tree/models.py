@@ -20,7 +20,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from agent_os.lib import Strict
-from agent_os.product.records.acceptance import Acceptance
+from agent_os.product.shared.records.acceptance import Acceptance
 
 NODE_TYPES = ("goal", "functional-requirement", "use-case")
 DECISION_TYPE = "decision"

@@ -60,11 +60,15 @@ def snapshot_of_revision(repository: pathlib.Path, revision: str) -> RepositoryS
     return RepositorySnapshot(tracked, count_lines_of_committed_file)
 
 
-def merge_base_with_head(repository: pathlib.Path, base_reference: str) -> str:
+def merge_base_with_head(
+    repository: pathlib.Path, base_reference: str, head_reference: str = "HEAD"
+) -> str:
     try:
-        return _git_output(repository, "merge-base", base_reference, "HEAD").decode().strip()
+        return (
+            _git_output(repository, "merge-base", base_reference, head_reference).decode().strip()
+        )
     except GitError as error:
         raise GitError(
-            f"no merge-base between {base_reference} and HEAD ({error}); in CI the checkout "
+            f"no merge-base between {base_reference} and {head_reference} ({error}); in CI the checkout "
             "needs `fetch-depth: 0` so the history that joins the two is present"
         ) from error
