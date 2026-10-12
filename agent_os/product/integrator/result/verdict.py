@@ -14,6 +14,7 @@ from agent_os.product.integrator.result.attribution import (
     member_to_evict,
     read_failing_test_ids,
 )
+from agent_os.product.integrator.result.published_summary import fetch_published_summary
 from agent_os.product.integrator.result.waiting import wait_for_checks
 from agent_os.quality.git_snapshots import GitError
 
@@ -64,12 +65,18 @@ def decide_round(
         return Verdict("passed")
     if not reading.is_a_test_failure:
         return Verdict("solo", reason=f"a timeout or an infrastructure red: {reading.line}")
-    return _attribute(repository, run, repo_flags, inputs, pinned, body, summary_index_path)
+    return _attribute(
+        repository, run, repo_flags, inputs, pinned, body, summary_index_path, pull_request
+    )
 
 
-def _attribute(repository, run, repo_flags, inputs, pinned, body, summary_index_path) -> Verdict:
+def _attribute(
+    repository, run, repo_flags, inputs, pinned, body, summary_index_path, pull_request
+) -> Verdict:
     if summary_index_path is None:
-        return Verdict("solo", reason="red, and no summary index of the run was given")
+        summary_index_path = fetch_published_summary(run, pull_request, repo_flags)
+    if summary_index_path is None:
+        return Verdict("solo", reason="red, and the run published no summary index")
     plans = {}
     for number, head in pinned.items():
         facts = read_facts(repository, run, number, repo_flags)
