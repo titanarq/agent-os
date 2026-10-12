@@ -15,7 +15,7 @@ def drafter_brief(*, node_id: str, job_body: str, definition: str, mentions: str
 
 
 def reviewer_brief(*, node_id: str, job_body: str, before: str, draft: Draft) -> str:
-    tests = "\n".join(draft.obsolete_tests) or "(none proposed)"
+    tests = "\n".join(test.as_markdown() for test in draft.obsolete_tests) or "(none proposed)"
     return (
         f"Review the draft consolidation of `{node_id}`.\n\n"
         f"## The use case before\n\n{before}\n"

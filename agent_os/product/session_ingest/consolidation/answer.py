@@ -15,6 +15,8 @@ TESTS_MARKER = "=== OBSOLETE TESTS ==="
 END_MARKER = "=== END ==="
 DISCARDED_HEADING = "## Probado y descartado"
 NO_TESTS = "none"
+TEST_ACTIONS = ("delete", "adjust")
+OBSOLETE_TEST_RE = re.compile(r'^- `([^`]+)` `([^`]+)` \| (\w+) \| "(.+)" \| (.+)$')
 APPROVE = "approve"
 REJECT = "reject"
 MAX_REASON_CHARS = 300
@@ -23,9 +25,25 @@ FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
 
 
 @dataclass(frozen=True)
+class ObsoleteTest:
+    """A test the new definition makes obsolete, with the line of the old definition that justified it."""
+
+    path: str
+    test_name: str
+    action: str
+    old_line: str
+    why: str
+
+    def as_markdown(self) -> str:
+        return (
+            f'- `{self.path}` `{self.test_name}` | {self.action} | "{self.old_line}" | {self.why}'
+        )
+
+
+@dataclass(frozen=True)
 class Draft:
     definition: str
-    obsolete_tests: tuple[str, ...]  # each a line `path test | delete or adjust | "old line" | why`
+    obsolete_tests: tuple[ObsoleteTest, ...]
 
 
 @dataclass(frozen=True)
@@ -50,12 +68,42 @@ def parse_draft(text: str, original_definition: str) -> tuple[Draft | None, list
     lines = tuple(line.strip() for line in tests_block.splitlines() if line.strip())
     if lines == (NO_TESTS,):
         lines = ()
-    malformed = [line for line in lines if not line.startswith("- ") or line.count("|") < 3]
-    if malformed:
-        return None, [
-            f"an obsolete test line is not `- path test | action | quote | why`: {malformed[0]!r}"
-        ]
-    return Draft(definition, lines), []
+    obsolete_tests, problems = parse_obsolete_tests(lines, original_definition)
+    if problems:
+        return None, problems
+    return Draft(definition, obsolete_tests), []
+
+
+def _squeezed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def parse_obsolete_tests(
+    lines: tuple[str, ...], original_definition: str
+) -> tuple[tuple[ObsoleteTest, ...], list[str]]:
+    """No test is proposed without the line of the OLD definition that justified it: the quote must
+    be in the original file, word for word (whitespace aside)."""
+    original = _squeezed(original_definition)
+    proposals: list[ObsoleteTest] = []
+    problems: list[str] = []
+    for line in lines:
+        matched = OBSOLETE_TEST_RE.match(line)
+        if not matched:
+            problems.append(
+                f'an obsolete test line is not `- `path` `test` | action | "quote" | why`: {line!r}'
+            )
+            continue
+        proposal = ObsoleteTest(*matched.groups())
+        if proposal.action not in TEST_ACTIONS:
+            problems.append(f"the action of {proposal.test_name!r} must be one of {TEST_ACTIONS}")
+        elif _squeezed(proposal.old_line) not in original:
+            problems.append(
+                f"the quote justifying {proposal.test_name!r} is not a line of the old definition: "
+                f"{proposal.old_line!r}"
+            )
+        else:
+            proposals.append(proposal)
+    return tuple(proposals), problems
 
 
 def definition_problems(definition: str, original_definition: str) -> list[str]:
