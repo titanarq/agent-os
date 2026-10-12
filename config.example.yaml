@@ -314,8 +314,8 @@ interpreter:
   max_invocations: 5
 
 # The integrator: lands a group of ready pull requests under one CI instead of one at a time
-# (docs/adr/2026-10-11-the-integrator-*.md). Nothing reads these keys until its driver lands. Every
-# key is optional and these are the defaults; its model and ceilings are `classes.integrator`.
+# (docs/adr/2026-10-11-the-integrator-*.md), launched by the control plane's Duty 4 when two or more
+# pull requests are ready and `enabled` is true. Every key is optional and these are the defaults; its model and ceilings are `classes.integrator`.
 integrator:
   # Off until the ledger shows it pays; a host that pulls the subtree changes nothing.
   enabled: false

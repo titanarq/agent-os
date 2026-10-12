@@ -95,6 +95,27 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
    --session S` exited 0 (the PR is exactly the owner's answer); run that command yourself too, and
    merge only if it exits 0.
 
+Condition 1 stays "green on the head's own CI" for every pull request; the integrator's CI is an
+addition to it, never a substitute. When you have verified all six on every pull request you would
+merge and **two or more are ready**, read `integrator.enabled` in `config/agents.yaml`. If it is
+`true`, hand their numbers to the integrator instead of merging them one by one, from the main
+checkout (it receives your approval and never grants one; it never merges on its own):
+
+```bash
+__MECHANISM_DIR__/.venv/bin/agent-os-integrate plan --prs N N N --judge   # the groups, and why
+__MECHANISM_DIR__/.venv/bin/agent-os-integrate build --prs N N            # one group: its integration PR
+__MECHANISM_DIR__/.venv/bin/agent-os-integrate result <integration PR>    # waits for its CI
+__MECHANISM_DIR__/.venv/bin/agent-os-integrate land <integration PR>      # a passed group, member by member
+```
+
+`result` prints `passed` (land it), `evict #N` (rebuild with `build --prs ... --without N`, `result`
+again; #N goes on alone) or `solo: <why>` (no group: merge each member one at a time as below). Any
+other answer, a non-zero exit, or a `tree(origin/main) == tree(integration head): DIFFERENT` line from
+`land` stops you: report it to the human with the output and merge nothing else. One pull request left
+alone by `plan`, a single ready pull request or `integrator.enabled` false or absent: merge exactly as
+below. Record each round with `agent-os-integrate record` (`--members`, `--outcome`, the
+`--ci-minutes` and `--reason` it printed) so `agent-os-integrate report` has its evidence.
+
 Then merge through REST, pinned to the head SHA you verified the six conditions on
 (`gh pr view N --json headRefOid,headRefName`, read before you started checking):
 

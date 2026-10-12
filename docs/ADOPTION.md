@@ -41,12 +41,23 @@ review (`dec-every-pull-request-gets-a-code-quality-review`).
 
 ## Optional config: the integrator
 
-`integrator:` in `config/agents.yaml` (every key optional; nothing reads it until its driver lands, so
-pulling the subtree changes nothing): `enabled` (`false`), `max_group_size` (`5`), `solo_paths` (`[]`:
+`integrator:` in `config/agents.yaml` (every key optional; pulling the subtree changes nothing while
+`enabled` is `false`, its default): `enabled` (`false`), `max_group_size` (`5`), `solo_paths` (`[]`:
 globs added to the built-in solo list of `.github/**`, dependency manifests and lockfiles, `Dockerfile*`
 and `bootstrap.sh`), `ci_wait_max_minutes` (`30`) and `judge` (`true`). Its one-shot class is
 `classes.integrator` (role `integrator`, `claude-haiku-5-5`, the interpreter's ceilings), copied from
 `config.example.yaml`.
+
+To switch it on: set `integrator.enabled: true` and re-run `agent-os-install` so the installed
+`.claude/agents/control-plane.md` carries Duty 4's integrator step (it reads the flag from
+`config/agents.yaml` each time it has two or more ready pull requests; with one, or with the flag
+off, it merges as before). Dry run first: `agent_os/.venv/bin/agent-os-integrate plan --prs N N --judge`
+changes nothing on GitHub. The CI wait and the model run on the machine that runs the control plane.
+Each round the control plane appends to `.cache/integrator/rounds.jsonl` with `record`;
+`agent-os-integrate report` reads it: rounds attempted, landed and evicted; pull requests landed per CI
+run (above 1.0 means the integrator pays, 1.0 or less means it only adds a CI); mean CI minutes and mean
+approval-to-merge minutes; the reasons rounds went solo; and rounds the judge called independent that
+the CI proved coupled. Leave it enabled only while that evidence says it pays.
 
 ## Measuring
 
