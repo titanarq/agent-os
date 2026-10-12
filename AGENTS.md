@@ -87,8 +87,19 @@ assertions diverge from CI.
   certifies whatever the code prints, including a broken path.
 - A path helper fails loudly when its premise (a `.git`, a config file, a package) is missing
   instead of falling back to `.` or a guess.
-- Never kill by pattern (`pkill -f`, `pgrep -f | xargs kill`): stop a process by its PID.
+- Never kill or wait by pattern (`pkill -f`, `pgrep -f | xargs kill`, a `pgrep -f` wait loop): the
+  pattern matches your own shell and monitors. Keep the PID in a file, stop it with `kill`, wait on
+  it with `kill -0 "$pid"`.
 - Never mutate the working tree while a pytest is running.
+- **Worktrees.** An editable install's `.pth` wins over the working directory, so a subprocess in a
+  worktree imports the main checkout's `agent_os`: export `PYTHONPATH` to the worktree and verify with
+  the very command you will run. A worktree without `.venv` fails about a hundred driver tests and hides
+  the real ones, so mount it, or give the worktree its own venv (`bootstrap.sh`) when the PR adds a
+  config key, and require 0 failed. Never `pip install -e` inside a worktree.
+- **Stacked PRs.** Retarget the child to `main` before merging its parent with `--delete-branch`;
+  otherwise the child closes and cannot be reopened.
+- **A PR with no checks** and a conflict has no `refs/pull/N/merge`, so its `pull_request` workflow is
+  never created: look for that ref before blaming the identity that opened the PR.
 
 ## Definition of done
 A defect found in use has the test that reproduced it, failing first and passing now; something new
