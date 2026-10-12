@@ -96,3 +96,22 @@ def test_no_slice_is_added_outside_a_v2_host(monkeypatch, tmp_path):
         lib, "DEFAULT_AGENTS_CONFIG", write_v2_config(tmp_path / "a.yaml", dispatch_by_node=False)
     )
     assert brief_slice_section(bodies["uc-sync"]) == ""
+
+
+def test_the_slice_is_cut_from_the_tree_of_the_worktree_the_brief_runs_in(monkeypatch, tmp_path):
+    """#234: `host_root()` is the main checkout, which can be far behind origin/main; the worker's
+    own worktree is the tree its ticket was compiled against."""
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    subprocess.run(["git", "init", "-q", str(worktree)], check=True)
+    bodies = tickets_of_a_tree(worktree)
+    stale_main_checkout = tmp_path / "main_checkout"
+    (stale_main_checkout / "tree").mkdir(parents=True)
+    monkeypatch.setattr(lib, "DEFAULT_AGENTS_CONFIG", write_v2_config(tmp_path / "agents.yaml"))
+    config = tmp_path / "agents.yaml"
+    config.write_text(config.read_text().replace("root: product", "root: tree"))
+    monkeypatch.setattr(
+        "agent_os.product.dispatch.brief_slice.host_root", lambda: stale_main_checkout
+    )
+    monkeypatch.chdir(worktree)
+    assert "## Slice of node `uc-sync`" in brief_slice_section(bodies["uc-sync"])

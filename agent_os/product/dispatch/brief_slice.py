@@ -10,12 +10,30 @@ still hands the worker the node as it is now.
 
 from __future__ import annotations
 
+import pathlib
+import subprocess
+
 from agent_os import lib
 from agent_os.cli import host_root
 from agent_os.product.dispatch.markers import parse_node_marker
 from agent_os.product.dispatch.rules import is_v2_host
 from agent_os.product.tree.loader import load_tree, require_tree_root
 from agent_os.product.tree.slicing import build_slice, render_slice_markdown
+
+
+def _checkout_holding_the_tree(tree_root: str) -> pathlib.Path:
+    """The checkout the brief is cut from: the worktree the process stands in when it holds the
+    tree, else the host root. `host_root()` is the main checkout, which can be far behind
+    origin/main, while the worker's worktree is where its ticket's tree really is."""
+    try:
+        toplevel = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        toplevel = ""
+    if toplevel and (pathlib.Path(toplevel) / tree_root).is_dir():
+        return pathlib.Path(toplevel)
+    return host_root()
 
 
 def brief_slice_section(issue_body: str | None) -> str:
@@ -28,7 +46,9 @@ def brief_slice_section(issue_body: str | None) -> str:
     config = lib.load_agents_config(lib.DEFAULT_AGENTS_CONFIG)
     if not is_v2_host(config):
         return ""
-    tree = load_tree(require_tree_root(host_root() / config.tree.root))
+    tree = load_tree(
+        require_tree_root(_checkout_holding_the_tree(config.tree.root) / config.tree.root)
+    )
     cut = build_slice(tree, node_id)
     return (
         f"\n## Slice of node `{node_id}` (from `agent-os-tree context {node_id}`)\n\n"
