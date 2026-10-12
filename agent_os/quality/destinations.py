@@ -42,7 +42,8 @@ def destination_hint(violation: Violation, tracked_paths: Collection[str]) -> st
     folder = violation.path
     files_by_prefix: dict[str, list[str]] = defaultdict(list)
     for file_name in _direct_files_of(folder, tracked_paths):
-        files_by_prefix[_stem_prefix(file_name)].append(file_name)
+        if not file_name.startswith("__"):
+            files_by_prefix[_stem_prefix(file_name)].append(file_name)
     groups = [
         (prefix, names)
         for prefix, names in files_by_prefix.items()
