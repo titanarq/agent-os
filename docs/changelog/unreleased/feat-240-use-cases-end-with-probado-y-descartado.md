@@ -1,0 +1,1 @@
+- The tree doctor knows the `## Probado y descartado` section of a use case: where present it must be the last `##` section and appear once (`discarded-section-not-last`); the expert prompt names it (#240).

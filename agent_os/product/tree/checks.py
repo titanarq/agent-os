@@ -59,6 +59,8 @@ MISSING_WORK_FIELD = "missing-work-field"
 FOUNDATION_IMPROVISED = "foundation-improvised"
 HARDENED_NEEDS_IMPLEMENTATION = "hardened-needs-implementation"
 HARDENED_NEEDS_VERIFICATION = "hardened-needs-verification"
+DISCARDED_SECTION_NOT_LAST = "discarded-section-not-last"
+DISCARDED_SECTION_HEADING = "## Probado y descartado"
 
 CHECKS: dict[str, str] = {
     ORPHAN_FILE: (
@@ -101,6 +103,10 @@ CHECKS: dict[str, str] = {
     HARDENED_NEEDS_VERIFICATION: (
         "a hardened node has no `verification` with a `command`: tests harden, and a judged "
         "criterion alone is acceptance, not hardening"
+    ),
+    DISCARDED_SECTION_NOT_LAST: (
+        f"a use case's `{DISCARDED_SECTION_HEADING}` section (what was tried and why it failed) is "
+        "not the last `##` section of its description, or appears more than once"
     ),
     **REFERENCE_CHECKS,
 }
@@ -190,6 +196,8 @@ def _check_node_records(tree: Tree) -> list[Defect]:
                     f"a {node.type} needs a `mechanism` (write `{MECHANISM_PENDING}` to defer it)",
                 )
             )
+        if node.type == "use-case":
+            defects += _check_discarded_section_is_last(node, path)
         # The node's own flag, not inherited: a use case under a foundation requirement that is not
         # itself flagged may be improvised; `compile` orders it with the foundations, nothing more.
         if node.foundation and node.state == "improvised":
@@ -211,6 +219,26 @@ def _check_node_records(tree: Tree) -> list[Defect]:
                     )
                 )
     return defects
+
+
+def _check_discarded_section_is_last(node: Node, path: pathlib.Path) -> list[Defect]:
+    """The section is optional until a use case is consolidated (docs/adr/2026-10-12-a-use-case-that-an-
+    amendment-contradicts-is-consolidated-into-one-definition.md); where it exists it closes the case."""
+    section_headings = [
+        line.strip() for line in node.description.splitlines() if line.startswith("## ")
+    ]
+    positions = [
+        i for i, heading in enumerate(section_headings) if heading == DISCARDED_SECTION_HEADING
+    ]
+    if not positions or positions == [len(section_headings) - 1]:
+        return []
+    return [
+        Defect(
+            path,
+            DISCARDED_SECTION_NOT_LAST,
+            f"`{DISCARDED_SECTION_HEADING}` must appear once, as the last `##` section",
+        )
+    ]
 
 
 def _work_fields_a_goal_carries(goal: Node) -> list[str]:

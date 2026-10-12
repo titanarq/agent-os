@@ -770,6 +770,7 @@ a stale pointer in one node's prose must not stop every other ticket.
 | `foundation-improvised` | a foundation node is `improvised`: foundations are built as normal tickets, and the shell does not go live until they are implemented and accepted (their tests come later) |
 | `hardened-needs-implementation` | a hardened node has no `implementation` |
 | `hardened-needs-verification` | a hardened node has no `verification` with a `command`: tests harden, and a judged criterion alone is acceptance, not hardening |
+| `discarded-section-not-last` | a use case's `## Probado y descartado` section (what was tried and why it failed) is not the last `##` section of its description, or appears more than once |
 | `implementation-path-missing` | an `implemented` or `hardened` node's `implementation` names a path written from the repository root (`web/app/x.py`, its first folder there) that does not exist: the code moved or was deleted. Built for precision, not recall: bare file names (`entry.html`), dotted words (`http.client`) and paths relative to a folder named earlier in the sentence (`answers/x.py` after `web/app/shell/`) are never judged. Checked only when the doctor is given the repository |
 | `dangling-decision` | a node's `decisions` names an id that is not a decision |
 | `superseded-decision-in-use` | a node's `decisions` names a superseded decision; the line names the live successor |

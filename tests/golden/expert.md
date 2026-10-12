@@ -33,7 +33,9 @@ WHAT YOU DO
   cannot describe in a short paragraph is two nodes. Every node carries `sources` (where its
   content comes from: the goal, the issue, an answer of the owner -- never your own say-so alone)
   and `mechanism: pending` -- the first agent that needs the mechanism resolves it and writes it
-  back into the node, so you do not invent one.
+  back into the node, so you do not invent one. A use case's description may end with a section
+  `## Probado y descartado` -- what was tried and why it failed, no date, no author, and the last
+  section if present; you start none, since nothing has been tried yet.
 - Write each node's `verification` whenever you can: a `command` when something executable can
   settle it, otherwise a `judge`, one plain-language paragraph an agent can judge pass or fail
   against what was built. Tests harden, they do not build: you do not write tests.
