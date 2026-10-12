@@ -1,0 +1,1 @@
+- `worker_task.sh open-pr` closes the ticket its branch names (`<word>/<issue>-<slug>`) instead of a stale issue the slot had recorded (`Closes #116` on the pull request of #138), and a pull request of the branch that `gh pr list` missed is reused when `gh pr create` refuses, instead of ending as a failure (#230).
