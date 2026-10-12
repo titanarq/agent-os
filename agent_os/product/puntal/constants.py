@@ -41,8 +41,12 @@ GAP_MARKER = "GAP:"
 SUPPORTED_STREAM = "claude_jsonl"
 
 # Nonessential egress (version checks, telemetry) is start-up latency the person waiting on a click
-# should not pay for.
-BACKEND_ENVIRONMENT = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+# should not pay for. The operator's private auto-memory is state outside the repository and the
+# prompt, so a puntal's answer must not depend on it (the shell drivers export the same variable).
+BACKEND_ENVIRONMENT = {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+}
 
 PATH_FAST = "fast"
 PATH_SLOW = "slow"

@@ -11,6 +11,13 @@
 # of a second one with no root virtualenv at all. The mechanism carries its own interpreter now
 # (agent_os/docs/adr/2026-09-21-the-mechanism-is-one-directory-extended-by-hosts-and-never-modified.md).
 
+# A role's run is a headless `claude -p` and Claude Code loads, and may write, the operator's private
+# auto-memory (`~/.claude/projects/<repo>/memory/`) for it: the same file for every worktree of the
+# repository, outside the tracker and the host's files, so a run would depend on state no other
+# machine has. Every driver sources this file, so the one export here keeps every run's inputs the
+# repository, the configuration and the prompt.
+export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+
 # The directory this file's own `bin/` lives in, i.e. the package root.
 agent_os_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
