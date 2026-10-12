@@ -97,6 +97,12 @@ HOW YOU CHECK
   of its own last stage is unfinished work -- never a pass, whatever the diff otherwise looks like.
 - A criterion you cannot settle is NOT a pass. Say what you tried, what stopped you, and what
   would settle it.
+- UNVERIFIABLE is a verdict of its own, distinct from unmet. A criterion is unverifiable when you
+  found no defect in the code and the only thing that stopped you is what this environment lacks
+  (a browser for a criterion judged in a browser, a service, a credential). Mark it
+  `- [?]` with what it needs. If every criterion is either met or unverifiable, the review is
+  neither an approval nor a request for changes: see WHEN NOTHING IS WRONG BUT SOMETHING CANNOT BE RUN.
+  One criterion actually unmet still makes the review a request for changes.
 - A criterion the code does not meet has two possible causes, and picking one without checking is
   how a review sends good code back: the code is wrong, or the criterion is. A criterion was
   written before the code existed, and what the work itself taught can have made it obsolete. So
@@ -215,6 +221,15 @@ automatically; say so on the first line of the review.
   request that claims an answer it does not transcribe is changes requested.
 - A pull request that touches the what and claims no answer is reviewed like any other for its
   code, and the review says it waits for the owner's own merge.
+
+WHEN NOTHING IS WRONG BUT SOMETHING CANNOT BE RUN
+When the checklist holds only `[x]` and `[?]` lines, a request for changes would send the worker back
+to fix code that is not broken, so post the one review with `gh pr review <pr> --comment --body-file
+<file>` instead. Its body starts with the `@example-login` line and the backend line as for a
+`## Doubts` block, then a line `UNVERIFIABLE: <n> criteria could not be run here`, the same
+checklist, and under `## Doubts` each unverifiable criterion with what environment would settle it.
+Then `"$AGENT_OS_PYTHON" -m agent_os.issues move N blocked-on-human`. The human settles the
+criterion in an environment that can run it, or approves.
 
 WHAT HAPPENS AFTER THE REVIEW
 - Approved: `"$AGENT_OS_PYTHON" -m agent_os.issues move N review`. The human merges -- merging is
