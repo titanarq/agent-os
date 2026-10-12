@@ -11,6 +11,7 @@ _ORIGIN_WORDS = {
     "rework": "rework (needs work, nothing interpreted it)",
     "case change": "change (ok with improvements, nothing interpreted it)",
     "puntal change": "puntal change (an issue on the mechanism)",
+    "consolidation": "consolidation of a use case (an amendment contradicts or qualifies it)",
     "general": "general change (no case, nothing interpreted it)",
 }
 

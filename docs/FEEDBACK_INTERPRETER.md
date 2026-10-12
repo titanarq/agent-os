@@ -89,6 +89,10 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
   noticed it because it clashes with a criterion above the case: a goal or an evaluator; the brief lists
   the goal and requirement above the case). It is required on a new or corrected item and optional on
   a withdrawn one; a stored item from before may have none.
+- `effect` is optional and only read on a `decision` about a use case: `adds`, `contradicts` or
+  `qualifies` what the case already says (`docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-consolidated-into-one-definition.md`).
+  Ingestion opens ONE consolidation issue (key `consolidate.<node>`, reused while open) when a decision
+  contradicts or qualifies and no decision on that case is still `proposed`; `adds`, or none, raises nothing.
 - `status` is optional: `proposed` (the item was put to the owner) or `approved` (the owner agreed, or
   the origin made it so); absent means the owner was never asked. Any other value is refused (the
   request, and the session reader naming the file). Only the interpreter's code writes it; the host

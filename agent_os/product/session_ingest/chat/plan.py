@@ -48,6 +48,10 @@ from agent_os.product.session_ingest.chat.ticket import (
     thread_text,
 )
 from agent_os.product.session_ingest.chat.verdicts import VerdictStep, verdict_step_for
+from agent_os.product.session_ingest.consolidation.trigger import (
+    CONSOLIDATION_ORIGIN,
+    consolidation_subjects,
+)
 from agent_os.product.session_ingest.feedback_summary import ActionVerdicts, summarize_verdicts
 from agent_os.product.session_ingest.plan import (
     AcceptanceStep,
@@ -215,6 +219,11 @@ def _plan_general_comments(plan: ChatSessionPlan, covered: set[int], lookup: Iss
     _launch_or_wait(plan, "general", subject, lookup)
 
 
+def _plan_consolidations(plan: ChatSessionPlan, tree: Tree, find_open_job: IssueLookup) -> None:
+    for subject in consolidation_subjects(plan.session, tree):
+        plan.issues.append(IssueStep(CONSOLIDATION_ORIGIN, subject, find_open_job(subject.key)))
+
+
 def plan_chat_session(
     session: ChatSession,
     tree: Tree,
@@ -224,6 +233,7 @@ def plan_chat_session(
     confirm_before_dispatch: bool = False,
     mechanism_repository: str = "",
     find_mechanism_issue: IssueLookup | None = None,
+    find_open_issue: IssueLookup | None = None,
 ) -> ChatSessionPlan:
     plan = ChatSessionPlan(
         session,
@@ -268,4 +278,5 @@ def plan_chat_session(
     for node in nodes:
         _plan_case(plan, tree, node, covered, find_issue)
     _plan_general_comments(plan, covered, find_issue)
+    _plan_consolidations(plan, tree, find_open_issue or find_issue)
     return plan

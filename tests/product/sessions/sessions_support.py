@@ -130,6 +130,9 @@ class ChatTracker:
     def find_by_key(self, key: str) -> int | None:
         return self.known.get(key)
 
+    def find_open_by_key(self, key: str) -> int | None:
+        return self.known.get(key)
+
     def open(self, title: str, body: str, labels: list[str]) -> int:
         self.opened.append((title, body, labels))
         self.known[body.split("<!-- key: ")[1].split(" -->")[0]] = 100 + len(self.opened)
