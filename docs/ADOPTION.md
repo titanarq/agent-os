@@ -68,7 +68,7 @@ Ingestion opens the job issue `consolidate.<node>` with the label `project.label
 `config.example.yaml` run it: `consolidator` (role `consolidator`, Sonnet drafts) and
 `consolidation-reviewer` (role `consolidation_reviewer`, Opus reviews). A host without them gets a
 refusal (exit 2) when it runs the consolidator, nothing else. It is launched by hand or by the control
-plane with `agent_os/bin/consolidator_task.sh <issue>`: it opens one pull request that `Closes` the
+plane with `agent-os-consolidate <issue>`: it opens one pull request that `Closes` the
 issue, or comments the reviewer's reasons on the issue and opens nothing.
 
 ## Measuring

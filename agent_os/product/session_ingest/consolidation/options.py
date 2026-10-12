@@ -24,6 +24,8 @@ from agent_os.product.puntal.stream.launch import backend_executable_for
 
 DRAFTER_ROLE = "consolidator"
 REVIEWER_ROLE = "consolidation_reviewer"
+# Both prompts live in `prompts/consolidation/`, which keeps `prompts/` under its entry limit.
+PROMPT_OF_ROLE = {DRAFTER_ROLE: "consolidator", REVIEWER_ROLE: "reviewer"}
 # A safety against a hung process: the drafter writes a whole use case in one turn.
 TIMEOUT_SECONDS = 600
 
@@ -59,7 +61,9 @@ def resolve_options(role: str, *, host_root: pathlib.Path) -> Options:
             f"'{backend.stream}': its confinement here is the {SUPPORTED_STREAM} CLI's"
         )
     try:
-        contract = render_prompt(role, {}, prompt_extras_path(role, config.project))
+        contract = render_prompt(
+            f"consolidation/{PROMPT_OF_ROLE[role]}", {}, prompt_extras_path(role, config.project)
+        )
     except (KeyError, FileNotFoundError) as error:
         raise ConsolidationRefused(str(error.args[0])) from error
     run_dir = run_directory_for(host_root)

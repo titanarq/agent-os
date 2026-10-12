@@ -529,7 +529,7 @@ classes:
     commit_cut_turns: 50
     qwen_fallback_eligible: false
 
-  # The consolidation of a use case an amendment contradicts (bin/consolidator_task.sh,
+  # The consolidation of a use case an amendment contradicts (agent-os-consolidate,
   # docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-consolidated-into-one-definition.md):
   # two turns with no tool, Sonnet drafts the use case as one definition and Opus reviews the draft;
   # only an approved draft becomes a pull request. Its logs are `.cache/consolidator/`.

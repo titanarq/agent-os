@@ -93,7 +93,7 @@ Schema 2 of the session file: `comments[]` (the thread: `role` owner/agent, `tex
   `qualifies` what the case already says (`docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-consolidated-into-one-definition.md`).
   Ingestion opens ONE consolidation issue (key `consolidate.<node>`, reused while open) when a decision
   contradicts or qualifies and no decision on that case is still `proposed`; `adds`, or none, raises nothing. The issue carries `project.labels.consolidation`, never a worker's label;
-  `bin/consolidator_task.sh <issue>` drafts (Sonnet) and reviews (Opus) it into one pull request.
+  `agent-os-consolidate <issue>` drafts (Sonnet) and reviews (Opus) it into one pull request.
 - `status` is optional: `proposed` (the item was put to the owner) or `approved` (the owner agreed, or
   the origin made it so); absent means the owner was never asked. Any other value is refused (the
   request, and the session reader naming the file). Only the interpreter's code writes it; the host

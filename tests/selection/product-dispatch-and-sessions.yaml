@@ -9,5 +9,5 @@ groups:
       - uc-open-a-question-session
       - dec-a-test-session-happens-inside-the-app
       - dec-a-question-session-is-a-github-issue
-    covers: [agent_os/product/sessions, agent_os/product/session_ingest, bin/consolidator_task.sh, prompts/consolidator.md, prompts/consolidation_reviewer.md]
+    covers: [agent_os/product/sessions, agent_os/product/session_ingest, prompts/consolidation]
     tests: [tests/product/sessions]
