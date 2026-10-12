@@ -161,6 +161,7 @@ def run_test_ingest(
                 session,
                 tree,
                 find_issue=tracker.find_by_key,
+                find_open_issue=tracker.find_open_by_key,
                 feedback_file=feedback_file,
                 confirm_before_dispatch=config.sessions.confirm_before_dispatch,
                 mechanism_repository=config.sessions.mechanism_repository,

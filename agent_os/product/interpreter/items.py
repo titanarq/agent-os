@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 from agent_os.product.interpreter.constants import (
+    ITEM_EFFECTS,
     ITEM_KINDS,
     ITEM_ORIGINS,
     ITEM_STATUSES,
@@ -33,6 +34,7 @@ class Item:
     note: str | None = None
     question: str | None = None
     answer_text: str | None = None
+    effect: str | None = None
 
     def as_json(self) -> dict:
         document = {
@@ -40,7 +42,15 @@ class Item:
             "from_messages": list(self.from_messages),
             "invocations": list(self.invocations),
         }
-        for optional in ("status", "origin", "verdict", "note", "question", "answer_text"):
+        for optional in (
+            "status",
+            "origin",
+            "verdict",
+            "note",
+            "question",
+            "answer_text",
+            "effect",
+        ):
             if document[optional] is None:
                 del document[optional]
         if not self.invocations:
@@ -131,6 +141,9 @@ def parse_item(
         problems.append(f"{where}: `origin` is required, one of {list(ITEM_ORIGINS)}")
     elif origin is not None and origin not in ITEM_ORIGINS:
         problems.append(f"{where}: `origin` must be one of {list(ITEM_ORIGINS)}")
+    effect = raw.get("effect")
+    if effect is not None and effect not in ITEM_EFFECTS:
+        problems.append(f"{where}: `effect` must be one of {list(ITEM_EFFECTS)} when present")
     invocations = _invocation_ids(raw, problems, where)
     verdict = _optional_text(raw, "verdict", problems, where)
     note = _optional_text(raw, "note", problems, where)
@@ -156,4 +169,5 @@ def parse_item(
         note=note,
         question=question,
         answer_text=answer_text,
+        effect=effect,
     ), []

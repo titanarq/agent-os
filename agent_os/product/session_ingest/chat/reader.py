@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from agent_os.product.interpreter.constants import (
+    ITEM_EFFECTS,
     ITEM_KINDS,
     ITEM_ORIGINS,
     ITEM_STATUSES,
@@ -87,6 +88,8 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
         _one_of(status, ITEM_STATUSES, "item status", where)
     origin = _optional_text(row, "origin", where)
     _one_of(origin, ITEM_ORIGINS, "item origin", where)
+    effect = _optional_text(row, "effect", where)
+    _one_of(effect, ITEM_EFFECTS, "item effect", where)
     invocations = row.get("invocations", [])
     if not isinstance(invocations, list) or not all(isinstance(i, str) and i for i in invocations):
         raise SessionFileError(
@@ -109,6 +112,7 @@ def _item(row: dict, thread_length: int, where: str) -> Item:
         _optional_text(row, "question", where),
         _optional_text(row, "answer_text", where),
         origin=origin,
+        effect=effect,
     )
 
 

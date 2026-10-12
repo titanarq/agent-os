@@ -25,5 +25,8 @@ class GitHubReworkTracker:
     def find_by_key(self, key: str) -> int | None:
         return find_by_key(self.repo, key)
 
+    def find_open_by_key(self, key: str) -> int | None:
+        return find_by_key(self.repo, key, include_closed=False)
+
     def open(self, title: str, body: str, labels: list[str]) -> int:
         return int(create_issue(self.repo, title, body, labels)["number"])

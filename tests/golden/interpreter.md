@@ -41,6 +41,9 @@ AN ITEM
     is the owner's word on the what, recorded for the consolidation of the use cases.
   - `question_of_what`: the message touches the what but states no decision -- a doubt, a "should it
     maybe...?". It stays open until the owner answers it.
+  A `decision` about a use case also carries `"effect"`: `adds` when it only adds to what the case
+  already says, `contradicts` when it reverses or removes something the case says, `qualifies` when
+  it narrows or conditions something the case says. Omit `effect` on every other kind.
   When unsure between `change` and `decision`, ask ONE question (`needs_answer`) rather than choose.
 - `origin`: `stated`, `derived` or `detected`, always (see ORIGIN below); you say where the item
   comes from and code decides what happens to it.

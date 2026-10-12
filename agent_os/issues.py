@@ -398,7 +398,7 @@ def desired_gh_state(entry: dict) -> str:
 # --------------------------------------------------------------------------------------------
 
 
-def find_by_key(repo: str, key: str) -> int | None:
+def find_by_key(repo: str, key: str, *, include_closed: bool = True) -> int | None:
     needle = f"<!-- key: {key} -->"
     rows = (
         gh_json(
@@ -407,7 +407,7 @@ def find_by_key(repo: str, key: str) -> int | None:
             "--repo",
             repo,
             "--state",
-            "all",
+            "all" if include_closed else "open",
             "--search",
             f'"{needle}"',
             "--json",

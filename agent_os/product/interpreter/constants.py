@@ -35,6 +35,14 @@ ITEM_KINDS = (
     KIND_ANSWER,
 )
 
+# What a `decision` does to the definition of the use case it is about
+# (`docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-consolidated-into-one-definition.md`):
+# only a decision that contradicts or qualifies what the case already says triggers its consolidation.
+EFFECT_ADDS = "adds"
+EFFECT_CONTRADICTS = "contradicts"
+EFFECT_QUALIFIES = "qualifies"
+ITEM_EFFECTS = (EFFECT_ADDS, EFFECT_CONTRADICTS, EFFECT_QUALIFIES)
+
 VERDICTS = ("accept", "reject", "retry")
 
 STATUS_PROPOSED = "proposed"
