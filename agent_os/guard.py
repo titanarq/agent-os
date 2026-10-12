@@ -2372,7 +2372,12 @@ def _gh_pr_list(fields: str, *, main: Path, state: str = "open", limit: int = 50
     """Pull requests in one state (open by default), the same shape `_gh_issue_list` gives issues.
     A `gh` failure reads as the empty list, exactly as there. Open ones never include an
     integration pull request, which is not work."""
-    fields_with_head_branch = fields if "headRefName" in fields else f"{fields},headRefName"
+    reads_open_pull_requests = state == "open"
+    fields_to_read = (
+        f"{fields},headRefName"
+        if reads_open_pull_requests and "headRefName" not in fields
+        else fields
+    )
     result = subprocess.run(
         [
             "gh",
@@ -2381,7 +2386,7 @@ def _gh_pr_list(fields: str, *, main: Path, state: str = "open", limit: int = 50
             "--state",
             state,
             "--json",
-            fields_with_head_branch,
+            fields_to_read,
             "--limit",
             str(limit),
         ],
@@ -2398,7 +2403,7 @@ def _gh_pr_list(fields: str, *, main: Path, state: str = "open", limit: int = 50
         return []
     if not isinstance(rows, list):
         return []
-    return without_integration_pull_requests(rows) if state == "open" else rows
+    return without_integration_pull_requests(rows) if reads_open_pull_requests else rows
 
 
 def role_run_is_alive(subject: str, *, main: Path = HOST_ROOT) -> bool:
