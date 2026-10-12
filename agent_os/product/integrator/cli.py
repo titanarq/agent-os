@@ -6,6 +6,8 @@
         waits for the integration head's checks; prints `passed`, `evict #N` or `solo: <why>`
     agent-os-integrate land <integration PR>
         merges each member through `safe_merge.sh --group`, checks the trees, closes the integration PR
+    agent-os-integrate record --members N N --outcome landed|evicted|solo [...]
+        appends the round to .cache/integrator/rounds.jsonl; `report` prints what that file says
     agent-os-integrate plan --prs N N N [--format summary|json] [--judge] [--root DIR] [--config PATH]
         --judge runs the one model turn on the group (bin/integrator_task.sh's judgment) and prints the
         final groups with its reasons; anything it cannot answer leaves every pull request alone
@@ -20,6 +22,7 @@ import json
 import pathlib
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from agent_os import lib
 from agent_os.product.integrator.build import build_integration
@@ -28,6 +31,16 @@ from agent_os.product.integrator.judge.round import judge_round
 from agent_os.product.integrator.plan import TestSelectionInputs, plan_round, render
 from agent_os.product.integrator.result.attribution import SummaryIndexError
 from agent_os.product.integrator.result.landing import land_group
+from agent_os.product.integrator.result.ledger import (
+    CI_RESULTS,
+    OUTCOMES,
+    LedgerError,
+    RoundRecord,
+    append_round,
+    minutes_between,
+    read_rounds,
+    report,
+)
 from agent_os.product.integrator.result.verdict import decide_round
 from agent_os.product.integrator.round_lock import IntegrationInFlightError
 from agent_os.product.shared.config import IntegratorConfig
@@ -97,7 +110,54 @@ def build_parser() -> argparse.ArgumentParser:
     result.add_argument("--summary-index", type=pathlib.Path, help="the run's suite.summary.json")
     land = commands.add_parser("land", help="merge a passed group's members, one merge commit each")
     land.add_argument("integration_pr", type=int, metavar="PR")
+    record = commands.add_parser("record", help="append one round to the rounds ledger")
+    record.add_argument("--members", type=int, nargs="+", required=True, metavar="N")
+    record.add_argument("--outcome", choices=OUTCOMES, required=True)
+    record.add_argument("--evicted", type=int, metavar="N", help="the evicted member")
+    record.add_argument("--reason", default="", help="why the round went solo")
+    record.add_argument("--ci-result", choices=CI_RESULTS, default="")
+    record.add_argument("--ci-minutes", type=float, help="minutes the integration CI took")
+    record.add_argument("--oldest-approved-at", help="ISO time of the oldest member's approval")
+    record.add_argument("--merged-at", help="ISO time of the last merge (default: now)")
+    record.add_argument("--plan-file", type=pathlib.Path, help="`plan --format json` output")
+    record.add_argument("--judge-file", type=pathlib.Path, help="the judge's JSON answer")
+    commands.add_parser("report", help="print what the rounds ledger says")
     return parser
+
+
+def _read_json_file(path: pathlib.Path | None) -> dict | None:
+    if path is None:
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise LedgerError(f"{path} could not be read as JSON: {error}") from error
+
+
+def _command_record(arguments, repository) -> int:
+    merged_at = arguments.merged_at or datetime.now(UTC).isoformat()
+    waited = (
+        minutes_between(arguments.oldest_approved_at, merged_at)
+        if arguments.oldest_approved_at
+        else None
+    )
+    ci_result = arguments.ci_result or ("passed" if arguments.outcome == "landed" else "")
+    path = append_round(
+        repository,
+        RoundRecord(
+            tuple(arguments.members),
+            arguments.outcome,
+            arguments.evicted,
+            arguments.reason,
+            ci_result,
+            arguments.ci_minutes,
+            waited,
+            _read_json_file(arguments.plan_file),
+            _read_json_file(arguments.judge_file),
+        ),
+    )
+    print(f"recorded in {path}")
+    return 0
 
 
 def _command_land(arguments, repository, repo_flags) -> int:
@@ -158,6 +218,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
         repository = git_toplevel_of(arguments.root or pathlib.Path.cwd()).resolve()
+        if arguments.command_name == "record":
+            return _command_record(arguments, repository)
+        if arguments.command_name == "report":
+            print(report(read_rounds(repository)))
+            return 0
         integrator, inputs, repo_flags = _load_settings(arguments.config, repository)
         if arguments.command_name == "build":
             return _command_build(arguments, repository, repo_flags)
@@ -177,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except (
         IntegrationInFlightError,
+        LedgerError,
         SummaryIndexError,
         GitError,
         ManifestError,
