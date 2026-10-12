@@ -7,6 +7,7 @@ groups:
       - tests/test_worker_launch_gate.py
       - tests/product/worker/test_init_reuses_its_branch.py
       - tests/product/worker/test_open_pr_merge_failed_blocks_on_human.py
+      - tests/product/worker/test_open_pr_closes_the_ticket_of_its_branch.py
       - tests/product/worker/test_slots_made_on_demand.py
       - tests/product/worker/test_worker_linked_paths.py
       - tests/product/worker/test_worker_quota_refusal_cut.py
