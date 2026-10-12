@@ -69,6 +69,7 @@ class TicketSubject:
     messages: str
     node_id: str | None
     is_rework: bool
+    is_consolidation: bool = False
     others: tuple[OtherItem, ...] = ()
     exclusions: tuple[str, ...] = ()
 

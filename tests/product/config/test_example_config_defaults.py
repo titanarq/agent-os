@@ -12,7 +12,10 @@ from agent_os.lib import AgentModels, backend_default_model, load_agents_config
 
 SONNET = "claude-sonnet-5-5"
 HAIKU = "claude-haiku-5-5"
+OPUS = "claude-opus-5-5"
 CLASSES_ON_HAIKU = {"puntal", "mechanical-haiku", "integrator"}
+# The consolidation's reviewer is the Opus role of the use-case consolidation ADR (2026-10-12).
+CLASSES_ON_OPUS = {"consolidation-reviewer"}
 
 
 def shipped_config():
@@ -35,7 +38,10 @@ def test_the_puntal_and_mechanical_haiku_run_on_haiku_and_every_other_class_on_s
     classes = shipped_config().classes
     assert CLASSES_ON_HAIKU <= set(classes)
     for name, task_class in classes.items():
-        assert task_class.model == (HAIKU if name in CLASSES_ON_HAIKU else SONNET), name
+        expected = (
+            HAIKU if name in CLASSES_ON_HAIKU else OPUS if name in CLASSES_ON_OPUS else SONNET
+        )
+        assert task_class.model == expected, name
 
 
 def test_mechanical_sonnet_still_exists_for_the_issues_that_name_it():

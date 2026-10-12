@@ -48,6 +48,14 @@ def _render(step: IssueStep, plan: ChatSessionPlan, tree: Tree, settings: Rework
     )
 
 
+def _labels_of(subject, settings: ReworkTicketSettings | None) -> list[str]:
+    if settings is None:
+        return []
+    if subject.is_consolidation:
+        return settings.consolidation_labels
+    return settings.labels if subject.is_rework else settings.change_labels
+
+
 def apply_chat_plan(
     plan: ChatSessionPlan,
     tree: Tree,
@@ -78,11 +86,7 @@ def apply_chat_plan(
         step.subject.key: step.existing_issue for step in plan.issues if step.existing_issue
     }
     for step, title, body in tickets:
-        labels = (
-            (settings.labels if step.subject.is_rework else settings.change_labels)
-            if settings
-            else []
-        )
+        labels = _labels_of(step.subject, settings)
         opener = mechanism_tracker if step.on_mechanism and mechanism_tracker else tracker
         issues_by_key[step.subject.key] = opener.open(title, body, labels)
     applied.rework_issues.extend(issues_by_key.values())

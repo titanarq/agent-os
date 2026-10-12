@@ -151,6 +151,7 @@ from agent_os.product.dispatch.slots.naming import (
 )
 from agent_os.product.shared import config as product_config
 from agent_os.product.shared.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
+from agent_os.product.shared.prompt_blocks import substitute_block
 from agent_os.product.test_selection.config import TestSelectionConfig
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
@@ -295,7 +296,16 @@ class TaskClass(Strict):
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
     role: Literal[
-        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter", "integrator"
+        "worker",
+        "validator",
+        "refiner",
+        "expert",
+        "planner",
+        "puntal",
+        "interpreter",
+        "integrator",
+        "consolidator",
+        "consolidation_reviewer",
     ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
@@ -404,6 +414,11 @@ class LabelVocabulary(Strict):
     # same tick it reads it (#413). Only a label set by the human wakes anything -- set by one of
     # the mechanism's own identities it is removed and ignored, so the planner cannot wake itself.
     wake_planner: str = "wake:planner"
+    # NOT a state either: the `consolidate.<node>` job issues carry it, and it keeps every worker off
+    # them -- the consolidator (`agent-os-consolidate`) takes them, a worker never does, whatever
+    # other label they carry (docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-
+    # consolidated-into-one-definition.md).
+    consolidation: str = "consolidation"
     # The rest of the vocabulary `issues.py` used to spell as literals (`agent_os/docs/AGENT_OS.md` §7 row
     # (c)'s sibling: the module names moved to `project.modules` there, `type:*`/`p<n>`/`module:`
     # stayed hardcoded). Defaults match what was hardcoded, so no existing config changes
@@ -1509,35 +1524,6 @@ PROJECT_EXTRAS_PLACEHOLDER = "__PROJECT_EXTRAS__"
 PLACEHOLDER_RE = re.compile(r"__[A-Z][A-Z0-9_]*__")
 
 
-def _substitute_block(text: str, placeholder: str, value: str) -> str:
-    """One placeholder, substituted the way the shell drivers substituted it before this function
-    existed: inline where it stands inside a line, and as a paragraph of its own where it stands
-    alone on one -- an empty value then taking its own line AND the blank line that separated it
-    with it, so a host that configures nothing keeps the single blank line every other section
-    boundary has instead of a stub heading or a gap twice as wide as the one it fills."""
-    if placeholder not in text:
-        return text
-    block = value.strip("\n")
-    lines = text.split("\n")
-    rendered: list[str] = []
-    for index, line in enumerate(lines):
-        if line.strip() == placeholder:
-            if block:
-                rendered.extend(block.split("\n"))
-            elif (
-                rendered
-                and not rendered[-1].strip()
-                and index + 1 < len(lines)
-                and not lines[index + 1].strip()
-            ):
-                # The placeholder was a paragraph between two others: drop one of the two blank
-                # lines that fenced it, never both.
-                rendered.pop()
-            continue
-        rendered.append(line.replace(placeholder, block))
-    return "\n".join(rendered)
-
-
 def lint_rules(project: ProjectConfig | None = None) -> str:
     """The validator's lint bullet, rendered from `project.lint_commands`, or nothing when the list
     is empty (agent-os#41: the bullet used to hard-code one Python host's `.venv/bin/ruff`)."""
@@ -1636,9 +1622,9 @@ def render_prompt(
     # The extras go in FIRST, so a host's own paragraph may carry the mechanism's placeholders --
     # `__TEST_COMMAND__` is the one the first host's worker file uses -- and is filled from the
     # same config as the template around it.
-    text = _substitute_block(template.read_text(), PROJECT_EXTRAS_PLACEHOLDER, extras)
+    text = substitute_block(template.read_text(), PROJECT_EXTRAS_PLACEHOLDER, extras)
     for name, value in (substitutions or {}).items():
-        text = _substitute_block(text, f"__{name}__", value)
+        text = substitute_block(text, f"__{name}__", value)
     unresolved = sorted(set(PLACEHOLDER_RE.findall(text)))
     if unresolved:
         raise KeyError(
@@ -1916,7 +1902,11 @@ def is_dispatchable(
     if (issue.get("state") or "OPEN").upper() != "OPEN":
         return False
     names = label_names(issue)
-    if labels.ready not in names or labels.blocked_on_human in names:
+    if (
+        labels.ready not in names
+        or labels.blocked_on_human in names
+        or labels.consolidation in names
+    ):
         return False
     return not validate_issue_body(
         issue.get("body") or "",

@@ -59,6 +59,18 @@ run (above 1.0 means the integrator pays, 1.0 or less means it only adds a CI); 
 approval-to-merge minutes; the reasons rounds went solo; and rounds the judge called independent that
 the CI proved coupled. Leave it enabled only while that evidence says it pays.
 
+## Optional config: the consolidator
+
+A use case that an amendment contradicts is consolidated into one definition
+(`docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-consolidated-into-one-definition.md`).
+Ingestion opens the job issue `consolidate.<node>` with the label `project.labels.consolidation`
+(`consolidation`), which `is_dispatchable` refuses, so no worker takes it. Two classes copied from
+`config.example.yaml` run it: `consolidator` (role `consolidator`, Sonnet drafts) and
+`consolidation-reviewer` (role `consolidation_reviewer`, Opus reviews). A host without them gets a
+refusal (exit 2) when it runs the consolidator, nothing else. It is launched by hand or by the control
+plane with `agent-os-consolidate <issue>`: it opens one pull request that `Closes` the
+issue, or comments the reviewer's reasons on the issue and opens nothing.
+
 ## Measuring
 
 Time is wall clock on the host's machine; USD is the sum of `.cache/*/runs.tsv` for workers, validators,

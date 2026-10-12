@@ -11,7 +11,7 @@ The consolidation is raised once the LAST decision of the amendment is settled: 
 on the same use case still waits for the owner's confirmation (it is `proposed`), nothing is raised.
 A withdrawn decision is not part of the amendment. The job is one issue per use case, keyed
 `consolidate.<node>`, and a job still open for the case is reused, never doubled. The consolidator
-that does the work (Sonnet drafts, Opus reviews) is another piece; this one only raises the job.
+that does the work (Sonnet drafts, Opus reviews) is `agent-os-consolidate`; this one only raises the job.
 """
 
 from __future__ import annotations
@@ -88,5 +88,6 @@ def _subject(
         messages=thread_text(session, positions),
         node_id=node_id,
         is_rework=False,
+        is_consolidation=True,
         exclusions=EXCLUSIONS,
     )
