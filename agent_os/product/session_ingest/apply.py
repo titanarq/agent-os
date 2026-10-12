@@ -47,6 +47,7 @@ class ReworkTicketSettings:
     labels: list[str]
     tree_root: str
     change_labels: list[str] = field(default_factory=list)
+    consolidation_labels: list[str] = field(default_factory=list)
 
 
 @dataclass

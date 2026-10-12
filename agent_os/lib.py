@@ -295,7 +295,16 @@ class TaskClass(Strict):
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
     role: Literal[
-        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter", "integrator"
+        "worker",
+        "validator",
+        "refiner",
+        "expert",
+        "planner",
+        "puntal",
+        "interpreter",
+        "integrator",
+        "consolidator",
+        "consolidation_reviewer",
     ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
@@ -404,6 +413,11 @@ class LabelVocabulary(Strict):
     # same tick it reads it (#413). Only a label set by the human wakes anything -- set by one of
     # the mechanism's own identities it is removed and ignored, so the planner cannot wake itself.
     wake_planner: str = "wake:planner"
+    # NOT a state either: the `consolidate.<node>` job issues carry it, and it keeps every worker off
+    # them -- the consolidator (`bin/consolidator_task.sh`) takes them, a worker never does, whatever
+    # other label they carry (docs/adr/2026-10-12-a-use-case-that-an-amendment-contradicts-is-
+    # consolidated-into-one-definition.md).
+    consolidation: str = "consolidation"
     # The rest of the vocabulary `issues.py` used to spell as literals (`agent_os/docs/AGENT_OS.md` §7 row
     # (c)'s sibling: the module names moved to `project.modules` there, `type:*`/`p<n>`/`module:`
     # stayed hardcoded). Defaults match what was hardcoded, so no existing config changes
@@ -1916,7 +1930,11 @@ def is_dispatchable(
     if (issue.get("state") or "OPEN").upper() != "OPEN":
         return False
     names = label_names(issue)
-    if labels.ready not in names or labels.blocked_on_human in names:
+    if (
+        labels.ready not in names
+        or labels.blocked_on_human in names
+        or labels.consolidation in names
+    ):
         return False
     return not validate_issue_body(
         issue.get("body") or "",

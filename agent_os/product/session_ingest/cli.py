@@ -93,6 +93,7 @@ def _ticket_settings(config: lib.AgentsConfig) -> ReworkTicketSettings:
         tree_root=config.tree.root,
         change_labels=[label for label in (types.get("task") or types.get("bug"),) if label]
         + config.tree.ticket_labels,
+        consolidation_labels=[config.project.labels.consolidation],
     )
 
 
