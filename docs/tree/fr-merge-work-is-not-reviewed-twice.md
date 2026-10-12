@@ -22,7 +22,8 @@ evidence that the coordination failed and improves it, so the same kind of confl
 recur. Prevention already exists: dispatch never runs two tickets on the same code, and what shares
 code or order waits (dec-dispatch-never-runs-two-tickets-on-the-same-code,
 fr-independent-work-runs-in-parallel, whose evaluator asks for few merge conflicts); this
-requirement is about what still conflicts, and about not paying twice for it.
+requirement is about what still conflicts, and about not paying twice for it. Landing what is
+ready in groups is fr-ready-pull-requests-land-in-groups.
 
 Whether a lighter model, the new Haiku 5.5 the owner asks about, can do that review is a doubt of
 how, so it is settled by the experiment above and not by anyone's estimate

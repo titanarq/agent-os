@@ -1,0 +1,1 @@
+- Tree: `fr-ready-pull-requests-land-in-groups` (implemented) under `goal-efficient-with-what-it-spends`, on the owner's words of 2026-10-11, with three trend evaluators (pull requests landed per CI run, minutes from approval to merge, rounds returned to one at a time); `fr-merge-work-is-not-reviewed-twice` links to it (#215).
