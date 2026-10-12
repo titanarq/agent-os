@@ -39,6 +39,15 @@ move issue states only with `python -m agent_os.issues move`; never edit `agent_
 (`dec-a-change-to-the-what-is-merged-only-on-the-owners-word`); every pull request gets a code-quality
 review (`dec-every-pull-request-gets-a-code-quality-review`).
 
+## Optional config: the integrator
+
+`integrator:` in `config/agents.yaml` (every key optional; nothing reads it until its driver lands, so
+pulling the subtree changes nothing): `enabled` (`false`), `max_group_size` (`5`), `solo_paths` (`[]`:
+globs added to the built-in solo list of `.github/**`, dependency manifests and lockfiles, `Dockerfile*`
+and `bootstrap.sh`), `ci_wait_max_minutes` (`30`) and `judge` (`true`). Its one-shot class is
+`classes.integrator` (role `integrator`, `claude-haiku-5-5`, the interpreter's ceilings), copied from
+`config.example.yaml`.
+
 ## Measuring
 
 Time is wall clock on the host's machine; USD is the sum of `.cache/*/runs.tsv` for workers, validators,

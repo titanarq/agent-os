@@ -12,7 +12,7 @@ from agent_os.lib import AgentModels, backend_default_model, load_agents_config
 
 SONNET = "claude-sonnet-5-5"
 HAIKU = "claude-haiku-5-5"
-CLASSES_ON_HAIKU = {"puntal", "mechanical-haiku"}
+CLASSES_ON_HAIKU = {"puntal", "mechanical-haiku", "integrator"}
 
 
 def shipped_config():
