@@ -73,9 +73,24 @@ jobs:
           .venv/bin/agent-os-tests run
           --base origin/${{ github.base_ref || github.ref_name }}
           --manifest tests/selection
-          --command ".venv/bin/pytest -q -n 6"
+          --command ".venv/bin/pytest -q -n 6 --junitxml=suite.xml"
           --last-full-run "${{ steps.clock.outputs.last }}"
           ${{ github.event_name == 'push' && '--only-when-due' || '' }}
+
+      # The index of the run (counts and one line per failing test), which `agent-os-integrate
+      # result` downloads to tell which member of a red group to evict. Published green or red.
+      - name: the suite summary index
+        if: always() && steps.tests.conclusion != 'skipped'
+        run: python3 -I bin/dev/suite_index.py suite.xml "${{ steps.tests.outcome == 'success' && 0 || 1 }}" > suite.summary.json
+
+      - name: upload the suite summary index
+        if: always() && steps.tests.conclusion != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-os-suite-summary
+          path: suite.summary.json
+          if-no-files-found: ignore
+          retention-days: 3
 
       # A failed run uploads nothing, so the clock keeps its old origin and the next run is full.
       - name: record the full run
