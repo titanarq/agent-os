@@ -71,7 +71,7 @@ class TestSelectionInputs:
     tree_ancestors: dict[str, list[str]]
 
 
-def _own_plan(inputs: TestSelectionInputs, paths: Sequence[str]) -> TestPlan:
+def own_plan(inputs: TestSelectionInputs, paths: Sequence[str]) -> TestPlan:
     if inputs.manifest is None:
         return TestPlan("full", "test selection is off")
     return plan_tests(
@@ -120,7 +120,7 @@ def plan_round(
         if reason:
             not_candidates[number] = reason
             continue
-        plans[number] = _own_plan(inputs, facts.paths)
+        plans[number] = own_plan(inputs, facts.paths)
         reason = reason_to_land_alone(
             facts, plans[number], integrator.solo_paths, inputs.manifest_path
         )
@@ -132,7 +132,7 @@ def plan_round(
     group_tests = largest = largest_tests = None
     if chosen.members:
         union_paths = sorted({p for n in chosen.members for p in facts_by_number[n].paths})
-        group_tests = len(_own_plan(inputs, union_paths).tests)
+        group_tests = len(own_plan(inputs, union_paths).tests)
         largest = max(chosen.members, key=lambda n: (len(plans[n].tests), -n))
         largest_tests = len(plans[largest].tests)
     return RoundPlan(
