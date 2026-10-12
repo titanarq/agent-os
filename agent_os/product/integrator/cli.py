@@ -6,7 +6,9 @@
         waits for the integration head's checks; prints `passed`, `evict #N` or `solo: <why>`
     agent-os-integrate land <integration PR>
         merges each member through `safe_merge.sh --group`, checks the trees, closes the integration PR
-    agent-os-integrate plan --prs N N N [--format summary|json] [--root DIR] [--config PATH]
+    agent-os-integrate plan --prs N N N [--format summary|json] [--judge] [--root DIR] [--config PATH]
+        --judge runs the one model turn on the group (bin/integrator_task.sh's judgment) and prints the
+        final groups with its reasons; anything it cannot answer leaves every pull request alone
 
 Read-only: it reads each pull request through `gh` and `git fetch`, and changes nothing on GitHub.
 Exit 0 and the plan; 2 when the plan could not be made at all (no repository, no default branch)."""
@@ -14,6 +16,7 @@ Exit 0 and the plan; 2 when the plan could not be made at all (no repository, no
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sys
 from collections.abc import Sequence
@@ -21,6 +24,7 @@ from collections.abc import Sequence
 from agent_os import lib
 from agent_os.product.integrator.build import build_integration
 from agent_os.product.integrator.facts import run_command_in
+from agent_os.product.integrator.judge.round import judge_round
 from agent_os.product.integrator.plan import TestSelectionInputs, plan_round, render
 from agent_os.product.integrator.result.attribution import SummaryIndexError
 from agent_os.product.integrator.result.landing import land_group
@@ -81,6 +85,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan", help="the candidates and the mechanical group, dry run")
     plan.add_argument("--prs", type=int, nargs="+", required=True, metavar="N")
     plan.add_argument("--format", choices=("summary", "json"), default="summary")
+    plan.add_argument(
+        "--judge", action="store_true", help="have the model judge whether the group is independent"
+    )
     build = commands.add_parser("build", help="the integration branch and its pull request")
     build.add_argument("--prs", type=int, nargs="+", required=True, metavar="N")
     build.add_argument("--dry-run", action="store_true", help="print the commands, change nothing")
@@ -179,6 +186,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{PROGRAM}: {error}", file=sys.stderr)
         return COULD_NOT_RUN
     print(render(plan, arguments.format))
+    if arguments.judge:
+        judged = judge_round(repository, run, plan, repo_flags, judge_enabled=integrator.judge)
+        print(
+            json.dumps(judged.as_json(), indent=2)
+            if arguments.format == "json"
+            else judged.summary()
+        )
     return 0
 
 
