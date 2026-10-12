@@ -76,7 +76,9 @@ a file, so you find out here, while the stage is still yours.
   targets (`origin/main` unless the issue says `Base: <branch>`):
   `"$AGENT_OS_PYTHON" -m agent_os.quality --base origin/main`
   It judges the checkout you stand in, so run it in your worktree and never in the main checkout.
-- Exit 0 prints nothing: carry on. Exit 1 prints one line per path over its limit: bring each back
+- Exit 0 prints nothing: carry on. Exit 1 prints one line per path over its limit (a full folder is
+  followed by a `hint:` line naming files that could move and where; make that room BEFORE you add
+  the file that would overflow it): bring each back
   within it in this same stage -- move code or text into a new file or subfolder -- run the check
   again, and only then commit. Exit 2 means the check could not run: say so in your report.
 

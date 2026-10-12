@@ -7,7 +7,8 @@ host's main checkout named by `AGENT_OS_HOST_ROOT`, which the drivers export int
 worktree, where it would measure `main` and answer green for a branch CI fails.
 
 Exit 0: no folder or file is over a limit without having been so on the merge-base with REF, or
-got worse since. Exit 1: violations, one line each. Exit 2: the check could not run."""
+got worse since. Exit 1: violations, one line each, a folder
+with a hint line naming files that could move and where. Exit 2: the check could not run."""
 
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ import yaml
 from agent_os import lib
 from agent_os.cli import AGENT_OS_DIR
 from agent_os.quality.config import QualityConfig
+from agent_os.quality.destinations import destination_hint
 from agent_os.quality.git_snapshots import (
     GitError,
     git_toplevel_of,
@@ -89,9 +91,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         excluded_paths.append(mechanism_directory_inside(repository) or "")
         if loaded_config is not None:
             excluded_paths.append(config_file_inside(repository, loaded_config) or "")
+        head_snapshot = snapshot_of_checkout(repository)
         violations = find_violations(
             snapshot_of_revision(repository, merge_base),
-            snapshot_of_checkout(repository),
+            head_snapshot,
             Limits(quality.max_entries_per_folder, quality.max_lines_per_file),
             [path for path in excluded_paths if path],
         )
@@ -100,6 +103,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     for violation in violations:
         print(violation.describe())
+        hint = destination_hint(violation, head_snapshot.tracked_paths)
+        if hint:
+            print(hint)
     return 1 if violations else 0
 
 
