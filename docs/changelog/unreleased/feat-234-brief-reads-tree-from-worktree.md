@@ -1,0 +1,1 @@
+- `agent-os-issues brief` cuts a node's slice from the tree of the worktree it runs in when that worktree holds the tree, instead of always reading the host's main checkout, which can be far behind `origin/main` (#234).
