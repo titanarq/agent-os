@@ -4,6 +4,8 @@
     agent-os-integrate build --prs N N N --without N     (the rebuild after `evict #N`)
     agent-os-integrate result <integration PR> [--summary-index suite.summary.json]
         waits for the integration head's checks; prints `passed`, `evict #N` or `solo: <why>`
+    agent-os-integrate land <integration PR>
+        merges each member through `safe_merge.sh --group`, checks the trees, closes the integration PR
     agent-os-integrate plan --prs N N N [--format summary|json] [--root DIR] [--config PATH]
 
 Read-only: it reads each pull request through `gh` and `git fetch`, and changes nothing on GitHub.
@@ -21,6 +23,7 @@ from agent_os.product.integrator.build import build_integration
 from agent_os.product.integrator.facts import run_command_in
 from agent_os.product.integrator.plan import TestSelectionInputs, plan_round, render
 from agent_os.product.integrator.result.attribution import SummaryIndexError
+from agent_os.product.integrator.result.landing import land_group
 from agent_os.product.integrator.result.verdict import decide_round
 from agent_os.product.integrator.round_lock import IntegrationInFlightError
 from agent_os.product.shared.config import IntegratorConfig
@@ -35,6 +38,7 @@ from agent_os.quality.git_snapshots import GitError, git_toplevel_of
 PROGRAM = "agent-os-integrate"
 COULD_NOT_RUN = 2
 NOT_BUILT = 1
+NOT_LANDED = 1
 
 
 def _load_settings(config_path: pathlib.Path | None, repository: pathlib.Path):
@@ -84,7 +88,27 @@ def build_parser() -> argparse.ArgumentParser:
     result = commands.add_parser("result", help="wait for the integration CI, print the verdict")
     result.add_argument("integration_pr", type=int, metavar="PR")
     result.add_argument("--summary-index", type=pathlib.Path, help="the run's suite.summary.json")
+    land = commands.add_parser("land", help="merge a passed group's members, one merge commit each")
+    land.add_argument("integration_pr", type=int, metavar="PR")
     return parser
+
+
+def _command_land(arguments, repository, repo_flags) -> int:
+    path = arguments.config or lib.DEFAULT_AGENTS_CONFIG
+    merge_method = lib.load_agents_config(path).project.merge_method if path.exists() else "merge"
+    landed = land_group(
+        repository,
+        run_command_in(repository),
+        arguments.integration_pr,
+        repo_flags,
+        merge_method,
+        print,
+    )
+    print(landed.line())
+    if landed.failure:
+        print(f"{PROGRAM}: {landed.failure}", file=sys.stderr)
+        return NOT_LANDED
+    return 0
 
 
 def _command_build(arguments, repository, repo_flags) -> int:
@@ -130,6 +154,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         integrator, inputs, repo_flags = _load_settings(arguments.config, repository)
         if arguments.command_name == "build":
             return _command_build(arguments, repository, repo_flags)
+        if arguments.command_name == "land":
+            return _command_land(arguments, repository, repo_flags)
         if arguments.command_name == "result":
             return _command_result(arguments, repository, integrator, inputs, repo_flags)
         run = run_command_in(repository)
