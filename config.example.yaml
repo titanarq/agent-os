@@ -313,6 +313,22 @@ interpreter:
   # may be pointing at); the host sends at most this many (docs/FEEDBACK_INTERPRETER.md).
   max_invocations: 5
 
+# The integrator: lands a group of ready pull requests under one CI instead of one at a time
+# (docs/adr/2026-10-11-the-integrator-*.md). Nothing reads these keys until its driver lands. Every
+# key is optional and these are the defaults; its model and ceilings are `classes.integrator`.
+integrator:
+  # Off until the ledger shows it pays; a host that pulls the subtree changes nothing.
+  enabled: false
+  # The most pull requests that can be ready together.
+  max_group_size: 5
+  # Globs added to the built-in solo list (`.github/**`, dependency manifests and lockfiles,
+  # `Dockerfile*`, `bootstrap.sh`): a pull request touching one lands alone.
+  solo_paths: []
+  # Beyond it the round counts as failed and returns to one at a time.
+  ci_wait_max_minutes: 30
+  # false: groups by the mechanical rules alone, without the model's judgement of independence.
+  judge: true
+
 # The owner's test sessions as a whole, read by the feedback interpreter and by `test-ingest`.
 sessions:
   # true: review mode, which the owner switches on when they ask for a review of everything: every
@@ -537,6 +553,18 @@ classes:
     role: interpreter
     backend: claude
     model: claude-sonnet-5-5
+    max_context: 30000
+    max_cost_usd: 0.25
+    max_total_tokens: 300000
+    commit_warn_turns: 6
+    commit_cut_turns: 12
+
+  # The integrator's class: one turn with no tool judging whether a group of ready pull requests is
+  # independent, on Haiku 5.5, with the interpreter's ceilings. Its logs are `.cache/integrator/`.
+  integrator:
+    role: integrator
+    backend: claude
+    model: claude-haiku-5-5
     max_context: 30000
     max_cost_usd: 0.25
     max_total_tokens: 300000

@@ -1,4 +1,4 @@
-"""The `tree:`, `board:`, `puntal:` and `interpreter:` sections of a host's `config/agents.yaml`: where
+"""The `tree:`, `board:`, `puntal:`, `interpreter:` and `integrator:` sections of a host's `config/agents.yaml`: where
 the product tree lives, how its tickets are named, the GitHub Project its progress board is generated
 into, how a puntal reaches the app and how the feedback interpreter talks.
 
@@ -159,6 +159,32 @@ class InterpreterConfig(Strict):
     max_invocations: int = 5
 
     @field_validator("timeout_seconds", "max_thread_messages", "max_invocations")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be at least 1")
+        return value
+
+
+class IntegratorConfig(Strict):
+    """How the integrator lands a group of ready pull requests under one CI
+    (`docs/adr/2026-10-11-the-integrator-lands-a-group-of-ready-prs-under-one-ci-and-one-at-a-time-when-in-doubt.md`).
+    Its model and per-invocation ceilings are the `integrator` class's. Every key is optional."""
+
+    # Off until the ledger shows it pays: a host that pulls the subtree changes nothing.
+    enabled: bool = False
+    # The most pull requests that can be ready together (a host runs up to five workers).
+    max_group_size: int = 5
+    # Globs a host adds to the built-in solo list (`.github/**`, dependency manifests and lockfiles,
+    # `Dockerfile*`, `bootstrap.sh`): a pull request touching one lands alone. A host-specific shared
+    # file is an entry here, never a literal in code.
+    solo_paths: list[str] = []
+    # Beyond it the round counts as failed and returns to one at a time.
+    ci_wait_max_minutes: int = 30
+    # False: groups by the mechanical rules alone, a host's explicit choice.
+    judge: bool = True
+
+    @field_validator("max_group_size", "ci_wait_max_minutes")
     @classmethod
     def positive(cls, value: int) -> int:
         if value < 1:

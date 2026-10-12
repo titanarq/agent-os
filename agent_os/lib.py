@@ -145,7 +145,13 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 
 from agent_os.cli import AGENT_OS_DIR, host_root
 from agent_os.product import config as product_config
-from agent_os.product.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
+from agent_os.product.config import (
+    BoardConfig,
+    IntegratorConfig,
+    InterpreterConfig,
+    PuntalConfig,
+    TreeConfig,
+)
 from agent_os.product.dispatch.slots.naming import (
     worker_slot_key,
     worker_slot_worktree,
@@ -295,7 +301,14 @@ class TaskClass(Strict):
     # (agent_os/docs/adr/2026-10-04-a-puntal-is-a-one-shot-headless-process-under-its-own-class-and-
     # cannot-write-code.md).
     role: Literal[
-        "worker", "validator", "refiner", "expert", "planner", "puntal", "interpreter"
+        "worker",
+        "validator",
+        "refiner",
+        "expert",
+        "planner",
+        "puntal",
+        "interpreter",
+        "integrator",
     ] = "worker"
     # See `RoleFallback.backend` above: a key of `project.backends`, validated once the whole
     # config is loaded, when `project` is there to validate it against.
@@ -945,6 +958,7 @@ class AgentsConfig(Strict):
     planner: PlannerConfig = PlannerConfig()
     puntal: PuntalConfig = PuntalConfig()
     interpreter: InterpreterConfig = InterpreterConfig()
+    integrator: IntegratorConfig = IntegratorConfig()
     sessions: product_config.SessionsConfig = product_config.SessionsConfig()
     classes: dict[str, TaskClass]
     tree: TreeConfig = TreeConfig()

@@ -1,0 +1,1 @@
+- The optional `integrator:` section of `config/agents.yaml` (`enabled` false, `max_group_size` 5, `solo_paths`, `ci_wait_max_minutes` 30, `judge` true) and the one-shot class `classes.integrator` (Haiku 5.5, the interpreter's ceilings) are declared and documented in `config.example.yaml` and `docs/ADOPTION.md` (#206). Nothing reads them yet.
