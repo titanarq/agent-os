@@ -71,7 +71,7 @@ parts' shared shapes, `docs/AGENT_OS.md` §4.7 describes them):
 The slow path is the Phase 0 tool loop under `prompts/puntal_slow.md`, entered when the plan says
 `needs_state`; the telemetry carries `path` and `slow_path_reason`. The owner's accept, reject or
 retry is `puntal_task.sh feedback` (`.cache/puntal/feedback.jsonl`, keyed by `invocation_id`), and every
-record carries its `versions` (`agent_os/product/records/versions.py`). A host's shell calls the whole
+record carries its `versions` (`agent_os/product/shared/records/versions.py`). A host's shell calls the whole
 thing through one entry independent of its stack, `puntal_task.sh --json` (`json_api.py`).
 Not measured yet: the first measurement is on the vector's real actions.
 
