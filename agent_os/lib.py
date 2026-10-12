@@ -151,8 +151,8 @@ from agent_os.product.dispatch.slots.naming import (
 )
 from agent_os.product.shared import config as product_config
 from agent_os.product.shared.config import BoardConfig, InterpreterConfig, PuntalConfig, TreeConfig
+from agent_os.product.shared.prompt_blocks import substitute_block
 from agent_os.product.test_selection.config import TestSelectionConfig
-from agent_os.prompt_blocks import substitute_block
 from agent_os.quality.config import QualityConfig
 from agent_os.streams import (
     DEFAULT_STREAM_PARSER,
