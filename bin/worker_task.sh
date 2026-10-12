@@ -338,6 +338,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_worktree_dirt.sh"
 # the body it publishes the rest with.
 # shellcheck source=agent_os/bin/worker/worker_publication_refusals.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_publication_refusals.sh"
+# shellcheck source=agent_os/bin/worker/worker_pull_request.sh
+source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_pull_request.sh"
 # shellcheck source=agent_os/bin/worker/worker_init_worktree.sh
 source "$(dirname "${BASH_SOURCE[0]}")/worker/worker_init_worktree.sh"
 # `resume --rework`: the stage a pull request sent back with CHANGES_REQUESTED is owed.
@@ -1373,14 +1375,7 @@ open-pr)
   esac
   branch=$(git -C "$worktree" rev-parse --abbrev-ref HEAD)
   [ "$branch" != HEAD ] || { echo "open-pr: $worktree is on a detached HEAD -- no pull request"; exit 0; }
-  # THE TICKET BEING WORKED is the one the branch names (`<word>/<issue>-<slug>`): the slot's
-  # recorded issue can be a stale one from an earlier run (#230: `Closes #116` on the pull request
-  # of #138). A branch that names no ticket keeps the recorded issue.
-  branch_issue=$(printf '%s\n' "$branch" | sed -nE 's#^[a-z][a-z0-9-]*/([0-9]+)([-/].*)?$#\1#p')
-  if [ -n "$branch_issue" ] && [ "$branch_issue" != "$issue" ]; then
-    echo "open-pr: $branch names issue #$branch_issue but the slot recorded #$issue -- publishing for #$branch_issue"
-    issue=$branch_issue
-  fi
+  issue=$(issue_the_branch_works_on "$branch" "$issue")
 
   # BEFORE THE FIRST `gh` CALL, not after it. Unconditionally, not only when GH_TOKEN is empty: a
   # token inherited from a run that started over an hour ago is present and expired. On #363 the
@@ -1582,26 +1577,7 @@ A human decides how the two tips are reconciled; then run \`open-pr\` again."
   # `write_state_marker` below preserves line 1 as it is.
   case "$(sed -n '1p' "$statefile" 2>/dev/null)" in BLOCKED*) write_state DONE ;; esac
 
-  existing=$(gh pr list --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)
-  if [ -n "$existing" ]; then
-    echo "open-pr: PR #$existing is already open for $branch"
-  else
-    title=$(gh issue view "$issue" --json title -q .title) || title="issue #$issue"
-    gh pr create --base "$base" --head "$branch" \
-      --title "$title (#$issue)" \
-      --body "$(pull_request_body "$issue" "$base_ref")" \
-      || {
-        # `gh pr list` can miss a pull request that exists (a listing that errored, a race with
-        # another publisher): `pr create` then refuses, and the branch's own pull request is the
-        # answer, not a failure (#230).
-        existing=$(gh pr view "$branch" --json number,state -q 'select(.state == "OPEN") | .number' 2>/dev/null || true)
-        if [ -n "$existing" ]; then
-          echo "open-pr: PR #$existing is already open for $branch"
-        else
-          echo "open-pr: gh pr create failed -- the branch is pushed, the pull request is not"; exit 0
-        fi
-      }
-  fi
+  open_or_reuse_pull_request "$issue" "$branch" "$base" "$base_ref"
 
   # GITHUB IS THE AUTHORITY ON `mergeable`, not the merge above: reading it back is how this run
   # says the pull request is in a state CI can act on, instead of assuming the merge made it so.
