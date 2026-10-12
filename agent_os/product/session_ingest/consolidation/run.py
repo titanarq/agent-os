@@ -103,6 +103,21 @@ def consolidate(
                 "The draft did not validate: " + "; ".join(problems),
                 EXIT_DRAFT_REFUSED,
             )
+        unfound = [
+            test
+            for test in draft.obsolete_tests
+            if not (worktree / test.path).is_file()
+            or test.test_name not in (worktree / test.path).read_text()
+        ]
+        if unfound:
+            return _refused(
+                job,
+                repo,
+                worktree,
+                "The draft proposes tests that are not in the repository: "
+                + "; ".join(f"`{test.path}` `{test.test_name}`" for test in unfound),
+                EXIT_DRAFT_REFUSED,
+            )
         node_path.write_text(draft.definition)
         new_defects = _defects(worktree, tree_root) - defects_before
         if new_defects:
@@ -149,7 +164,7 @@ def consolidate(
         node_file = node_path.relative_to(worktree)
         title = f"docs(tree): consolidate {job.node_id} into one definition (#{job.number})"
         repository.commit_and_push(worktree, node_file, branch, f"{title}\n\n{TRAILER}\n")
-        tests = "\n".join(draft.obsolete_tests) or "none"
+        tests = "\n".join(test.as_markdown() for test in draft.obsolete_tests) or "none"
         body = (
             f"Closes #{job.number}\n\n"
             f"`{node_file}` consolidated into one definition, with `Probado y descartado` pruned. "

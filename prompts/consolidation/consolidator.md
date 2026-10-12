@@ -23,8 +23,9 @@ WHAT YOU WRITE
 
 THE TESTS
 List the tests the new definition makes obsolete, each to be deleted or adjusted, each with the line
-of the OLD definition that justified it, quoted. Only tests the lines you were given point to. You
-never add a test. A test you are not sure about is not listed.
+of the OLD definition that justified it, quoted word for word as it stands in the file (a quote that is
+not in the old file refuses the whole draft; so does a test that does not exist). Only tests the
+lines you were given point to. You never add a test. A test you are not sure about is not listed.
 
 WHAT YOU ANSWER
 Exactly this layout and nothing else, no code fences around it:

@@ -1,0 +1,1 @@
+- The consolidator refuses a draft whose obsolete-test proposal lacks the line of the old definition that justified it: the quote must be in the old file word for word, the action `delete` or `adjust`, and the test must exist in the repository. The pull request body lists each proposal as `path test | action | "old line" | why`; consolidation changes and adds no test.
