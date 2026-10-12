@@ -41,4 +41,4 @@ jobs:
       # No database, no network, no real backend: the same subset `agent_os/tests/conftest.py`
       # keeps separate from the host's own fixtures, and the run a second host can also make.
       - name: the mechanism's own suite
-        run: agent_os/.venv/bin/pytest agent_os/tests -q
+        run: agent_os/.venv/bin/pytest agent_os/tests -q -n auto
