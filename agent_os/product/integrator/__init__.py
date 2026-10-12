@@ -3,8 +3,8 @@
 
 - `facts` -- what `gh` and `git` say about one pull request; a fact it cannot read is recorded as
   unreadable, never guessed.
-- `candidates` -- which pull requests may be considered at all.
-- `solo_rules` -- what keeps a candidate out of any group.
-- `grouping` -- the greedy, oldest-first group of one round.
+- `rules` -- which pull requests are candidates, what keeps one out of any group, and the greedy,
+  oldest-first group of one round.
+- `judge` -- the one model turn that confirms, splits or sends solo the group the rules allowed.
 - `plan` and `cli` -- the dry run `agent-os-integrate plan`, which writes nothing to GitHub.
 """

@@ -6,13 +6,13 @@ from __future__ import annotations
 import json
 import pathlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from agent_os.product.dispatch.touched_code import touched_paths_of
-from agent_os.product.integrator.candidates import reason_not_a_candidate
 from agent_os.product.integrator.facts import RunCommand, read_facts
-from agent_os.product.integrator.grouping import Candidate, choose_group
-from agent_os.product.integrator.solo_rules import reason_to_land_alone
+from agent_os.product.integrator.rules.candidates import reason_not_a_candidate
+from agent_os.product.integrator.rules.grouping import Candidate, choose_group
+from agent_os.product.integrator.rules.solo_rules import reason_to_land_alone
 from agent_os.product.shared.config import IntegratorConfig
 from agent_os.product.test_selection.manifest import Manifest
 from agent_os.product.test_selection.node_changes import (
@@ -20,6 +20,15 @@ from agent_os.product.test_selection.node_changes import (
 )
 from agent_os.product.test_selection.plan import TestPlan, plan_tests
 from agent_os.product.tree.loader import load_tree
+
+
+@dataclass(frozen=True)
+class MemberSummary:
+    """What the judge's index needs of a group member besides its title."""
+
+    head_sha: str
+    files: tuple[str, ...]
+    test_groups: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -32,6 +41,7 @@ class RoundPlan:
     not_candidates: dict[int, str]
     solo: dict[int, str]
     titles: dict[int, str]
+    members: dict[int, MemberSummary] = field(default_factory=dict)
 
     def as_json(self) -> dict:
         return {
@@ -144,6 +154,14 @@ def plan_round(
         not_candidates,
         dict(sorted(chosen.left_solo.items())),
         {number: facts.title for number, facts in facts_by_number.items()},
+        {
+            number: MemberSummary(
+                facts_by_number[number].head_sha,
+                facts_by_number[number].paths,
+                plans[number].groups,
+            )
+            for number in chosen.members
+        },
     )
 
 

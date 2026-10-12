@@ -67,8 +67,8 @@ export AGENT_OS_HOST_ROOT=$agent_main
 export AGENT_OS_PYTHON=$agent_python
 export AGENT_OS_DIR=$agent_os_dir
 
-# shellcheck source=agent_os/bin/agent_role_instructions.sh
-source "$agent_os_dir/bin/agent_role_instructions.sh"
+# shellcheck source=agent_os/bin/worker/agent_role_instructions.sh
+source "$agent_os_dir/bin/worker/agent_role_instructions.sh"
 
 agent_project_value() { "$agent_python" -m agent_os.lib project-value "$@"; }
 

@@ -11,10 +11,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from agent_os.product.integrator.candidates import reason_not_a_candidate
 from agent_os.product.integrator.facts import PullRequestFacts, RunCommand, read_facts
 from agent_os.product.integrator.preflight import describe_failure, run_preflight
 from agent_os.product.integrator.round_lock import integration_lock
+from agent_os.product.integrator.rules.candidates import reason_not_a_candidate
 from agent_os.product.tracker.pull_request_checks import INTEGRATION_BRANCH_PREFIX
 from agent_os.quality.git_snapshots import GitError
 

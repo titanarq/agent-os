@@ -1,6 +1,6 @@
 groups:
   - id: dispatch
-    covers: [agent_os/product/dispatch, agent_os/product/integrator]
+    covers: [agent_os/product/dispatch, agent_os/product/integrator, bin/integrator_task.sh, prompts/integrator.md]
     tests: [tests/product/dispatch, tests/product/worker/test_slots_made_on_demand.py]
   - id: sessions
     # Test-session ingestion and the question session own these use cases of the tree.
