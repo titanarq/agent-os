@@ -1,0 +1,1 @@
+- The code-quality ratchet now follows a full-folder violation with a `hint:` line naming files that share a name stem and the subfolder they could move into, and the worker prompt tells the worker to make room before adding the overflowing file (#233).
